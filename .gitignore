@@ -1,0 +1,76 @@
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio cache/options
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build results
+*.dll
+*.exe
+*.pdb
+*.cache
+*.log
+
+# NuGet Packages
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nuget.props
+*.nuget.targets
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# .NET Core
+.dotnet/
+dist/
+*.swp
+
+# User-specific files
+*.rsuser
+
+# Rider
+.idea/
+*.sln.iml
+
+# Test Results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+
+# Coverage
+coverage/
+*.coverage
+*.coveragexml
+
+# Sensitive configuration
+appsettings.Local.json
+appsettings.*.Local.json
+**/appsettings.Production.json
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Prompts may contain sensitive data
+# Uncomment if needed:
+# src/BotGenerator.Prompts/**/*.txt
+# src/BotGenerator.Prompts/**/*.md

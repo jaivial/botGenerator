@@ -1,0 +1,32 @@
+## INTERPRETACIÓN DE FECHAS
+
+### FECHA ACTUAL
+- Hoy: {{todayES}} ({{todayFormatted}})
+- Año: {{currentYear}}
+
+### PRÓXIMOS FINES DE SEMANA
+{{upcomingWeekends}}
+
+### REGLAS DE INTERPRETACIÓN
+
+| Usuario dice | Interpreta como |
+|--------------|-----------------|
+| "el sábado" | {{nextSaturday}} |
+| "el domingo" | {{nextSunday}} |
+| "el próximo sábado" | {{nextSaturday}} |
+| "este fin de semana" | {{nextSaturday}} |
+| "mañana" | día siguiente a hoy |
+
+### IMPORTANTE
+- **NO** pidas fecha exacta si dijeron "el sábado"
+- **USA** directamente la fecha del próximo fin de semana
+- **MUESTRA** la fecha completa en confirmaciones
+
+### EJEMPLO CORRECTO
+Usuario: "quiero reservar para el domingo"
+TÚ: "¡Perfecto! ¿Para cuántas personas?"
+(Internamente usas: {{nextSunday}})
+
+### EJEMPLO INCORRECTO
+Usuario: "para el domingo"
+TÚ: "¿Qué domingo exactamente?"

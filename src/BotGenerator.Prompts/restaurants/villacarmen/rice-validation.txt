@@ -1,0 +1,61 @@
+# SISTEMA DE VALIDACIÓN DE ARROZ
+
+Tu tarea es validar si el tipo de arroz solicitado existe en nuestro menú.
+
+## TIPOS DE ARROZ DISPONIBLES
+{{availableRiceTypes}}
+
+## ARROZ SOLICITADO
+{{userRiceRequest}}
+
+## INSTRUCCIONES
+
+1. **Compara** el arroz solicitado con los disponibles
+
+2. **Acepta coincidencias parciales:**
+   - "pulpo y gambones" → "Arroz meloso de pulpo y gambones"
+   - "señoret" → "Arroz de señoret"
+   - "paella" → "Paella valenciana..."
+   - "negro" → "Arroz Negro"
+
+3. **Ignora diferencias en:**
+   - Mayúsculas/minúsculas
+   - Acentos (señoret = senyoret)
+   - Artículos (del, de, de la)
+
+4. **Al devolver el nombre:**
+   - Devuelve el nombre COMPLETO
+   - ELIMINA precios y paréntesis
+   - Ejemplo: "Arroz meloso de pulpo (+5€)" → "Arroz meloso de pulpo"
+
+5. **Detecta ambigüedad:**
+   Si hay MÚLTIPLES coincidencias (meloso/seco), usa RICE_MULTIPLE
+
+## FORMATOS DE RESPUESTA
+
+### Si EXISTE y es único:
+RICE_VALID|[nombre completo sin precio]
+
+### Si NO EXISTE:
+RICE_NOT_FOUND|[nombre solicitado]
+
+### Si hay MÚLTIPLES variantes:
+RICE_MULTIPLE|[opción 1] y [opción 2]
+
+## EJEMPLOS
+
+Input: "pulpo y gambones"
+Output: RICE_VALID|Arroz meloso de pulpo y gambones
+
+Input: "señoret"
+Output: RICE_VALID|Arroz de señoret
+
+Input: "carrillada con boletus"
+(Si hay meloso Y seco)
+Output: RICE_MULTIPLE|Arroz meloso de carrillada con boletus y Arroz seco de carrillada con boletus
+
+Input: "arroz de marisco"
+(Si no existe)
+Output: RICE_NOT_FOUND|arroz de marisco
+
+**GENERA SOLO EL COMANDO, SIN TEXTO ADICIONAL.**

@@ -1,0 +1,50 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{AC3D2290-C541-4824-909C-99B95085C8BA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BotGenerator.Api", "src\BotGenerator.Api\BotGenerator.Api.csproj", "{8F72C7F3-5CE9-4847-A764-3B936D485EDA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BotGenerator.Core", "src\BotGenerator.Core\BotGenerator.Core.csproj", "{3BDF9F1D-61CB-4372-996E-5F176CBFBE02}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{381F4352-6DB5-4EBA-9538-EAED89957957}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BotGenerator.Core.Tests", "tests\BotGenerator.Core.Tests\BotGenerator.Core.Tests.csproj", "{9B15884D-2666-49BE-97E2-2148E9929F11}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BotGenerator.Integration.Tests", "tests\BotGenerator.Integration.Tests\BotGenerator.Integration.Tests.csproj", "{18BAF0DD-7B36-4CB5-B71B-B5E9DCFAC7BA}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{8F72C7F3-5CE9-4847-A764-3B936D485EDA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8F72C7F3-5CE9-4847-A764-3B936D485EDA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8F72C7F3-5CE9-4847-A764-3B936D485EDA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8F72C7F3-5CE9-4847-A764-3B936D485EDA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3BDF9F1D-61CB-4372-996E-5F176CBFBE02}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3BDF9F1D-61CB-4372-996E-5F176CBFBE02}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3BDF9F1D-61CB-4372-996E-5F176CBFBE02}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3BDF9F1D-61CB-4372-996E-5F176CBFBE02}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9B15884D-2666-49BE-97E2-2148E9929F11}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9B15884D-2666-49BE-97E2-2148E9929F11}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9B15884D-2666-49BE-97E2-2148E9929F11}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9B15884D-2666-49BE-97E2-2148E9929F11}.Release|Any CPU.Build.0 = Release|Any CPU
+		{18BAF0DD-7B36-4CB5-B71B-B5E9DCFAC7BA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{18BAF0DD-7B36-4CB5-B71B-B5E9DCFAC7BA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{18BAF0DD-7B36-4CB5-B71B-B5E9DCFAC7BA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{18BAF0DD-7B36-4CB5-B71B-B5E9DCFAC7BA}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{8F72C7F3-5CE9-4847-A764-3B936D485EDA} = {AC3D2290-C541-4824-909C-99B95085C8BA}
+		{3BDF9F1D-61CB-4372-996E-5F176CBFBE02} = {AC3D2290-C541-4824-909C-99B95085C8BA}
+		{9B15884D-2666-49BE-97E2-2148E9929F11} = {381F4352-6DB5-4EBA-9538-EAED89957957}
+		{18BAF0DD-7B36-4CB5-B71B-B5E9DCFAC7BA} = {381F4352-6DB5-4EBA-9538-EAED89957957}
+	EndGlobalSection
+EndGlobal
