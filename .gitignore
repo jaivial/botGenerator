@@ -71,6 +71,17 @@ appsettings.*.Local.json
 .DS_Store
 Thumbs.db
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# Testing logs (optional - uncomment to ignore)
+# testing/logs/
+
 # Prompts may contain sensitive data
 # Uncomment if needed:
 # src/BotGenerator.Prompts/**/*.txt
