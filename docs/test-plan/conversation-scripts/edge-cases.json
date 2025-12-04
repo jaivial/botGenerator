@@ -1,0 +1,220 @@
+{
+  "name": "edge-cases",
+  "description": "Edge case and error handling test scenarios",
+  "flows": [
+    {
+      "id": "edge-same-day",
+      "name": "Same Day Booking Rejection",
+      "setup": {
+        "currentDate": "2025-11-26"
+      },
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Quiero reservar para hoy",
+          "expect": ["no aceptamos", "mismo día", "llámanos", "638", "857", "294"]
+        },
+        {
+          "turn": 2,
+          "user": "¿Y para mañana?",
+          "expect": ["personas", "hora"],
+          "notExpect": ["no aceptamos"]
+        }
+      ]
+    },
+    {
+      "id": "edge-closed-monday",
+      "name": "Closed Day - Monday",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Quiero reservar para el lunes",
+          "expect": ["cerrados", "lunes"]
+        }
+      ]
+    },
+    {
+      "id": "edge-closed-tuesday",
+      "name": "Closed Day - Tuesday",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Mesa para el martes",
+          "expect": ["cerrados", "martes"]
+        }
+      ]
+    },
+    {
+      "id": "edge-closed-wednesday",
+      "name": "Closed Day - Wednesday",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Reserva miércoles 4 personas",
+          "expect": ["cerrados", "miércoles"]
+        }
+      ]
+    },
+    {
+      "id": "edge-too-early",
+      "name": "Before Opening Hours",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Reserva sábado a las 11:00 para 4",
+          "expect": ["abrimos", "13:30"]
+        },
+        {
+          "turn": 2,
+          "user": "A las 13:30 entonces",
+          "expect": ["arroz"]
+        }
+      ]
+    },
+    {
+      "id": "edge-too-late",
+      "name": "After Closing Hours",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Mesa sábado 19:00 para 4",
+          "expect": ["cerramos", "18:00", "otra hora"]
+        },
+        {
+          "turn": 2,
+          "user": "17:00",
+          "expect": ["arroz"]
+        }
+      ]
+    },
+    {
+      "id": "edge-large-group",
+      "name": "Large Group Over 20",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Reserva para 25 personas el sábado",
+          "expect": ["grupos", "20", "llamar", "638"]
+        },
+        {
+          "turn": 2,
+          "user": "En realidad somos solo 15",
+          "expect": ["hora", "arroz"],
+          "notExpect": ["llamar"]
+        }
+      ]
+    },
+    {
+      "id": "edge-past-date",
+      "name": "Past Date Rejection",
+      "setup": {
+        "currentDate": "2025-11-26"
+      },
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Reserva para el 15 de octubre",
+          "expect": ["pasada", "fecha"]
+        },
+        {
+          "turn": 2,
+          "user": "Perdón, el 15 de diciembre",
+          "expect": ["personas", "hora"]
+        }
+      ]
+    },
+    {
+      "id": "edge-ambiguous-weekend",
+      "name": "Ambiguous Weekend Selection",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Reserva fin de semana",
+          "expect": ["sábado", "domingo", "qué día"]
+        },
+        {
+          "turn": 2,
+          "user": "El sábado",
+          "expect": ["personas", "hora"]
+        }
+      ]
+    },
+    {
+      "id": "edge-english-input",
+      "name": "English Language Input",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Booking for Saturday please",
+          "expect": ["sábado", "personas"]
+        }
+      ]
+    },
+    {
+      "id": "edge-valenciano-input",
+      "name": "Valenciano Language Input",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Vull reservar per a 4 persones",
+          "expect": ["4", "día"]
+        }
+      ]
+    },
+    {
+      "id": "edge-typos",
+      "name": "Input with Typos",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Quero reservr para el sabdo",
+          "expect": ["sábado", "personas"]
+        }
+      ]
+    },
+    {
+      "id": "edge-special-chars",
+      "name": "Input with Special Characters",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Reserva para García-López 4 personas!!!",
+          "expect": ["día", "cuándo"]
+        }
+      ]
+    },
+    {
+      "id": "edge-numbers-as-words",
+      "name": "Numbers as Spanish Words",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Reserva para seis personas a las dos de la tarde",
+          "expect": ["6", "14:00", "día"]
+        }
+      ]
+    },
+    {
+      "id": "edge-empty-message",
+      "name": "Empty or Minimal Input",
+      "messages": [
+        {
+          "turn": 1,
+          "user": ".",
+          "expect": ["ayudar"]
+        }
+      ]
+    },
+    {
+      "id": "edge-long-message",
+      "name": "Very Long Message",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Hola buenas tardes, mira que quería hacer una reserva para mi familia, que somos muchos, como unas 8 personas o así, para el próximo sábado que viene, sobre las dos de la tarde más o menos, y queríamos saber si tenéis disponibilidad y también si podemos pedir paella porque es el cumpleaños de mi padre y le encanta la paella valenciana de toda la vida",
+          "expect": ["sábado", "8 personas", "14:00", "paella"]
+        }
+      ]
+    }
+  ]
+}

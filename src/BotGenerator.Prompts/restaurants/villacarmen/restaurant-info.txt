@@ -5,13 +5,17 @@
 **ESPECIALIDAD:** Arroces y paellas valencianas
 
 ### HORARIOS
-| Día | Horario |
-|-----|---------|
-| Jueves | 13:30 – 17:00 |
-| Viernes | 13:30 – 17:30 |
-| Sábado | 13:30 – 18:00 |
-| Domingo | 13:30 – 18:00 |
-| Lunes-Miércoles | **CERRADO** |
+| Día | Horario | Horas ACEPTADAS para reservas |
+|-----|---------|-------------------------------|
+| Jueves | 13:30 – 17:00 | ✅ 13:30 hasta 17:00 ❌ Antes de 13:30 |
+| Viernes | 13:30 – 17:30 | ✅ 13:30 hasta 17:30 ❌ Antes de 13:30 |
+| Sábado | 13:30 – 18:00 | ✅ 13:30 hasta 18:00 ❌ Antes de 13:30 |
+| Domingo | 13:30 – 18:00 | ✅ 13:30 hasta 18:00 ❌ Antes de 13:30 |
+| Lunes-Miércoles | **CERRADO** | ❌ NO ACEPTAR RESERVAS |
+
+**⚠️ RECHAZA ESTAS HORAS:**
+- ❌ 08:00, 09:00, 10:00, 11:00, 12:00, 12:30 (ANTES de 13:30)
+- ❌ 19:00, 20:00, 21:00, 22:00 (DESPUÉS del cierre)
 
 ### CONTACTO
 - **Teléfono:** +34 638 857 294

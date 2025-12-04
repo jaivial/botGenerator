@@ -42,10 +42,14 @@ botGenerator/
    dotnet restore
    ```
 
-3. Configure API keys in `appsettings.json` or `appsettings.Development.json`:
-   - GoogleAI:ApiKey - Your Google AI Studio API key
-   - WhatsApp:Token - Your UAzapi token
-   - WhatsApp:ApiUrl - Your UAzapi instance URL
+3. Configure environment variables:
+   - Copy `.env.example` to `.env`
+   - Edit `.env` and add your API keys:
+   ```bash
+   GOOGLE_AI_API_KEY=your_google_ai_api_key_here
+   WHATSAPP_API_URL=https://your-instance.uazapi.com
+   WHATSAPP_TOKEN=your_uazapi_token_here
+   ```
 
 4. Start Redis:
    ```bash
@@ -57,6 +61,17 @@ botGenerator/
    dotnet build
    dotnet run --project src/BotGenerator.Api
    ```
+
+### Environment Variables
+
+The application reads configuration from the `.env` file:
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `GOOGLE_AI_API_KEY` | Google AI Studio API key for Gemini | Yes |
+| `WHATSAPP_API_URL` | UAzapi instance URL | Yes |
+| `WHATSAPP_TOKEN` | UAzapi authentication token | Yes |
+| `REDIS_CONNECTION_STRING` | Redis connection string | No (defaults to localhost:6379) |
 
 ## Features (Planned)
 

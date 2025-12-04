@@ -40,7 +40,7 @@ public class WhatsAppService : IWhatsAppService
 
         var request = new HttpRequestMessage(
             HttpMethod.Post,
-            $"{_apiUrl}/send/text");
+            "/send/text");
 
         request.Headers.Add("token", _token);
         request.Content = JsonContent.Create(new

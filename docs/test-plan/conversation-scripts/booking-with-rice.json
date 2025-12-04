@@ -1,0 +1,151 @@
+{
+  "name": "booking-with-rice",
+  "description": "Booking flows with rice validation and selection",
+  "flows": [
+    {
+      "id": "booking-rice-simple",
+      "name": "Booking with Simple Rice Selection",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Reserva para el sábado 4 personas 14:00",
+          "expect": ["arroz"]
+        },
+        {
+          "turn": 2,
+          "user": "Sí, arroz del señoret",
+          "expect": ["señoret", "disponible", "raciones"]
+        },
+        {
+          "turn": 3,
+          "user": "3 raciones",
+          "expect": ["sábado", "4 personas", "14:00", "señoret", "3 raciones", "confirmo"]
+        },
+        {
+          "turn": 4,
+          "user": "Sí",
+          "expect": ["✅", "confirmada"]
+        }
+      ]
+    },
+    {
+      "id": "booking-rice-paella",
+      "name": "Booking with Paella Valenciana",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Reserva domingo 14:30 para 6",
+          "expect": ["arroz"]
+        },
+        {
+          "turn": 2,
+          "user": "Paella valenciana",
+          "expect": ["paella", "valenciana", "disponible", "raciones"]
+        },
+        {
+          "turn": 3,
+          "user": "4 raciones",
+          "expect": ["confirmo"]
+        },
+        {
+          "turn": 4,
+          "user": "Confirmo",
+          "expect": ["✅", "confirmada", "paella"]
+        }
+      ]
+    },
+    {
+      "id": "booking-rice-invalid",
+      "name": "Booking with Invalid Rice Type",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Reserva sábado 14:00 para 4",
+          "expect": ["arroz"]
+        },
+        {
+          "turn": 2,
+          "user": "Arroz con pollo",
+          "expect": ["no tenemos", "disponible", "carta"]
+        },
+        {
+          "turn": 3,
+          "user": "¿Qué arroces tenéis?",
+          "expect": ["señoret", "paella", "negro", "banda"]
+        },
+        {
+          "turn": 4,
+          "user": "Arroz negro entonces",
+          "expect": ["negro", "disponible", "raciones"]
+        },
+        {
+          "turn": 5,
+          "user": "2 raciones",
+          "expect": ["confirmo"]
+        },
+        {
+          "turn": 6,
+          "user": "Sí",
+          "expect": ["confirmada", "negro"]
+        }
+      ]
+    },
+    {
+      "id": "booking-rice-ambiguous",
+      "name": "Booking with Ambiguous Rice Selection",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Reserva sábado 14:00 4 personas",
+          "expect": ["arroz"]
+        },
+        {
+          "turn": 2,
+          "user": "Arroz de carrillada",
+          "expect": ["meloso", "seco", "cuál"]
+        },
+        {
+          "turn": 3,
+          "user": "El meloso con boletus",
+          "expect": ["meloso", "carrillada", "boletus", "raciones"]
+        },
+        {
+          "turn": 4,
+          "user": "3 raciones",
+          "expect": ["confirmo"]
+        },
+        {
+          "turn": 5,
+          "user": "Vale",
+          "expect": ["confirmada"]
+        }
+      ]
+    },
+    {
+      "id": "booking-multiple-rice-types",
+      "name": "Booking with Multiple Rice Types",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Reserva para 8 personas sábado 14:00",
+          "expect": ["arroz"]
+        },
+        {
+          "turn": 2,
+          "user": "Queremos paella y arroz del señoret",
+          "expect": ["paella", "señoret", "raciones"]
+        },
+        {
+          "turn": 3,
+          "user": "3 de cada uno",
+          "expect": ["6 raciones", "confirmo"]
+        },
+        {
+          "turn": 4,
+          "user": "Confirmo",
+          "expect": ["confirmada", "paella", "señoret"]
+        }
+      ]
+    }
+  ]
+}

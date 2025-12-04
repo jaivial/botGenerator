@@ -2,7 +2,44 @@ using BotGenerator.Core.Agents;
 using BotGenerator.Core.Handlers;
 using BotGenerator.Core.Services;
 
+// Load environment variables from .env file
+var envPath = Path.Combine(Directory.GetCurrentDirectory(), ".env");
+if (!File.Exists(envPath))
+{
+    // Try parent directory (project root)
+    envPath = Path.Combine(Directory.GetCurrentDirectory(), "..", "..", ".env");
+}
+Console.WriteLine($"[ENV] Loading .env from: {Path.GetFullPath(envPath)}");
+if (File.Exists(envPath))
+{
+    DotNetEnv.Env.Load(envPath);
+    Console.WriteLine("[ENV] .env file loaded successfully");
+}
+else
+{
+    Console.WriteLine("[ENV] WARNING: .env file not found!");
+}
+
 var builder = WebApplication.CreateBuilder(args);
+
+// Override configuration with environment variables
+var googleApiKey = Environment.GetEnvironmentVariable("GOOGLE_AI_API_KEY");
+var whatsappApiUrl = Environment.GetEnvironmentVariable("WHATSAPP_API_URL");
+var whatsappToken = Environment.GetEnvironmentVariable("WHATSAPP_TOKEN");
+var redisConnectionString = Environment.GetEnvironmentVariable("REDIS_CONNECTION_STRING");
+
+Console.WriteLine($"[ENV] GOOGLE_AI_API_KEY: {(string.IsNullOrEmpty(googleApiKey) ? "NOT SET" : "SET (" + googleApiKey?.Length + " chars)")}");
+Console.WriteLine($"[ENV] WHATSAPP_API_URL: {(string.IsNullOrEmpty(whatsappApiUrl) ? "NOT SET" : whatsappApiUrl)}");
+Console.WriteLine($"[ENV] WHATSAPP_TOKEN: {(string.IsNullOrEmpty(whatsappToken) ? "NOT SET" : "SET (" + whatsappToken?.Length + " chars)")}");
+
+if (!string.IsNullOrEmpty(googleApiKey))
+    builder.Configuration["GoogleAI:ApiKey"] = googleApiKey;
+if (!string.IsNullOrEmpty(whatsappApiUrl))
+    builder.Configuration["WhatsApp:ApiUrl"] = whatsappApiUrl;
+if (!string.IsNullOrEmpty(whatsappToken))
+    builder.Configuration["WhatsApp:Token"] = whatsappToken;
+if (!string.IsNullOrEmpty(redisConnectionString))
+    builder.Configuration["Redis:ConnectionString"] = redisConnectionString;
 
 // ========== Add Core Services ==========
 builder.Services.AddControllers();
@@ -15,8 +52,14 @@ builder.Services.AddHttpClient<IGeminiService, GeminiService>(client =>
     client.Timeout = TimeSpan.FromSeconds(60);
 });
 
-builder.Services.AddHttpClient<IWhatsAppService, WhatsAppService>(client =>
+builder.Services.AddHttpClient<IWhatsAppService, WhatsAppService>((serviceProvider, client) =>
 {
+    var config = serviceProvider.GetRequiredService<IConfiguration>();
+    var apiUrl = config["WhatsApp:ApiUrl"];
+    if (!string.IsNullOrEmpty(apiUrl))
+    {
+        client.BaseAddress = new Uri(apiUrl);
+    }
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
@@ -55,7 +98,12 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+// Disable HTTPS redirection in development for webhook compatibility
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
+
 app.UseAuthorization();
 app.MapControllers();
 

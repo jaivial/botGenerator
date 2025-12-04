@@ -1,0 +1,98 @@
+{
+  "name": "booking-simple",
+  "description": "Simple booking flows without rice",
+  "flows": [
+    {
+      "id": "booking-complete-no-rice",
+      "name": "Complete Booking Without Rice",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Hola, quiero hacer una reserva",
+          "expect": ["día", "cuándo", "fecha"]
+        },
+        {
+          "turn": 2,
+          "user": "Para el sábado",
+          "expect": ["personas", "cuántas"]
+        },
+        {
+          "turn": 3,
+          "user": "Somos 4 a las 14:00",
+          "expect": ["arroz", "queréis"]
+        },
+        {
+          "turn": 4,
+          "user": "No, sin arroz",
+          "expect": ["4 personas", "sábado", "14:00", "confirmo"]
+        },
+        {
+          "turn": 5,
+          "user": "Sí, confirma",
+          "expect": ["✅", "confirmada", "reserva"]
+        }
+      ]
+    },
+    {
+      "id": "booking-all-in-one",
+      "name": "All Info in One Message",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Quiero reservar para el domingo a las 14:30 para 6 personas",
+          "expect": ["arroz"],
+          "notExpect": ["día", "hora", "personas"]
+        },
+        {
+          "turn": 2,
+          "user": "Sin arroz",
+          "expect": ["domingo", "14:30", "6 personas", "confirmo"]
+        },
+        {
+          "turn": 3,
+          "user": "Sí",
+          "expect": ["✅", "confirmada"]
+        }
+      ]
+    },
+    {
+      "id": "booking-progressive",
+      "name": "Progressive Info Gathering",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Quiero reservar",
+          "expect": ["día", "cuándo"]
+        },
+        {
+          "turn": 2,
+          "user": "El sábado",
+          "expect": ["personas"],
+          "notExpect": ["día"]
+        },
+        {
+          "turn": 3,
+          "user": "4",
+          "expect": ["hora"],
+          "notExpect": ["personas"]
+        },
+        {
+          "turn": 4,
+          "user": "14:00",
+          "expect": ["arroz"],
+          "notExpect": ["hora"]
+        },
+        {
+          "turn": 5,
+          "user": "No",
+          "expect": ["confirmo"]
+        },
+        {
+          "turn": 6,
+          "user": "Sí",
+          "expect": ["confirmada"]
+        }
+      ]
+    }
+  ]
+}

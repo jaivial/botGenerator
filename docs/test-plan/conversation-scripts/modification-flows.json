@@ -1,0 +1,142 @@
+{
+  "name": "modification-flows",
+  "description": "Test flows for booking modification scenarios",
+  "flows": [
+    {
+      "id": "modification-single-booking",
+      "name": "Modification with Single Booking",
+      "setup": {
+        "existingBookings": [
+          { "date": "30/11/2025", "time": "14:00", "people": 4 }
+        ]
+      },
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Quiero modificar mi reserva",
+          "expect": ["reserva", "30/11", "14:00", "4 personas"]
+        },
+        {
+          "turn": 2,
+          "user": "Quiero cambiar la hora",
+          "expect": ["hora", "cuál"]
+        },
+        {
+          "turn": 3,
+          "user": "A las 15:00",
+          "expect": ["15:00", "modificada"]
+        }
+      ]
+    },
+    {
+      "id": "modification-multiple-bookings",
+      "name": "Modification with Multiple Bookings",
+      "setup": {
+        "existingBookings": [
+          { "date": "30/11/2025", "time": "14:00", "people": 4 },
+          { "date": "07/12/2025", "time": "15:00", "people": 6 }
+        ]
+      },
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Modificar reserva",
+          "expect": ["varias reservas", "1.", "2."]
+        },
+        {
+          "turn": 2,
+          "user": "La segunda",
+          "expect": ["07/12", "modificar"]
+        },
+        {
+          "turn": 3,
+          "user": "Cambiar el número de personas",
+          "expect": ["cuántas personas"]
+        },
+        {
+          "turn": 4,
+          "user": "Ahora somos 8",
+          "expect": ["8 personas", "modificada"]
+        }
+      ]
+    },
+    {
+      "id": "modification-change-date",
+      "name": "Modify Booking Date",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Necesito cambiar la fecha de mi reserva",
+          "expect": ["reserva", "encontrado"]
+        },
+        {
+          "turn": 2,
+          "user": "La quiero para el domingo en vez del sábado",
+          "expect": ["domingo", "modificada"]
+        }
+      ]
+    },
+    {
+      "id": "modification-change-rice",
+      "name": "Modify Rice Order",
+      "setup": {
+        "existingBooking": {
+          "date": "30/11/2025",
+          "time": "14:00",
+          "people": 4,
+          "rice": "paella valenciana",
+          "riceServings": 3
+        }
+      },
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Quiero cambiar el arroz de mi reserva",
+          "expect": ["paella", "cambiar"]
+        },
+        {
+          "turn": 2,
+          "user": "Mejor arroz del señoret",
+          "expect": ["señoret", "raciones"]
+        },
+        {
+          "turn": 3,
+          "user": "Las mismas, 3",
+          "expect": ["3 raciones", "señoret", "modificada"]
+        }
+      ]
+    },
+    {
+      "id": "modification-add-options",
+      "name": "Add High Chairs to Booking",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Tengo una reserva para el sábado, necesito añadir una trona",
+          "expect": ["trona", "añadir"]
+        },
+        {
+          "turn": 2,
+          "user": "Sí, 2 tronas por favor",
+          "expect": ["2 tronas", "añadida"]
+        }
+      ]
+    },
+    {
+      "id": "modification-no-booking-found",
+      "name": "Modification with No Booking Found",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Quiero modificar mi reserva",
+          "expect": ["no encontré", "reservas", "nueva"]
+        },
+        {
+          "turn": 2,
+          "user": "Pues hacer una nueva entonces",
+          "expect": ["día", "cuándo"]
+        }
+      ]
+    }
+  ]
+}

@@ -170,6 +170,7 @@ public class ConversationHistoryService : IConversationHistoryService
             var msg = history[i];
             if (msg.Role != "user") continue;
 
+            // Try pattern with "a las", "para las"
             var match = Regex.Match(msg.Content,
                 @"(?:a\s+las?|para\s+las?)\s*(\d{1,2}):?(\d{2})?",
                 RegexOptions.IgnoreCase);
@@ -178,6 +179,27 @@ public class ConversationHistoryService : IConversationHistoryService
             {
                 var hour = match.Groups[1].Value;
                 var minute = match.Groups[2].Success ? match.Groups[2].Value : "00";
+                return $"{hour}:{minute}";
+            }
+
+            // Try pattern with just "las" (e.g., "Vale, las 14:00")
+            match = Regex.Match(msg.Content,
+                @"\blas?\s+(\d{1,2}):(\d{2})",
+                RegexOptions.IgnoreCase);
+
+            if (match.Success)
+            {
+                var hour = match.Groups[1].Value;
+                var minute = match.Groups[2].Value;
+                return $"{hour}:{minute}";
+            }
+
+            // Try pattern with just time (e.g., "14:00" or "1400")
+            match = Regex.Match(msg.Content, @"\b(\d{1,2}):(\d{2})\b");
+            if (match.Success)
+            {
+                var hour = match.Groups[1].Value;
+                var minute = match.Groups[2].Value;
                 return $"{hour}:{minute}";
             }
         }

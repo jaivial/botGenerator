@@ -1,0 +1,61 @@
+{
+  "name": "greeting-flows",
+  "description": "Test flows for greeting and welcome scenarios",
+  "flows": [
+    {
+      "id": "greeting-hola",
+      "name": "Basic Hola Greeting",
+      "messages": [
+        {
+          "user": "Hola",
+          "expect": ["hola", "ayudar"],
+          "notExpect": ["reserva", "fecha"]
+        }
+      ]
+    },
+    {
+      "id": "greeting-buenos-dias",
+      "name": "Morning Greeting",
+      "messages": [
+        {
+          "user": "Buenos días",
+          "expect": ["buenos días", "ayudar"]
+        }
+      ]
+    },
+    {
+      "id": "greeting-buenas-tardes",
+      "name": "Afternoon Greeting",
+      "messages": [
+        {
+          "user": "Buenas tardes!",
+          "expect": ["buenas", "ayudar"]
+        }
+      ]
+    },
+    {
+      "id": "greeting-informal",
+      "name": "Informal Greeting",
+      "messages": [
+        {
+          "user": "Ey",
+          "expect": ["hola", "ayudar"]
+        }
+      ]
+    },
+    {
+      "id": "greeting-with-name",
+      "name": "Greeting with Customer Name",
+      "setup": {
+        "pushName": "María"
+      },
+      "messages": [
+        {
+          "user": "Hola!",
+          "mayContain": ["María"],
+          "expect": ["hola", "ayudar"]
+        }
+      ]
+    }
+  ]
+}

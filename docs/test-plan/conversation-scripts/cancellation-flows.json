@@ -1,0 +1,118 @@
+{
+  "name": "cancellation-flows",
+  "description": "Test flows for booking cancellation scenarios",
+  "flows": [
+    {
+      "id": "cancellation-found",
+      "name": "Cancellation with Booking Found",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Quiero cancelar mi reserva",
+          "expect": ["reserva", "datos", "cuándo"]
+        },
+        {
+          "turn": 2,
+          "user": "Es para el sábado 30 a las 14:00",
+          "expect": ["encontrado", "cancelar"]
+        },
+        {
+          "turn": 3,
+          "user": "Sí, cancela",
+          "expect": ["✅", "cancelada"]
+        }
+      ]
+    },
+    {
+      "id": "cancellation-not-found",
+      "name": "Cancellation with No Matching Booking",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Cancelar mi reserva",
+          "expect": ["datos"]
+        },
+        {
+          "turn": 2,
+          "user": "Para el viernes a las 20:00",
+          "expect": ["no encontramos", "verificar"]
+        },
+        {
+          "turn": 3,
+          "user": "A nombre de García",
+          "expect": ["no hay reserva", "nueva"]
+        }
+      ]
+    },
+    {
+      "id": "cancellation-multiple-bookings",
+      "name": "Cancellation with Multiple Bookings",
+      "setup": {
+        "existingBookings": [
+          { "date": "30/11/2025", "time": "14:00", "people": 4 },
+          { "date": "07/12/2025", "time": "15:00", "people": 6 }
+        ]
+      },
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Necesito cancelar una reserva",
+          "expect": ["varias reservas", "cuál"]
+        },
+        {
+          "turn": 2,
+          "user": "La del 30 de noviembre",
+          "expect": ["30/11", "cancelar"]
+        },
+        {
+          "turn": 3,
+          "user": "Sí",
+          "expect": ["cancelada"]
+        }
+      ]
+    },
+    {
+      "id": "cancellation-confirmation-denied",
+      "name": "Cancellation Declined at Confirmation",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Quiero cancelar mi reserva del sábado",
+          "expect": ["encontrado", "cancelar"]
+        },
+        {
+          "turn": 2,
+          "user": "No, espera, mejor no",
+          "expect": ["mantiene", "reserva"],
+          "notExpect": ["cancelada"]
+        }
+      ]
+    },
+    {
+      "id": "cancellation-after-booking",
+      "name": "Booking Then Immediate Cancel",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Reserva sábado 14:00 4 personas",
+          "expect": ["arroz"]
+        },
+        {
+          "turn": 2,
+          "user": "Sin arroz, confirma",
+          "expect": ["confirmada"]
+        },
+        {
+          "turn": 3,
+          "user": "Uy, espera, tengo que cancelarla",
+          "expect": ["cancelar", "reserva"]
+        },
+        {
+          "turn": 4,
+          "user": "Sí, cancela la reserva",
+          "expect": ["cancelada"]
+        }
+      ]
+    }
+  ]
+}

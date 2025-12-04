@@ -1,0 +1,151 @@
+{
+  "name": "full-journeys",
+  "description": "Complete customer journey test scenarios (10-40 messages)",
+  "journeys": [
+    {
+      "id": "journey-new-customer",
+      "name": "New Customer First Booking",
+      "description": "Complete journey for a new customer making their first booking",
+      "messageCount": 15,
+      "setup": {
+        "pushName": "Ana"
+      },
+      "phases": [
+        { "name": "greeting", "messages": 2 },
+        { "name": "discovery", "messages": 3 },
+        { "name": "booking", "messages": 7 },
+        { "name": "post-booking", "messages": 3 }
+      ],
+      "messages": [
+        { "turn": 1, "user": "Hola!", "expect": ["hola", "ayudar"] },
+        { "turn": 2, "user": "¿Qué tipo de restaurante sois?", "expect": ["paella", "arroz"] },
+        { "turn": 3, "user": "Qué bien! Quiero hacer una reserva", "expect": ["día"] },
+        { "turn": 4, "user": "¿Qué días abrís?", "expect": ["jueves", "viernes", "sábado", "domingo"] },
+        { "turn": 5, "user": "Pues el sábado", "expect": ["personas"] },
+        { "turn": 6, "user": "Somos 6 adultos y 2 niños", "expect": ["8", "hora"] },
+        { "turn": 7, "user": "A las 14:00", "expect": ["arroz"] },
+        { "turn": 8, "user": "¿Qué arroces tenéis?", "expect": ["paella", "señoret"] },
+        { "turn": 9, "user": "Paella valenciana, 4 raciones", "expect": ["paella", "raciones"] },
+        { "turn": 10, "user": "Necesitamos 2 tronas", "expect": ["tronas"] },
+        { "turn": 11, "user": "Perfecto!", "expect": ["confirmo"] },
+        { "turn": 12, "user": "Sí, confirma", "expect": ["✅", "confirmada"] },
+        { "turn": 13, "user": "Gracias!", "expect": ["gracias"] },
+        { "turn": 14, "user": "¿Tenéis parking?", "expect": ["parking"] },
+        { "turn": 15, "user": "Hasta el sábado!", "expect": ["hasta pronto"] }
+      ]
+    },
+    {
+      "id": "journey-returning-customer",
+      "name": "Returning Customer Quick Booking",
+      "description": "Experienced customer makes a quick efficient booking",
+      "messageCount": 10,
+      "setup": {
+        "pushName": "Pedro"
+      },
+      "messages": [
+        { "turn": 1, "user": "Hola! Quiero reservar para el domingo a las 14:30 para 4 personas", "expect": ["arroz"] },
+        { "turn": 2, "user": "Esta vez sin arroz", "expect": ["confirmo"] },
+        { "turn": 3, "user": "Sí, todo correcto", "expect": ["✅", "confirmada"] },
+        { "turn": 4, "user": "Gracias, hasta el domingo", "expect": ["hasta pronto"] }
+      ]
+    },
+    {
+      "id": "journey-complex-booking",
+      "name": "Complex Booking with All Options",
+      "description": "Large family celebration with special requirements and corrections",
+      "messageCount": 20,
+      "setup": {
+        "pushName": "Carmen"
+      },
+      "phases": [
+        { "name": "initial", "messages": 5 },
+        { "name": "rice-selection", "messages": 4 },
+        { "name": "options", "messages": 4 },
+        { "name": "correction", "messages": 3 },
+        { "name": "confirmation", "messages": 4 }
+      ],
+      "messages": [
+        { "turn": 1, "user": "Buenas! Vamos a celebrar un cumpleaños", "expect": ["reserva"] },
+        { "turn": 2, "user": "Sí, para el sábado que viene", "expect": ["personas"] },
+        { "turn": 3, "user": "Seremos unas 12 personas", "expect": ["hora"] },
+        { "turn": 4, "user": "A las 14:00", "expect": ["arroz"] },
+        { "turn": 5, "user": "Sí, queremos probar varios arroces", "expect": ["cuál"] },
+        { "turn": 6, "user": "Arroz del señoret y paella valenciana", "expect": ["raciones"] },
+        { "turn": 7, "user": "3 raciones de cada uno", "expect": ["6 raciones"] },
+        { "turn": 8, "user": "Llevamos bebés, necesitamos tronas", "expect": ["cuántas"] },
+        { "turn": 9, "user": "2 tronas y espacio para 1 carrito", "expect": ["tronas", "carrito"] },
+        { "turn": 10, "user": "En verdad somos 14, se me olvidó mi cuñada", "expect": ["14 personas"] },
+        { "turn": 11, "user": "Sí 14", "expect": ["confirmo"] },
+        { "turn": 12, "user": "Sí, confirma", "expect": ["✅", "confirmada"] },
+        { "turn": 13, "user": "¡Gracias!", "expect": ["gracias"] }
+      ]
+    },
+    {
+      "id": "journey-booking-then-cancel",
+      "name": "Booking Then Cancel",
+      "description": "Customer makes booking then needs to cancel",
+      "messageCount": 15,
+      "messages": [
+        { "turn": 1, "user": "Hola, quiero reservar para domingo 4 personas 14:00", "expect": ["arroz"] },
+        { "turn": 2, "user": "Sin arroz", "expect": ["confirmo"] },
+        { "turn": 3, "user": "Sí", "expect": ["✅", "confirmada"] },
+        { "turn": 4, "user": "Espera, acaba de llamarme mi mujer", "expect": ["ayudar"] },
+        { "turn": 5, "user": "Tengo que cancelar la reserva", "expect": ["cancelar"] },
+        { "turn": 6, "user": "Sí, la de ahora mismo", "expect": ["cancelar"] },
+        { "turn": 7, "user": "Sí, cancela", "expect": ["cancelada"] },
+        { "turn": 8, "user": "Perdona las molestias", "expect": ["no pasa nada"] }
+      ]
+    },
+    {
+      "id": "journey-full-experience-40",
+      "name": "Full Experience 40 Messages",
+      "description": "Complete extended customer experience",
+      "messageCount": 40,
+      "setup": {
+        "pushName": "Miguel"
+      },
+      "phases": [
+        { "name": "discovery", "messages": 8 },
+        { "name": "initial_booking", "messages": 10 },
+        { "name": "modification", "messages": 8 },
+        { "name": "additional_questions", "messages": 8 },
+        { "name": "farewell", "messages": 6 }
+      ],
+      "messages": [
+        { "turn": 1, "user": "Buenas tardes", "expect": ["buenas tardes"] },
+        { "turn": 2, "user": "He oído que tenéis muy buenos arroces", "expect": ["arroz", "paella"] },
+        { "turn": 3, "user": "¿Dónde estáis ubicados?", "expect": ["dirección", "valencia"] },
+        { "turn": 4, "user": "¿Se puede ir en transporte público?", "expect": ["coche", "bus"] },
+        { "turn": 5, "user": "¿Qué arroces tenéis?", "expect": ["paella", "señoret"] },
+        { "turn": 6, "user": "¿Cuál me recomendáis?", "expect": ["paella", "valenciana"] },
+        { "turn": 7, "user": "¿Y precios?", "expect": ["€", "menú"] },
+        { "turn": 8, "user": "Perfecto, quiero hacer una reserva", "expect": ["día"] },
+        { "turn": 9, "user": "Para el próximo sábado", "expect": ["personas"] },
+        { "turn": 10, "user": "Somos 5", "expect": ["hora"] },
+        { "turn": 11, "user": "¿A qué hora es mejor venir?", "expect": ["14:00"] },
+        { "turn": 12, "user": "A las 14:00", "expect": ["arroz"] },
+        { "turn": 13, "user": "Paella valenciana", "expect": ["raciones"] },
+        { "turn": 14, "user": "3 raciones", "expect": ["confirmo"] },
+        { "turn": 15, "user": "Confirmo", "expect": ["✅", "confirmada"] },
+        { "turn": 16, "user": "Genial!", "expect": ["esperamos"] },
+        { "turn": 17, "user": "Oye, necesito añadir una trona", "expect": ["trona"] },
+        { "turn": 18, "user": "Sí, añádela", "expect": ["añadida"] },
+        { "turn": 19, "user": "Mi cuñado también viene, somos 6", "expect": ["6 personas"] },
+        { "turn": 20, "user": "Perfecto", "expect": ["confirmo"] },
+        { "turn": 21, "user": "Sí", "expect": ["actualizada"] },
+        { "turn": 22, "user": "¿Aceptáis tarjeta?", "expect": ["tarjeta"] },
+        { "turn": 23, "user": "¿Hay menú infantil?", "expect": ["niños", "infantil"] },
+        { "turn": 24, "user": "¿Opciones sin gluten?", "expect": ["gluten"] },
+        { "turn": 25, "user": "¿Se puede aparcar?", "expect": ["parking"] },
+        { "turn": 26, "user": "¿A qué hora cerráis?", "expect": ["17:00", "18:00"] },
+        { "turn": 27, "user": "¿Reserva privada?", "expect": ["privada", "grupo"] },
+        { "turn": 28, "user": "Para otra vez", "expect": ["perfecto"] },
+        { "turn": 29, "user": "Nada más", "expect": ["algo más"] },
+        { "turn": 30, "user": "¿Me confirmas los datos?", "expect": ["sábado", "6 personas", "14:00", "paella"] },
+        { "turn": 31, "user": "Todo bien!", "expect": ["esperamos"] },
+        { "turn": 32, "user": "Gracias por la ayuda", "expect": ["gracias"] },
+        { "turn": 33, "user": "Hasta el sábado", "expect": ["hasta pronto"] }
+      ]
+    }
+  ]
+}

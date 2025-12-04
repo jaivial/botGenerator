@@ -292,7 +292,7 @@ public class MainConversationAgent : IAgent
 
         // Extract rice servings
         int? arrozServings = null;
-        var servingsMatch = Regex.Match(response, @"(\d+)\s*raciones?", RegexOptions.IgnoreCase);
+        var servingsMatch = Regex.Match(response, @"(\d+)\s*raci(ón|ones?)", RegexOptions.IgnoreCase);
         if (servingsMatch.Success)
         {
             arrozServings = int.Parse(servingsMatch.Groups[1].Value);
@@ -326,19 +326,36 @@ public class MainConversationAgent : IAgent
         // Remove escape backslashes
         text = text.Replace(@"\_", "_");
         text = text.Replace(@"\|", "|");
+        text = text.Replace(@"\*", "*");
 
-        // Remove multiple consecutive newlines
+        // Remove lines that contain only whitespace (spaces, tabs, etc.)
+        // This preserves truly empty lines but removes lines with just spaces/tabs
+        var lines = text.Split('\n')
+            .Select(line =>
+            {
+                // If line has content (after trimming), keep original with trailing whitespace removed
+                // If line is truly empty (length 0), keep it as is
+                // If line has only whitespace (length > 0 but all whitespace), mark for removal
+                if (line.Length == 0)
+                    return line; // Keep empty lines
+                else if (string.IsNullOrWhiteSpace(line))
+                    return null; // Mark whitespace-only lines for removal
+                else
+                    return line.TrimEnd(); // Keep content lines, remove trailing whitespace
+            })
+            .Where(line => line != null) // Remove whitespace-only lines
+            .Select(line => line!) // Non-null assertion
+            .ToList();
+
+        text = string.Join("\n", lines);
+
+        // Remove multiple consecutive newlines (3+ becomes 2)
         text = Regex.Replace(text, @"\n{3,}", "\n\n");
 
         // Trim
         text = text.Trim();
 
-        // Remove lines that are just whitespace
-        var lines = text.Split('\n')
-            .Where(line => !string.IsNullOrWhiteSpace(line))
-            .ToArray();
-
-        return string.Join("\n", lines);
+        return text;
     }
 
     #endregion

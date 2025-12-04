@@ -61,6 +61,12 @@ public class WebhookController : ControllerBase
             // 1. Extract message data
             var message = ExtractMessage(body);
 
+            _logger.LogDebug(
+                "Extracted message - Text: '{Text}', FromMe: {FromMe}, Type: {Type}",
+                message.MessageText,
+                message.FromMe,
+                message.MessageType);
+
             // Ignore our own messages
             if (message.FromMe)
             {
@@ -159,20 +165,34 @@ public class WebhookController : ControllerBase
         if (messageBody.TryGetProperty("text", out var textProp))
         {
             messageText = textProp.GetString() ?? "";
+            _logger.LogDebug("Extracted text from 'text' property: '{Text}'", messageText);
+        }
+        else
+        {
+            _logger.LogDebug("No 'text' property found in message body");
         }
 
-        // Button response
+        // Button response (only override if vote is not empty)
         if (messageBody.TryGetProperty("vote", out var voteProp))
         {
-            messageText = voteProp.GetString() ?? "";
+            var vote = voteProp.GetString() ?? "";
+            if (!string.IsNullOrWhiteSpace(vote))
+            {
+                messageText = vote;
+            }
         }
 
-        // List response
+        // List response (only if content is an object, not a string, and only override if not empty)
         if (messageBody.TryGetProperty("content", out var contentProp) &&
+            contentProp.ValueKind == System.Text.Json.JsonValueKind.Object &&
             contentProp.TryGetProperty("Response", out var responseProp) &&
             responseProp.TryGetProperty("SelectedDisplayText", out var selectedProp))
         {
-            messageText = selectedProp.GetString() ?? "";
+            var selectedText = selectedProp.GetString() ?? "";
+            if (!string.IsNullOrWhiteSpace(selectedText))
+            {
+                messageText = selectedText;
+            }
         }
 
         // Determine message type

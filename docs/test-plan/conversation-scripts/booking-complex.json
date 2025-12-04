@@ -1,0 +1,193 @@
+{
+  "name": "booking-complex",
+  "description": "Complex booking flows with corrections, options, and special requirements",
+  "flows": [
+    {
+      "id": "booking-with-high-chairs",
+      "name": "Booking with High Chairs",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Reserva para el domingo para 5 personas a las 14:00",
+          "expect": ["arroz"]
+        },
+        {
+          "turn": 2,
+          "user": "No queremos arroz, pero necesitamos 2 tronas",
+          "expect": ["2 tronas", "sin arroz", "confirmo"]
+        },
+        {
+          "turn": 3,
+          "user": "Sí, confirma",
+          "expect": ["✅", "confirmada", "tronas"]
+        }
+      ]
+    },
+    {
+      "id": "booking-with-strollers",
+      "name": "Booking with Baby Strollers",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Reserva sábado 14:00 para 6",
+          "expect": ["arroz"]
+        },
+        {
+          "turn": 2,
+          "user": "Sin arroz, y necesitamos espacio para 2 carritos de bebé",
+          "expect": ["carritos", "confirmo"]
+        },
+        {
+          "turn": 3,
+          "user": "Confirma",
+          "expect": ["confirmada", "carritos"]
+        }
+      ]
+    },
+    {
+      "id": "booking-full-options",
+      "name": "Booking with All Options",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Quiero reservar para 8 el sábado a las 14:00",
+          "expect": ["arroz"]
+        },
+        {
+          "turn": 2,
+          "user": "Arroz del señoret, 4 raciones",
+          "expect": ["señoret", "4 raciones"]
+        },
+        {
+          "turn": 3,
+          "user": "Y necesitamos 2 tronas y espacio para 1 carrito",
+          "expect": ["tronas", "carrito", "confirmo"]
+        },
+        {
+          "turn": 4,
+          "user": "Confirmo",
+          "expect": ["✅", "confirmada", "señoret", "tronas", "carrito"]
+        }
+      ]
+    },
+    {
+      "id": "booking-change-date",
+      "name": "Booking with Date Change",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Reserva para el sábado",
+          "expect": ["sábado", "personas"]
+        },
+        {
+          "turn": 2,
+          "user": "4 personas a las 14:00",
+          "expect": ["arroz"]
+        },
+        {
+          "turn": 3,
+          "user": "Espera, mejor el domingo",
+          "expect": ["domingo", "arroz"],
+          "notExpect": ["sábado"]
+        },
+        {
+          "turn": 4,
+          "user": "Sin arroz",
+          "expect": ["domingo", "4 personas", "14:00", "confirmo"],
+          "notExpect": ["sábado"]
+        },
+        {
+          "turn": 5,
+          "user": "Sí",
+          "expect": ["confirmada", "domingo"]
+        }
+      ]
+    },
+    {
+      "id": "booking-change-time",
+      "name": "Booking with Time Change",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Reserva domingo 14:00 para 4",
+          "expect": ["arroz"]
+        },
+        {
+          "turn": 2,
+          "user": "En verdad mejor a las 15:00",
+          "expect": ["15:00", "arroz"],
+          "notExpect": ["14:00"]
+        },
+        {
+          "turn": 3,
+          "user": "Sin arroz",
+          "expect": ["15:00", "confirmo"]
+        },
+        {
+          "turn": 4,
+          "user": "Ok",
+          "expect": ["✅", "15:00"]
+        }
+      ]
+    },
+    {
+      "id": "booking-change-people",
+      "name": "Booking with People Count Change",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Reserva para 4 personas el sábado a las 14:00",
+          "expect": ["arroz"]
+        },
+        {
+          "turn": 2,
+          "user": "Perdón, en verdad somos 6",
+          "expect": ["6", "arroz"],
+          "notExpect": ["4 personas"]
+        },
+        {
+          "turn": 3,
+          "user": "Sin arroz",
+          "expect": ["6 personas", "confirmo"],
+          "notExpect": ["4 personas"]
+        },
+        {
+          "turn": 4,
+          "user": "Confirma",
+          "expect": ["6 personas", "confirmada"]
+        }
+      ]
+    },
+    {
+      "id": "booking-with-question-interrupt",
+      "name": "Booking with Question Interrupt",
+      "messages": [
+        {
+          "turn": 1,
+          "user": "Quiero reservar para el sábado 4 personas",
+          "expect": ["hora", "qué hora"]
+        },
+        {
+          "turn": 2,
+          "user": "¿A qué hora abrís?",
+          "expect": ["13:30", "abrimos"]
+        },
+        {
+          "turn": 3,
+          "user": "Vale, a las 14:00",
+          "expect": ["arroz"]
+        },
+        {
+          "turn": 4,
+          "user": "No",
+          "expect": ["confirmo"]
+        },
+        {
+          "turn": 5,
+          "user": "Sí",
+          "expect": ["✅", "confirmada"]
+        }
+      ]
+    }
+  ]
+}
