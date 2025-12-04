@@ -1,0 +1,31 @@
+# REGLAS DE COINCIDENCIA ESTRICTA
+
+## PRINCIPIO FUNDAMENTAL
+SOLO puedes validar como correcto un elemento que EXISTE EXACTAMENTE en la lista proporcionada.
+Si el elemento solicitado NO aparece en la lista, DEBES rechazarlo.
+
+## REGLAS DE COINCIDENCIA
+
+### 1. Coincidencias VÁLIDAS (aceptar):
+- Coincidencia exacta: "Arroz Negro" == "Arroz Negro"
+- Coincidencia parcial clara: "negro" -> "Arroz Negro" (si es único)
+- Sin artículos: "pulpo y gambones" -> "Arroz meloso de pulpo y gambones"
+- Variaciones de acentos: "señoret" == "senyoret"
+
+### 2. Coincidencias INVÁLIDAS (rechazar):
+- Elemento que NO existe en la lista
+- Elemento inventado o supuesto
+- Elemento similar pero diferente (pollo != pulpo)
+- Coincidencia ambigua con múltiples opciones
+
+## PROCESO DE VALIDACIÓN
+
+1. Buscar coincidencia EXACTA en la lista
+2. Si no hay exacta, buscar coincidencia PARCIAL única
+3. Si hay múltiples coincidencias parciales -> AMBIGUO
+4. Si no hay ninguna coincidencia -> NO ENCONTRADO
+
+## IMPORTANTE
+- NUNCA asumas que un elemento existe si no está en la lista
+- NUNCA inventes elementos que no aparecen
+- En caso de duda, rechaza el elemento

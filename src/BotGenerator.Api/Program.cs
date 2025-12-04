@@ -27,10 +27,12 @@ var googleApiKey = Environment.GetEnvironmentVariable("GOOGLE_AI_API_KEY");
 var whatsappApiUrl = Environment.GetEnvironmentVariable("WHATSAPP_API_URL");
 var whatsappToken = Environment.GetEnvironmentVariable("WHATSAPP_TOKEN");
 var redisConnectionString = Environment.GetEnvironmentVariable("REDIS_CONNECTION_STRING");
+var mysqlConnectionString = Environment.GetEnvironmentVariable("MYSQL_CONNECTION_STRING");
 
 Console.WriteLine($"[ENV] GOOGLE_AI_API_KEY: {(string.IsNullOrEmpty(googleApiKey) ? "NOT SET" : "SET (" + googleApiKey?.Length + " chars)")}");
 Console.WriteLine($"[ENV] WHATSAPP_API_URL: {(string.IsNullOrEmpty(whatsappApiUrl) ? "NOT SET" : whatsappApiUrl)}");
 Console.WriteLine($"[ENV] WHATSAPP_TOKEN: {(string.IsNullOrEmpty(whatsappToken) ? "NOT SET" : "SET (" + whatsappToken?.Length + " chars)")}");
+Console.WriteLine($"[ENV] MYSQL_CONNECTION_STRING: {(string.IsNullOrEmpty(mysqlConnectionString) ? "NOT SET (using default)" : "SET")}");
 
 if (!string.IsNullOrEmpty(googleApiKey))
     builder.Configuration["GoogleAI:ApiKey"] = googleApiKey;
@@ -40,6 +42,8 @@ if (!string.IsNullOrEmpty(whatsappToken))
     builder.Configuration["WhatsApp:Token"] = whatsappToken;
 if (!string.IsNullOrEmpty(redisConnectionString))
     builder.Configuration["Redis:ConnectionString"] = redisConnectionString;
+if (!string.IsNullOrEmpty(mysqlConnectionString))
+    builder.Configuration["MySQL:ConnectionString"] = mysqlConnectionString;
 
 // ========== Add Core Services ==========
 builder.Services.AddControllers();
@@ -67,6 +71,8 @@ builder.Services.AddHttpClient<IWhatsAppService, WhatsAppService>((serviceProvid
 builder.Services.AddSingleton<IPromptLoaderService, PromptLoaderService>();
 builder.Services.AddSingleton<IContextBuilderService, ContextBuilderService>();
 builder.Services.AddSingleton<IConversationHistoryService, ConversationHistoryService>();
+builder.Services.AddSingleton<IMenuRepository, MenuRepository>();
+builder.Services.AddSingleton<IBookingRepository, BookingRepository>();
 
 // ========== Scoped Services ==========
 builder.Services.AddScoped<IIntentRouterService, IntentRouterService>();

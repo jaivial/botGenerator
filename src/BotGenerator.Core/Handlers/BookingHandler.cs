@@ -1,4 +1,5 @@
 using BotGenerator.Core.Models;
+using BotGenerator.Core.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Text;
@@ -12,13 +13,16 @@ public class BookingHandler
 {
     private readonly ILogger<BookingHandler> _logger;
     private readonly IConfiguration _configuration;
+    private readonly IBookingRepository _bookingRepository;
 
     public BookingHandler(
         ILogger<BookingHandler> logger,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IBookingRepository bookingRepository)
     {
         _logger = logger;
         _configuration = configuration;
+        _bookingRepository = bookingRepository;
     }
 
     public async Task<AgentResponse> CreateBookingAsync(
@@ -32,10 +36,9 @@ public class BookingHandler
 
         try
         {
-            // In production, call your booking API here
-            var success = await CreateBookingInDatabaseAsync(booking, cancellationToken);
+            var (success, bookingId) = await CreateBookingInDatabaseAsync(booking, cancellationToken);
 
-            if (success)
+            if (success && bookingId.HasValue)
             {
                 var confirmationMessage = BuildConfirmationMessage(booking);
 
@@ -47,12 +50,12 @@ public class BookingHandler
                     Metadata = new Dictionary<string, object>
                     {
                         ["bookingCreated"] = true,
-                        ["bookingId"] = Guid.NewGuid().ToString() // Replace with actual ID
+                        ["bookingId"] = bookingId.Value.ToString()
                     }
                 };
             }
 
-            return AgentResponse.Error("No se pudo crear la reserva");
+            return AgentResponse.Error("No se pudo crear la reserva. Por favor, inténtalo de nuevo o llámanos al +34 638 857 294.");
         }
         catch (Exception ex)
         {
@@ -61,18 +64,12 @@ public class BookingHandler
         }
     }
 
-    private async Task<bool> CreateBookingInDatabaseAsync(
+    private async Task<(bool success, long? bookingId)> CreateBookingInDatabaseAsync(
         BookingData booking,
         CancellationToken cancellationToken)
     {
-        // TODO: Implement actual database/API call
-        // Example:
-        // var apiUrl = _configuration["BookingApi:Url"];
-        // var response = await _httpClient.PostAsJsonAsync(apiUrl, booking);
-        // return response.IsSuccessStatusCode;
-
-        await Task.Delay(100, cancellationToken); // Simulate API call
-        return true;
+        var bookingId = await _bookingRepository.CreateBookingAsync(booking, cancellationToken);
+        return (bookingId.HasValue, bookingId);
     }
 
     private string BuildConfirmationMessage(BookingData booking)

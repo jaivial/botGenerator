@@ -19,6 +19,7 @@ public class MainConversationAgentTests
     private readonly Mock<IPromptLoaderService> _promptLoaderMock;
     private readonly Mock<IContextBuilderService> _contextBuilderMock;
     private readonly Mock<IConversationHistoryService> _historyServiceMock;
+    private readonly Mock<IMenuRepository> _menuRepositoryMock;
     private readonly Mock<IConfiguration> _configurationMock;
     private readonly Mock<ILogger<MainConversationAgent>> _loggerMock;
     private readonly MainConversationAgent _agent;
@@ -29,8 +30,13 @@ public class MainConversationAgentTests
         _promptLoaderMock = new Mock<IPromptLoaderService>();
         _contextBuilderMock = new Mock<IContextBuilderService>();
         _historyServiceMock = new Mock<IConversationHistoryService>();
+        _menuRepositoryMock = new Mock<IMenuRepository>();
         _configurationMock = new Mock<IConfiguration>();
         _loggerMock = new Mock<ILogger<MainConversationAgent>>();
+
+        // Setup default menu repository
+        _menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
 
         // Setup default configuration
         var mockSection = new Mock<IConfigurationSection>();
@@ -44,6 +50,7 @@ public class MainConversationAgentTests
             _promptLoaderMock.Object,
             _contextBuilderMock.Object,
             _historyServiceMock.Object,
+            _menuRepositoryMock.Object,
             _configurationMock.Object,
             _loggerMock.Object);
     }

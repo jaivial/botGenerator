@@ -1,5 +1,6 @@
 using BotGenerator.Core.Handlers;
 using BotGenerator.Core.Models;
+using BotGenerator.Core.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -15,16 +16,24 @@ public class BookingHandlerTests
 {
     private readonly Mock<ILogger<BookingHandler>> _loggerMock;
     private readonly Mock<IConfiguration> _configurationMock;
+    private readonly Mock<IBookingRepository> _bookingRepositoryMock;
     private readonly BookingHandler _handler;
 
     public BookingHandlerTests()
     {
         _loggerMock = new Mock<ILogger<BookingHandler>>();
         _configurationMock = new Mock<IConfiguration>();
+        _bookingRepositoryMock = new Mock<IBookingRepository>();
+
+        // Setup mock to return a booking ID (simulating successful DB insert)
+        _bookingRepositoryMock
+            .Setup(x => x.CreateBookingAsync(It.IsAny<BookingData>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1L);
 
         _handler = new BookingHandler(
             _loggerMock.Object,
-            _configurationMock.Object);
+            _configurationMock.Object,
+            _bookingRepositoryMock.Object);
     }
 
     /// <summary>

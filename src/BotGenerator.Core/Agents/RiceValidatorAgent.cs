@@ -10,15 +10,18 @@ public class RiceValidatorAgent : IAgent
 {
     private readonly IGeminiService _gemini;
     private readonly IPromptLoaderService _promptLoader;
+    private readonly IMenuRepository _menuRepository;
     private readonly ILogger<RiceValidatorAgent> _logger;
 
     public RiceValidatorAgent(
         IGeminiService gemini,
         IPromptLoaderService promptLoader,
+        IMenuRepository menuRepository,
         ILogger<RiceValidatorAgent> logger)
     {
         _gemini = gemini;
         _promptLoader = promptLoader;
+        _menuRepository = menuRepository;
         _logger = logger;
     }
 
@@ -91,22 +94,11 @@ public class RiceValidatorAgent : IAgent
         return ParseToValidationResult(aiResponse, userRiceRequest);
     }
 
-    private Task<List<string>> GetAvailableRiceTypesAsync(
+    private async Task<List<string>> GetAvailableRiceTypesAsync(
         CancellationToken cancellationToken)
     {
-        // In production, this would call an API
-        // For now, return hardcoded list
-        return Task.FromResult(new List<string>
-        {
-            "Arroz meloso de pulpo y gambones (+5€)",
-            "Arroz de señoret (+3€)",
-            "Paella valenciana de la Albufera",
-            "Arroz Negro",
-            "Arroz a banda",
-            "Arroz meloso de carrillada con boletus",
-            "Arroz seco de carrillada con boletus",
-            "Fideuá de marisco"
-        });
+        // Fetch rice types from MySQL database
+        return await _menuRepository.GetActiveRiceTypesAsync(cancellationToken);
     }
 
     private AgentResponse ParseValidationResult(string aiResponse, string originalRequest)

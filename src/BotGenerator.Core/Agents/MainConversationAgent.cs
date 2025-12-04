@@ -15,6 +15,7 @@ public class MainConversationAgent : IAgent
     private readonly IPromptLoaderService _promptLoader;
     private readonly IContextBuilderService _contextBuilder;
     private readonly IConversationHistoryService _historyService;
+    private readonly IMenuRepository _menuRepository;
     private readonly IConfiguration _configuration;
     private readonly ILogger<MainConversationAgent> _logger;
 
@@ -23,6 +24,7 @@ public class MainConversationAgent : IAgent
         IPromptLoaderService promptLoader,
         IContextBuilderService contextBuilder,
         IConversationHistoryService historyService,
+        IMenuRepository menuRepository,
         IConfiguration configuration,
         ILogger<MainConversationAgent> logger)
     {
@@ -30,6 +32,7 @@ public class MainConversationAgent : IAgent
         _promptLoader = promptLoader ?? throw new ArgumentNullException(nameof(promptLoader));
         _contextBuilder = contextBuilder ?? throw new ArgumentNullException(nameof(contextBuilder));
         _historyService = historyService ?? throw new ArgumentNullException(nameof(historyService));
+        _menuRepository = menuRepository ?? throw new ArgumentNullException(nameof(menuRepository));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -59,8 +62,34 @@ public class MainConversationAgent : IAgent
             // 3. Extract conversation state if not provided
             state ??= _historyService.ExtractState(history);
 
+            // 4. Pre-validate rice if user mentions it
+            var riceValidation = await PreValidateRiceAsync(message.MessageText, restaurantId, cancellationToken);
+
+            if (riceValidation.HasRiceRequest && !riceValidation.IsValid)
+            {
+                // Invalid rice - return rejection message directly
+                _logger.LogInformation(
+                    "Rice pre-validation failed: {RiceRequest} not found in menu",
+                    riceValidation.RequestedRice);
+
+                return new AgentResponse
+                {
+                    Intent = IntentType.Normal,
+                    AiResponse = $"Lo siento, no tenemos \"{riceValidation.RequestedRice}\" en nuestro menú. " +
+                                $"Nuestros arroces disponibles son: {string.Join(", ", riceValidation.AvailableTypes)}. " +
+                                "¿Te gustaría alguno de estos?"
+                };
+            }
+
             // 4. Build context with all dynamic values
             var context = _contextBuilder.BuildContext(message, state, history);
+
+            // Add rice validation result to context if valid
+            if (riceValidation.HasRiceRequest && riceValidation.IsValid)
+            {
+                context["validatedRiceName"] = riceValidation.ValidatedRiceName ?? "";
+                context["riceValidated"] = "true";
+            }
 
             // 5. Assemble the system prompt from external files
             var systemPrompt = await _promptLoader.AssembleSystemPromptAsync(
@@ -358,5 +387,110 @@ public class MainConversationAgent : IAgent
         return text;
     }
 
+    /// <summary>
+    /// Pre-validates rice type before calling the main AI.
+    /// This catches invalid rice types early in the conversation.
+    /// </summary>
+    private async Task<RicePreValidationResult> PreValidateRiceAsync(
+        string userMessage,
+        string restaurantId,
+        CancellationToken cancellationToken)
+    {
+        // Check if user mentions rice
+        var ricePattern = @"arroz\s+(?:del?\s+)?([a-záéíóúñ\s]+?)(?:\s+para|\s+\d+|\s*$|[,.])";
+        var match = Regex.Match(userMessage, ricePattern, RegexOptions.IgnoreCase);
+
+        if (!match.Success)
+        {
+            // No rice mentioned
+            return new RicePreValidationResult { HasRiceRequest = false };
+        }
+
+        var requestedRice = match.Groups[1].Value.Trim();
+        _logger.LogInformation("Detected rice request: {Rice}", requestedRice);
+
+        // Get available rice types from database
+        var availableTypes = await _menuRepository.GetActiveRiceTypesAsync(cancellationToken);
+
+        if (availableTypes.Count == 0)
+        {
+            _logger.LogWarning("No rice types found in database");
+            return new RicePreValidationResult { HasRiceRequest = false };
+        }
+
+        // Try to match the requested rice with available types
+        var normalizedRequest = NormalizeForComparison(requestedRice);
+
+        foreach (var available in availableTypes)
+        {
+            var normalizedAvailable = NormalizeForComparison(available);
+
+            // Check for exact or partial match
+            if (normalizedAvailable.Contains(normalizedRequest) ||
+                normalizedRequest.Contains(normalizedAvailable) ||
+                normalizedAvailable == normalizedRequest)
+            {
+                _logger.LogInformation(
+                    "Rice validated: {Request} -> {Available}",
+                    requestedRice, available);
+
+                return new RicePreValidationResult
+                {
+                    HasRiceRequest = true,
+                    IsValid = true,
+                    RequestedRice = requestedRice,
+                    ValidatedRiceName = available,
+                    AvailableTypes = availableTypes
+                };
+            }
+        }
+
+        // No match found
+        _logger.LogInformation(
+            "Rice not found: {Request}. Available: {Available}",
+            requestedRice, string.Join(", ", availableTypes));
+
+        return new RicePreValidationResult
+        {
+            HasRiceRequest = true,
+            IsValid = false,
+            RequestedRice = requestedRice,
+            AvailableTypes = availableTypes
+        };
+    }
+
+    /// <summary>
+    /// Normalizes a string for comparison by removing accents, lowercase, etc.
+    /// </summary>
+    private static string NormalizeForComparison(string text)
+    {
+        // Remove "arroz" prefix if present
+        text = Regex.Replace(text, @"^arroz\s+(del?\s+)?", "", RegexOptions.IgnoreCase);
+
+        // Lowercase
+        text = text.ToLowerInvariant();
+
+        // Remove accents
+        text = text.Replace("á", "a").Replace("é", "e").Replace("í", "i")
+                   .Replace("ó", "o").Replace("ú", "u").Replace("ñ", "n");
+
+        // Remove extra whitespace
+        text = Regex.Replace(text, @"\s+", " ").Trim();
+
+        return text;
+    }
+
     #endregion
+}
+
+/// <summary>
+/// Result of rice pre-validation.
+/// </summary>
+public record RicePreValidationResult
+{
+    public bool HasRiceRequest { get; init; }
+    public bool IsValid { get; init; }
+    public string? RequestedRice { get; init; }
+    public string? ValidatedRiceName { get; init; }
+    public List<string> AvailableTypes { get; init; } = new();
 }

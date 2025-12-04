@@ -154,7 +154,7 @@ public class PromptLoaderService : IPromptLoaderService
             var content = await LoadPromptAsync(restaurantId, moduleName);
             if (!string.IsNullOrWhiteSpace(content))
             {
-                var processed = ReplaceTokens(content, context);
+                var processed = ReplaceTokens(content, context, restaurantId);
                 sb.AppendLine(processed);
                 sb.AppendLine("\n---\n");
                 loadedModules.Add(moduleName);
@@ -167,7 +167,7 @@ public class PromptLoaderService : IPromptLoaderService
             var content = await LoadSharedPromptAsync(moduleName);
             if (!string.IsNullOrWhiteSpace(content))
             {
-                var processed = ReplaceTokens(content, context);
+                var processed = ReplaceTokens(content, context, restaurantId);
                 sb.AppendLine(processed);
                 sb.AppendLine("\n---\n");
                 loadedModules.Add($"shared:{moduleName}");
@@ -204,7 +204,7 @@ public class PromptLoaderService : IPromptLoaderService
             return "";
         }
 
-        return ReplaceTokens(content, context);
+        return ReplaceTokens(content, context, restaurantId);
     }
 
     public void ClearCache()
@@ -280,13 +280,20 @@ public class PromptLoaderService : IPromptLoaderService
     /// <summary>
     /// Replaces tokens in the template with values from the context dictionary.
     /// Supports both {{token}} and ${token} syntax.
-    /// Also handles simple conditionals: {{#if token}}...{{else}}...{{/if}}
+    /// Also handles:
+    /// - Conditionals: {{#if token}}...{{else}}...{{/if}}
+    /// - Imports: {{@import component-name}} or {{@import path/to/component}}
+    /// - Imports with params: {{@import component with key="value"}}
     /// </summary>
-    private string ReplaceTokens(string template, Dictionary<string, object> context)
+    private string ReplaceTokens(string template, Dictionary<string, object> context, string? restaurantId = null, HashSet<string>? processedImports = null)
     {
         var result = template;
+        processedImports ??= new HashSet<string>();
 
-        // First, handle conditionals
+        // First, process imports (before other processing to allow imported content to use tokens)
+        result = ProcessImports(result, context, restaurantId, processedImports);
+
+        // Then, handle conditionals
         result = ProcessConditionals(result, context);
 
         // Then replace simple tokens
@@ -301,11 +308,108 @@ public class PromptLoaderService : IPromptLoaderService
             result = result.Replace($"${{{key}}}", stringValue);
         }
 
-        // Clean up any unreplaced tokens (set to empty)
-        result = Regex.Replace(result, @"\{\{[^}]+\}\}", "");
+        // Clean up any unreplaced tokens (set to empty) - but preserve @import failures for debugging
+        result = Regex.Replace(result, @"\{\{(?!@import)[^}]+\}\}", "");
         result = Regex.Replace(result, @"\$\{[^}]+\}", "");
 
         return result;
+    }
+
+    /// <summary>
+    /// Processes {{@import component-name}} directives.
+    /// Supports:
+    /// - {{@import component-name}} - imports from components folder
+    /// - {{@import shared/component-name}} - imports from shared folder
+    /// - {{@import validation/strict-matching}} - imports from components/validation/
+    /// - {{@import component with key="value"}} - imports with additional context
+    /// </summary>
+    private string ProcessImports(string template, Dictionary<string, object> context, string? restaurantId, HashSet<string> processedImports)
+    {
+        // Pattern: {{@import path/to/component}} or {{@import component with key="value" key2="value2"}}
+        var importPattern = @"\{\{@import\s+([^\s}]+)(?:\s+with\s+(.+?))?\}\}";
+
+        return Regex.Replace(template, importPattern, match =>
+        {
+            var componentPath = match.Groups[1].Value.Trim();
+            var paramsString = match.Groups[2].Success ? match.Groups[2].Value : "";
+
+            // Prevent circular imports
+            if (processedImports.Contains(componentPath))
+            {
+                _logger.LogWarning("Circular import detected: {Component}", componentPath);
+                return $"<!-- CIRCULAR IMPORT: {componentPath} -->";
+            }
+            processedImports.Add(componentPath);
+
+            // Parse additional parameters
+            var importContext = new Dictionary<string, object>(context);
+            if (!string.IsNullOrWhiteSpace(paramsString))
+            {
+                var paramPattern = @"(\w+)\s*=\s*""([^""]*)""";
+                foreach (Match paramMatch in Regex.Matches(paramsString, paramPattern))
+                {
+                    importContext[paramMatch.Groups[1].Value] = paramMatch.Groups[2].Value;
+                }
+            }
+
+            // Try to load the component
+            var content = LoadComponentSync(componentPath, restaurantId);
+
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                _logger.LogWarning("Import not found: {Component}", componentPath);
+                return $"<!-- IMPORT NOT FOUND: {componentPath} -->";
+            }
+
+            // Recursively process the imported content
+            return ReplaceTokens(content, importContext, restaurantId, processedImports);
+        });
+    }
+
+    /// <summary>
+    /// Synchronously loads a component from various locations.
+    /// Resolution order:
+    /// 1. Restaurant-specific: prompts/restaurants/{restaurantId}/{path}.txt
+    /// 2. Shared: prompts/shared/{path}.txt
+    /// 3. Components: prompts/components/{path}.txt
+    /// </summary>
+    private string LoadComponentSync(string componentPath, string? restaurantId)
+    {
+        var extensions = new[] { ".txt", ".md", "" };
+        var searchPaths = new List<string>();
+
+        // Build search paths in priority order
+        if (!string.IsNullOrEmpty(restaurantId))
+        {
+            foreach (var ext in extensions)
+            {
+                searchPaths.Add(Path.Combine(_promptsBasePath, "restaurants", restaurantId, $"{componentPath}{ext}"));
+            }
+        }
+
+        // Shared folder
+        foreach (var ext in extensions)
+        {
+            searchPaths.Add(Path.Combine(_promptsBasePath, "shared", $"{componentPath}{ext}"));
+        }
+
+        // Components folder
+        foreach (var ext in extensions)
+        {
+            searchPaths.Add(Path.Combine(_promptsBasePath, "components", $"{componentPath}{ext}"));
+        }
+
+        // Try each path
+        foreach (var path in searchPaths)
+        {
+            if (File.Exists(path))
+            {
+                _logger.LogDebug("Loading component from: {Path}", path);
+                return File.ReadAllText(path);
+            }
+        }
+
+        return "";
     }
 
     /// <summary>

@@ -19,6 +19,8 @@ import requests
 import time
 import uuid
 import json
+import os
+from pathlib import Path
 from datetime import datetime
 from typing import Optional, Callable
 from dataclasses import dataclass, field
@@ -32,6 +34,125 @@ class TestConfig:
     default_phone: str = "34612345678"
     response_timeout: int = 30  # seconds to wait for response
     poll_interval: float = 0.3  # seconds between polls
+    logs_dir: str = "logs"  # directory to save conversation logs
+    enable_logging: bool = True  # whether to save conversation logs
+
+
+class ConversationLogger:
+    """Handles saving conversation logs to files"""
+
+    def __init__(self, logs_dir: str = "logs"):
+        self.logs_dir = Path(logs_dir)
+        self._ensure_logs_dir()
+
+    def _ensure_logs_dir(self):
+        """Create logs directory if it doesn't exist"""
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+
+    def _sanitize_filename(self, name: str) -> str:
+        """Sanitize test name for use in filename"""
+        # Replace spaces and special chars with underscores
+        sanitized = "".join(c if c.isalnum() or c in "-_" else "_" for c in name)
+        # Remove consecutive underscores
+        while "__" in sanitized:
+            sanitized = sanitized.replace("__", "_")
+        return sanitized.strip("_").lower()
+
+    def save_conversation(self, result: "ConversationResult") -> str:
+        """
+        Save a conversation result to a log file.
+
+        Args:
+            result: The ConversationResult to save
+
+        Returns:
+            Path to the saved log file
+        """
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        test_name = self._sanitize_filename(result.name)
+        filename = f"{timestamp}_{test_name}.log"
+        filepath = self.logs_dir / filename
+
+        with open(filepath, "w", encoding="utf-8") as f:
+            self._write_header(f, result)
+            self._write_conversation(f, result)
+            self._write_summary(f, result)
+
+        return str(filepath)
+
+    def _write_header(self, f, result: "ConversationResult"):
+        """Write log header"""
+        f.write("=" * 70 + "\n")
+        f.write(f"CONVERSATION LOG\n")
+        f.write("=" * 70 + "\n")
+        f.write(f"Test Name:   {result.name}\n")
+        f.write(f"Phone:       {result.phone}\n")
+        f.write(f"Timestamp:   {datetime.now().isoformat()}\n")
+        f.write(f"Duration:    {result.duration_seconds:.2f}s\n")
+        f.write(f"Result:      {'PASSED' if result.passed else 'FAILED'}\n")
+        f.write("=" * 70 + "\n\n")
+
+    def _write_conversation(self, f, result: "ConversationResult"):
+        """Write the conversation turns"""
+        f.write("CONVERSATION:\n")
+        f.write("-" * 70 + "\n\n")
+
+        for i, turn in enumerate(result.turns, 1):
+            # User message
+            f.write(f"[Turn {i}] USER:\n")
+            f.write(f"  {turn.user_input}\n\n")
+
+            # Bot response
+            f.write(f"[Turn {i}] BOT:\n")
+            if turn.bot_response:
+                # Write full response with indentation
+                response_lines = turn.bot_response.text.split("\n")
+                for line in response_lines:
+                    f.write(f"  {line}\n")
+
+                # Add message type if not plain text
+                if turn.bot_response.message_type != "text":
+                    f.write(f"\n  [Message Type: {turn.bot_response.message_type}]\n")
+
+                # Add choices/buttons if present
+                if turn.bot_response.choices:
+                    f.write(f"  [Choices: {', '.join(turn.bot_response.choices)}]\n")
+
+                # Add sections/list if present
+                if turn.bot_response.sections:
+                    f.write(f"  [Sections: {json.dumps(turn.bot_response.sections, ensure_ascii=False)}]\n")
+            else:
+                f.write("  [NO RESPONSE RECEIVED]\n")
+
+            f.write("\n")
+
+            # Validation result
+            status = "PASSED" if turn.validation_passed else "FAILED"
+            f.write(f"[Turn {i}] VALIDATION: {status}\n")
+
+            if turn.expected_contains:
+                f.write(f"  Expected to contain: {turn.expected_contains}\n")
+
+            if turn.expected_not_contains:
+                f.write(f"  Expected NOT to contain: {turn.expected_not_contains}\n")
+
+            if turn.validation_errors:
+                f.write(f"  Errors:\n")
+                for error in turn.validation_errors:
+                    f.write(f"    - {error}\n")
+
+            f.write("\n" + "-" * 70 + "\n\n")
+
+    def _write_summary(self, f, result: "ConversationResult"):
+        """Write summary section"""
+        f.write("SUMMARY:\n")
+        f.write("=" * 70 + "\n")
+        f.write(f"Total Turns:  {result.total_turns}\n")
+        f.write(f"Passed:       {result.passed_turns}\n")
+        f.write(f"Failed:       {result.failed_turns}\n")
+        f.write(f"Pass Rate:    {result.passed_turns/result.total_turns*100:.1f}%\n" if result.total_turns > 0 else "Pass Rate:    N/A\n")
+        f.write(f"Final Result: {'PASSED' if result.passed else 'FAILED'}\n")
+        f.write("=" * 70 + "\n")
 
 
 @dataclass
@@ -76,6 +197,11 @@ class ConversationTester:
     def __init__(self, config: Optional[TestConfig] = None):
         self.config = config or TestConfig()
         self._verify_servers()
+        # Initialize logger if enabled
+        if self.config.enable_logging:
+            self.logger = ConversationLogger(self.config.logs_dir)
+        else:
+            self.logger = None
 
     def _verify_servers(self):
         """Verify both the bot and mock server are running"""
@@ -428,7 +554,7 @@ class ConversationTester:
         print(f"Duration: {duration:.2f}s")
         print(f"{'='*60}\n")
 
-        return ConversationResult(
+        result = ConversationResult(
             name=name,
             phone=phone,
             turns=completed_turns,
@@ -438,6 +564,13 @@ class ConversationTester:
             failed_turns=len(completed_turns) - passed_count,
             duration_seconds=duration
         )
+
+        # Save conversation log if logging is enabled
+        if self.logger:
+            log_path = self.logger.save_conversation(result)
+            print(f"Log saved to: {log_path}")
+
+        return result
 
 
 def run_test_suite(

@@ -112,11 +112,16 @@ public class WebhookControllerTests
         var configMock = new Mock<IConfiguration>();
         var mainAgentLoggerMock = new Mock<ILogger<MainConversationAgent>>();
 
+        var menuRepositoryMock = new Mock<IMenuRepository>();
+        menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
+
         var mainAgent = new MainConversationAgent(
             geminiMock.Object,
             promptLoaderMock.Object,
             contextBuilderMock.Object,
             _historyServiceMock.Object,
+            menuRepositoryMock.Object,
             configMock.Object,
             mainAgentLoggerMock.Object);
 
@@ -211,11 +216,16 @@ public class WebhookControllerTests
         var configMock = new Mock<IConfiguration>();
         var mainAgentLoggerMock = new Mock<ILogger<MainConversationAgent>>();
 
+        var menuRepositoryMock = new Mock<IMenuRepository>();
+        menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
+
         var mainAgent = new MainConversationAgent(
             geminiMock.Object,
             promptLoaderMock.Object,
             contextBuilderMock.Object,
             _historyServiceMock.Object,
+            menuRepositoryMock.Object,
             configMock.Object,
             mainAgentLoggerMock.Object);
 
@@ -255,11 +265,16 @@ public class WebhookControllerTests
         var configMock = new Mock<IConfiguration>();
         var mainAgentLoggerMock = new Mock<ILogger<MainConversationAgent>>();
 
+        var menuRepositoryMock = new Mock<IMenuRepository>();
+        menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
+
         var mainAgent = new MainConversationAgent(
             geminiMock.Object,
             promptLoaderMock.Object,
             contextBuilderMock.Object,
             _historyServiceMock.Object,
+            menuRepositoryMock.Object,
             configMock.Object,
             mainAgentLoggerMock.Object);
 
@@ -304,11 +319,16 @@ public class WebhookControllerTests
         var configMock = new Mock<IConfiguration>();
         var mainAgentLoggerMock = new Mock<ILogger<MainConversationAgent>>();
 
+        var menuRepositoryMock = new Mock<IMenuRepository>();
+        menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
+
         var mainAgent = new MainConversationAgent(
             geminiMock.Object,
             promptLoaderMock.Object,
             contextBuilderMock.Object,
             _historyServiceMock.Object,
+            menuRepositoryMock.Object,
             configMock.Object,
             mainAgentLoggerMock.Object);
 
@@ -371,11 +391,16 @@ public class WebhookControllerTests
         var configMock = new Mock<IConfiguration>();
         var mainAgentLoggerMock = new Mock<ILogger<MainConversationAgent>>();
 
+        var menuRepositoryMock = new Mock<IMenuRepository>();
+        menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
+
         var mainAgent = new MainConversationAgent(
             geminiMock.Object,
             promptLoaderMock.Object,
             contextBuilderMock.Object,
             _historyServiceMock.Object,
+            menuRepositoryMock.Object,
             configMock.Object,
             mainAgentLoggerMock.Object);
 
@@ -438,11 +463,16 @@ public class WebhookControllerTests
         var configMock = new Mock<IConfiguration>();
         var mainAgentLoggerMock = new Mock<ILogger<MainConversationAgent>>();
 
+        var menuRepositoryMock = new Mock<IMenuRepository>();
+        menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
+
         var mainAgent = new MainConversationAgent(
             geminiMock.Object,
             promptLoaderMock.Object,
             contextBuilderMock.Object,
             _historyServiceMock.Object,
+            menuRepositoryMock.Object,
             configMock.Object,
             mainAgentLoggerMock.Object);
 
@@ -504,11 +534,16 @@ public class WebhookControllerTests
         var configMock = new Mock<IConfiguration>();
         var mainAgentLoggerMock = new Mock<ILogger<MainConversationAgent>>();
 
+        var menuRepositoryMock = new Mock<IMenuRepository>();
+        menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
+
         var mainAgent = new MainConversationAgent(
             geminiMock.Object,
             promptLoaderMock.Object,
             contextBuilderMock.Object,
             _historyServiceMock.Object,
+            menuRepositoryMock.Object,
             configMock.Object,
             mainAgentLoggerMock.Object);
 
@@ -606,11 +641,16 @@ public class WebhookControllerTests
         var configMock = new Mock<IConfiguration>();
         var mainAgentLoggerMock = new Mock<ILogger<MainConversationAgent>>();
 
+        var menuRepositoryMock = new Mock<IMenuRepository>();
+        menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
+
         var mainAgent = new MainConversationAgent(
             geminiMock.Object,
             promptLoaderMock.Object,
             contextBuilderMock.Object,
             _historyServiceMock.Object,
+            menuRepositoryMock.Object,
             configMock.Object,
             mainAgentLoggerMock.Object);
 
@@ -703,11 +743,16 @@ public class WebhookControllerTests
         var configMock = new Mock<IConfiguration>();
         var mainAgentLoggerMock = new Mock<ILogger<MainConversationAgent>>();
 
+        var menuRepositoryMock = new Mock<IMenuRepository>();
+        menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
+
         var mainAgent = new MainConversationAgent(
             geminiMock.Object,
             promptLoaderMock.Object,
             contextBuilderMock.Object,
             _historyServiceMock.Object,
+            menuRepositoryMock.Object,
             configMock.Object,
             mainAgentLoggerMock.Object);
 
@@ -802,11 +847,16 @@ public class WebhookControllerTests
         var configMock = new Mock<IConfiguration>();
         var mainAgentLoggerMock = new Mock<ILogger<MainConversationAgent>>();
 
+        var menuRepositoryMock = new Mock<IMenuRepository>();
+        menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
+
         var mainAgent = new MainConversationAgent(
             geminiMock.Object,
             promptLoaderMock.Object,
             contextBuilderMock.Object,
             _historyServiceMock.Object,
+            menuRepositoryMock.Object,
             configMock.Object,
             mainAgentLoggerMock.Object);
 
@@ -905,11 +955,16 @@ public class WebhookControllerTests
         var configMock = new Mock<IConfiguration>();
         var mainAgentLoggerMock = new Mock<ILogger<MainConversationAgent>>();
 
+        var menuRepositoryMock = new Mock<IMenuRepository>();
+        menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
+
         var mainAgent = new MainConversationAgent(
             geminiMock.Object,
             promptLoaderMock.Object,
             contextBuilderMock.Object,
             _historyServiceMock.Object,
+            menuRepositoryMock.Object,
             configMock.Object,
             mainAgentLoggerMock.Object);
 
@@ -1002,11 +1057,16 @@ public class WebhookControllerTests
         var configMock = new Mock<IConfiguration>();
         var mainAgentLoggerMock = new Mock<ILogger<MainConversationAgent>>();
 
+        var menuRepositoryMock = new Mock<IMenuRepository>();
+        menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
+
         var mainAgent = new MainConversationAgent(
             geminiMock.Object,
             promptLoaderMock.Object,
             contextBuilderMock.Object,
             _historyServiceMock.Object,
+            menuRepositoryMock.Object,
             configMock.Object,
             mainAgentLoggerMock.Object);
 
@@ -1104,11 +1164,16 @@ public class WebhookControllerTests
         var configMock = new Mock<IConfiguration>();
         var mainAgentLoggerMock = new Mock<ILogger<MainConversationAgent>>();
 
+        var menuRepositoryMock = new Mock<IMenuRepository>();
+        menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
+
         var mainAgent = new MainConversationAgent(
             geminiMock.Object,
             promptLoaderMock.Object,
             contextBuilderMock.Object,
             _historyServiceMock.Object,
+            menuRepositoryMock.Object,
             configMock.Object,
             mainAgentLoggerMock.Object);
 
@@ -1203,11 +1268,16 @@ public class WebhookControllerTests
         var configMock = new Mock<IConfiguration>();
         var mainAgentLoggerMock = new Mock<ILogger<MainConversationAgent>>();
 
+        var menuRepositoryMock = new Mock<IMenuRepository>();
+        menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
+
         var mainAgent = new MainConversationAgent(
             geminiMock.Object,
             promptLoaderMock.Object,
             contextBuilderMock.Object,
             _historyServiceMock.Object,
+            menuRepositoryMock.Object,
             configMock.Object,
             mainAgentLoggerMock.Object);
 
@@ -1306,11 +1376,16 @@ public class WebhookControllerTests
         var configMock = new Mock<IConfiguration>();
         var mainAgentLoggerMock = new Mock<ILogger<MainConversationAgent>>();
 
+        var menuRepositoryMock = new Mock<IMenuRepository>();
+        menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
+
         var mainAgent = new MainConversationAgent(
             geminiMock.Object,
             promptLoaderMock.Object,
             contextBuilderMock.Object,
             _historyServiceMock.Object,
+            menuRepositoryMock.Object,
             configMock.Object,
             mainAgentLoggerMock.Object);
 
@@ -1413,11 +1488,16 @@ public class WebhookControllerTests
         configSectionMock.Setup(x => x.GetChildren()).Returns(new List<IConfigurationSection>());
         configMock.Setup(x => x.GetSection("Restaurants:Mapping")).Returns(configSectionMock.Object);
 
+        var menuRepositoryMock = new Mock<IMenuRepository>();
+        menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
+
         var mainAgent = new MainConversationAgent(
             geminiMock.Object,
             promptLoaderMock.Object,
             contextBuilderMock.Object,
             _historyServiceMock.Object,
+            menuRepositoryMock.Object,
             configMock.Object,
             mainAgentLoggerMock.Object);
 
@@ -1529,11 +1609,16 @@ public class WebhookControllerTests
         configSectionMock.Setup(x => x.GetChildren()).Returns(new List<IConfigurationSection>());
         configMock.Setup(x => x.GetSection("Restaurants:Mapping")).Returns(configSectionMock.Object);
 
+        var menuRepositoryMock = new Mock<IMenuRepository>();
+        menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
+
         var mainAgent = new MainConversationAgent(
             geminiMock.Object,
             promptLoaderMock.Object,
             contextBuilderMock.Object,
             _historyServiceMock.Object,
+            menuRepositoryMock.Object,
             configMock.Object,
             mainAgentLoggerMock.Object);
 
@@ -1651,11 +1736,16 @@ public class WebhookControllerTests
         configSectionMock.Setup(x => x.GetChildren()).Returns(new List<IConfigurationSection>());
         configMock.Setup(x => x.GetSection("Restaurants:Mapping")).Returns(configSectionMock.Object);
 
+        var menuRepositoryMock = new Mock<IMenuRepository>();
+        menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
+
         var mainAgent = new MainConversationAgent(
             geminiMock.Object,
             promptLoaderMock.Object,
             contextBuilderMock.Object,
             _historyServiceMock.Object,
+            menuRepositoryMock.Object,
             configMock.Object,
             mainAgentLoggerMock.Object);
 
@@ -1754,11 +1844,16 @@ public class WebhookControllerTests
         configSectionMock.Setup(x => x.GetChildren()).Returns(new List<IConfigurationSection>());
         configMock.Setup(x => x.GetSection("Restaurants:Mapping")).Returns(configSectionMock.Object);
 
+        var menuRepositoryMock = new Mock<IMenuRepository>();
+        menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
+
         var mainAgent = new MainConversationAgent(
             geminiMock.Object,
             promptLoaderMock.Object,
             contextBuilderMock.Object,
             _historyServiceMock.Object,
+            menuRepositoryMock.Object,
             configMock.Object,
             mainAgentLoggerMock.Object);
 
@@ -1863,11 +1958,16 @@ public class WebhookControllerTests
         configSectionMock.Setup(x => x.GetChildren()).Returns(new List<IConfigurationSection>());
         configMock.Setup(x => x.GetSection("Restaurants:Mapping")).Returns(configSectionMock.Object);
 
+        var menuRepositoryMock = new Mock<IMenuRepository>();
+        menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
+
         var mainAgent = new MainConversationAgent(
             geminiMock.Object,
             promptLoaderMock.Object,
             contextBuilderMock.Object,
             _historyServiceMock.Object,
+            menuRepositoryMock.Object,
             configMock.Object,
             mainAgentLoggerMock.Object);
 
@@ -1956,11 +2056,16 @@ public class WebhookControllerTests
         configSectionMock.Setup(x => x.GetChildren()).Returns(new List<IConfigurationSection>());
         configMock.Setup(x => x.GetSection("Restaurants:Mapping")).Returns(configSectionMock.Object);
 
+        var menuRepositoryMock = new Mock<IMenuRepository>();
+        menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
+
         var mainAgent = new MainConversationAgent(
             geminiMock.Object,
             promptLoaderMock.Object,
             contextBuilderMock.Object,
             _historyServiceMock.Object,
+            menuRepositoryMock.Object,
             configMock.Object,
             mainAgentLoggerMock.Object);
 
@@ -2050,11 +2155,16 @@ public class WebhookControllerTests
         configSectionMock.Setup(x => x.GetChildren()).Returns(new List<IConfigurationSection>());
         configMock.Setup(x => x.GetSection("Restaurants:Mapping")).Returns(configSectionMock.Object);
 
+        var menuRepositoryMock = new Mock<IMenuRepository>();
+        menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
+
         var mainAgent = new MainConversationAgent(
             geminiMock.Object,
             promptLoaderMock.Object,
             contextBuilderMock.Object,
             _historyServiceMock.Object,
+            menuRepositoryMock.Object,
             configMock.Object,
             mainAgentLoggerMock.Object);
 
