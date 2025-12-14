@@ -46,11 +46,12 @@ public interface IBookingRepository
     Task<BookingRecord?> GetBookingByIdAsync(int bookingId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Cancels a booking by setting its status to 'cancelled'.
+    /// Deletes a booking from the bookings table.
+    /// Should be called AFTER inserting into cancelled_bookings archive.
     /// </summary>
-    /// <param name="bookingId">The booking ID to cancel.</param>
+    /// <param name="bookingId">The booking ID to delete.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>True if the cancellation succeeded, false otherwise.</returns>
+    /// <returns>True if the deletion succeeded, false otherwise.</returns>
     Task<bool> CancelBookingAsync(int bookingId, CancellationToken cancellationToken = default);
 
     /// <summary>

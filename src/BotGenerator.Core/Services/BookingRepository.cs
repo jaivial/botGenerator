@@ -425,25 +425,23 @@ public class BookingRepository : IBookingRepository
             await using var connection = new MySqlConnection(_connectionString);
             await connection.OpenAsync(cancellationToken);
 
-            var sql = @"
-                UPDATE bookings
-                SET status = 'cancelled'
-                WHERE id = @BookingId";
+            // DELETE the booking row (after it has been archived to cancelled_bookings)
+            var sql = @"DELETE FROM bookings WHERE id = @BookingId";
 
             var rowsAffected = await connection.ExecuteAsync(sql, new { BookingId = bookingId });
 
             if (rowsAffected > 0)
             {
-                _logger.LogInformation("Cancelled booking {BookingId}", bookingId);
+                _logger.LogInformation("Deleted booking {BookingId} from bookings table", bookingId);
                 return true;
             }
 
-            _logger.LogWarning("No rows updated when cancelling booking {BookingId}", bookingId);
+            _logger.LogWarning("No rows deleted when cancelling booking {BookingId}", bookingId);
             return false;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error cancelling booking {BookingId}", bookingId);
+            _logger.LogError(ex, "Error deleting booking {BookingId}", bookingId);
             return false;
         }
     }

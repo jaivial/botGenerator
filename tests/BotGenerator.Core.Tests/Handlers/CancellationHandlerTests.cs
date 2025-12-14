@@ -17,6 +17,7 @@ public class CancellationHandlerTests
     private readonly Mock<IBookingRepository> _bookingRepoMock;
     private readonly Mock<ICancellationStateStore> _stateStoreMock;
     private readonly Mock<IWhatsAppService> _whatsAppMock;
+    private readonly Mock<IGeminiService> _geminiMock;
     private readonly CancellationHandler _handler;
 
     public CancellationHandlerTests()
@@ -25,12 +26,24 @@ public class CancellationHandlerTests
         _bookingRepoMock = new Mock<IBookingRepository>();
         _stateStoreMock = new Mock<ICancellationStateStore>();
         _whatsAppMock = new Mock<IWhatsAppService>();
+        _geminiMock = new Mock<IGeminiService>();
+
+        // Setup default AI response for confirmation analysis
+        _geminiMock
+            .Setup(x => x.GenerateAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<List<ChatMessage>>(),
+                It.IsAny<GeminiGenerationConfig?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("UNCLEAR");
 
         _handler = new CancellationHandler(
             _loggerMock.Object,
             _bookingRepoMock.Object,
             _stateStoreMock.Object,
-            _whatsAppMock.Object);
+            _whatsAppMock.Object,
+            _geminiMock.Object);
     }
 
     #region No Bookings Tests
