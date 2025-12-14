@@ -293,38 +293,61 @@ public class CancellationHandler
 
     /// <summary>
     /// AI agent that analyzes user's confirmation response.
-    /// Understands natural language variations like "claro que sí", "por supuesto", "adelante", etc.
+    /// Uses regex for simple cases, AI for complex natural language variations.
     /// </summary>
     private async Task<string> AnalyzeConfirmationIntentAsync(
         string userMessage,
         BookingRecord booking,
         CancellationToken ct)
     {
+        var lowerText = userMessage.Trim().ToLowerInvariant();
+
+        // FAST PATH: Check simple/obvious cases with regex first (more reliable, saves API calls)
+        // Clear confirmations
+        if (Regex.IsMatch(lowerText, @"^(sí|si|s[ií][ ,]|yes|ok|vale|claro|confirmo|cancelar?|cancela|adelante|por supuesto|afirmativo|correcto|exacto|eso)$", RegexOptions.IgnoreCase))
+        {
+            _logger.LogDebug("Regex matched CONFIRM for: {Message}", userMessage);
+            return "CONFIRM";
+        }
+
+        // Clear rejections
+        if (Regex.IsMatch(lowerText, @"^(no|nop|nope|nel|mejor no|dejalo|déjalo|mantener|nada|no quiero|cancelado no)$", RegexOptions.IgnoreCase))
+        {
+            _logger.LogDebug("Regex matched REJECT for: {Message}", userMessage);
+            return "REJECT";
+        }
+
+        // Partial match for confirmations (not full match, but contains clear intent)
+        if (Regex.IsMatch(lowerText, @"\b(sí|si)\s*(,|por favor|cancel|quiero)?", RegexOptions.IgnoreCase) &&
+            !Regex.IsMatch(lowerText, @"\bno\b", RegexOptions.IgnoreCase))
+        {
+            _logger.LogDebug("Regex partial matched CONFIRM for: {Message}", userMessage);
+            return "CONFIRM";
+        }
+
+        // Partial match for rejections
+        if (Regex.IsMatch(lowerText, @"\b(no|mejor no|déjalo|dejalo|mantener|no cancel)", RegexOptions.IgnoreCase))
+        {
+            _logger.LogDebug("Regex partial matched REJECT for: {Message}", userMessage);
+            return "REJECT";
+        }
+
+        // SLOW PATH: Use AI for complex/ambiguous responses
         try
         {
+            _logger.LogDebug("Using AI to analyze confirmation intent for: {Message}", userMessage);
+
             var systemPrompt = @"Eres un analizador de intenciones. Tu tarea es determinar si el usuario CONFIRMA o RECHAZA la cancelación de una reserva.
 
-Responde SOLO con una de estas palabras:
-- CONFIRM: si el usuario dice sí, confirma, acepta, quiere cancelar, adelante, ok, vale, claro, por supuesto, etc.
-- REJECT: si el usuario dice no, mejor no, déjalo, no quiero, mantener la reserva, me arrepentí, etc.
-- UNCLEAR: si no puedes determinar la intención claramente
+Responde SOLO con una palabra: CONFIRM, REJECT o UNCLEAR.
 
-Ejemplos:
-- ""sí"" → CONFIRM
-- ""claro que sí"" → CONFIRM
-- ""adelante, cancela"" → CONFIRM
-- ""por supuesto"" → CONFIRM
-- ""ok"" → CONFIRM
-- ""no, mejor no"" → REJECT
-- ""déjalo como está"" → REJECT
-- ""me arrepentí"" → REJECT
-- ""qué hora era?"" → UNCLEAR";
+- CONFIRM: sí, confirmo, acepta, quiere cancelar, adelante, ok, vale, claro, por supuesto, dale, hazlo, procede
+- REJECT: no, mejor no, déjalo, no quiero, mantener la reserva, me arrepentí, no canceles
+- UNCLEAR: preguntas, información adicional, respuestas ambiguas";
 
-            var userPrompt = $@"El usuario está respondiendo a la pregunta de si quiere cancelar su reserva para el {booking.DateFormatted} a las {booking.TimeFormatted}.
+            var userPrompt = $@"Mensaje del usuario: ""{userMessage}""
 
-Mensaje del usuario: ""{userMessage}""
-
-¿CONFIRM, REJECT o UNCLEAR?";
+Respuesta (solo CONFIRM, REJECT o UNCLEAR):";
 
             var config = new GeminiGenerationConfig
             {
@@ -334,6 +357,8 @@ Mensaje del usuario: ""{userMessage}""
 
             var response = await _gemini.GenerateAsync(systemPrompt, userPrompt, null, config, ct);
             var intent = response.Trim().ToUpperInvariant();
+
+            _logger.LogDebug("AI returned: {Response} for message: {Message}", intent, userMessage);
 
             // Validate response
             if (intent.Contains("CONFIRM"))
@@ -345,15 +370,7 @@ Mensaje del usuario: ""{userMessage}""
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in AI confirmation analysis, falling back to regex");
-
-            // Fallback to regex if AI fails
-            var lowerText = userMessage.ToLowerInvariant();
-            if (Regex.IsMatch(lowerText, @"\b(sí|si|yes|confirmo|vale|ok|cancelar?|cancela|claro|adelante)\b"))
-                return "CONFIRM";
-            if (Regex.IsMatch(lowerText, @"\b(no|mejor no|dejalo|déjalo|mantener|nada)\b"))
-                return "REJECT";
-
+            _logger.LogError(ex, "Error in AI confirmation analysis for: {Message}", userMessage);
             return "UNCLEAR";
         }
     }
