@@ -759,8 +759,14 @@ public class WebhookController : ControllerBase
             }
         }
 
+        // Check if user is selecting from pending rice options (persistent store)
+        // This must happen BEFORE party size extraction to avoid treating "1" (rice selection) as party size
+        var pendingRice = _pendingRiceStore.Get(message.SenderNumber);
+        var isSelectingRice = pendingRice?.Options?.Count > 0;
+
         // Store extracted party size in state for subsequent messages
-        if (extractedPartySize.HasValue && extractedPartySize.Value > 0)
+        // But NOT if user is selecting from pending rice options (a simple "1" is rice selection, not party size)
+        if (extractedPartySize.HasValue && extractedPartySize.Value > 0 && !isSelectingRice)
         {
             updatedState = updatedState with { Personas = extractedPartySize.Value };
             _logger.LogDebug("Stored party size in state: {Personas}", updatedState.Personas);
@@ -774,9 +780,6 @@ public class WebhookController : ControllerBase
         }
 
         // === Rice constraints & validation (if user mentions a rice/paella) ===
-
-        // Check if user is selecting from pending rice options (persistent store)
-        var pendingRice = _pendingRiceStore.Get(message.SenderNumber);
         if (pendingRice?.Options?.Count > 0)
         {
             var selectedRice = TryParseRiceSelection(message.MessageText, pendingRice.Options);
