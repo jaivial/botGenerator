@@ -1247,7 +1247,7 @@ public class WebhookController : ControllerBase
     }
 
     /// <summary>
-    /// Extracts time from user message (e.g., "a las 14:00", "14:30", "las dos y media").
+    /// Extracts time from user message (e.g., "a las 14:00", "14:30", "a las 14", "las dos y media").
     /// </summary>
     private static TimeSpan? TryExtractTimeFromMessage(string text)
     {
@@ -1263,6 +1263,17 @@ public class WebhookController : ControllerBase
             if (hours >= 0 && hours <= 23 && mins >= 0 && mins <= 59)
             {
                 return new TimeSpan(hours, mins, 0);
+            }
+        }
+
+        // Pattern: "a las 14", "las 14" (hour without minutes)
+        var hourOnlyPattern = System.Text.RegularExpressions.Regex.Match(t, @"(?:a\s+)?las\s+(\d{1,2})(?:\s|$|[,\.])");
+        if (hourOnlyPattern.Success)
+        {
+            var hours = int.Parse(hourOnlyPattern.Groups[1].Value);
+            if (hours >= 12 && hours <= 23)
+            {
+                return new TimeSpan(hours, 0, 0);
             }
         }
 
