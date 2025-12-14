@@ -318,12 +318,22 @@ public class ConversationHistoryService : IConversationHistoryService
         int? servings = null;
 
         // Look for rice validation confirmation from AI
+        // Priority 1: "Has elegido" pattern (from multiple options selection)
         for (int i = history.Count - 1; i >= 0; i--)
         {
             var msg = history[i];
+            if (msg.Role != "assistant") continue;
 
-            if (msg.Role == "assistant" &&
-                Regex.IsMatch(msg.Content, @"✅.*disponible", RegexOptions.IgnoreCase))
+            // Pattern for when user selects from multiple options: "Has elegido la Paella valenciana de la Albufera"
+            var elegidoMatch = Regex.Match(msg.Content, @"Has elegido (?:la |el )?(.+?)(?:\.|¿|$)", RegexOptions.IgnoreCase);
+            if (elegidoMatch.Success)
+            {
+                riceType = elegidoMatch.Groups[1].Value.Trim();
+                break;
+            }
+
+            // Pattern for single match: "✅ Paella valenciana disponible"
+            if (Regex.IsMatch(msg.Content, @"✅.*disponible", RegexOptions.IgnoreCase))
             {
                 var match = Regex.Match(msg.Content, @"✅\s*(.+?)\s+disponible");
                 if (match.Success)
@@ -726,14 +736,24 @@ public class ConversationHistoryService : IConversationHistoryService
 
     private bool WasAskedAboutHighChairs(ChatMessage assistantMsg)
     {
-        return assistantMsg.Role == "assistant" &&
-               Regex.IsMatch(assistantMsg.Content, @"trona", RegexOptions.IgnoreCase);
+        if (assistantMsg.Role != "assistant") return false;
+
+        // Must be a QUESTION about tronas, not just mention "trona" anywhere
+        // Patterns: "¿Necesitáis tronas?", "¿Cuántas tronas?", "tronas?" at end
+        return Regex.IsMatch(assistantMsg.Content,
+            @"(\?.*trona|trona.*\?|¿.*trona|necesit[aá]is.*trona|cu[aá]ntas?\s+tronas?)",
+            RegexOptions.IgnoreCase);
     }
 
     private bool WasAskedAboutStrollers(ChatMessage assistantMsg)
     {
-        return assistantMsg.Role == "assistant" &&
-               Regex.IsMatch(assistantMsg.Content, @"carrito|cochecito", RegexOptions.IgnoreCase);
+        if (assistantMsg.Role != "assistant") return false;
+
+        // Must be a QUESTION about carritos/cochecitos, not just mention them anywhere
+        // Patterns: "¿Traéis carrito?", "¿carrito de bebé?", "carrito?" at end
+        return Regex.IsMatch(assistantMsg.Content,
+            @"(\?.*carrito|carrito.*\?|¿.*carrito|tra[eé]is.*carrito|cochecito.*\?)",
+            RegexOptions.IgnoreCase);
     }
 
     #endregion
