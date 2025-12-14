@@ -1680,7 +1680,7 @@ public class WebhookController : ControllerBase
 
         var lowerText = text.ToLowerInvariant();
 
-        // Primary cancellation keywords
+        // Primary cancellation keywords (explicit)
         var cancellationPatterns = new[]
         {
             "cancelar",
@@ -1691,17 +1691,50 @@ public class WebhookController : ControllerBase
             "eliminar mi reserva",
             "borrar reserva",
             "borrar mi reserva",
-            "no puedo ir",
-            "no voy a poder",
-            "no podré ir",
-            "no podremos ir",
             "deshacer reserva",
             "dar de baja",
             "cancel"
         };
 
-        // Check for any cancellation pattern
+        // Implicit cancellation patterns (user says they won't come)
+        var implicitCancellationPatterns = new[]
+        {
+            "no voy a ir",
+            "no vamos a ir",
+            "no puedo ir",
+            "no podemos ir",
+            "no voy a poder",
+            "no podré ir",
+            "no podremos ir",
+            "no iré",
+            "no iremos",
+            "ya no voy",
+            "ya no puedo",
+            "ya no podemos",
+            "al final no voy",
+            "al final no puedo",
+            "al final no podemos",
+            "no va a ser posible",
+            "no será posible",
+            "me ha surgido",
+            "nos ha surgido",
+            "surgió algo",
+            "ha surgido algo",
+            "tengo un imprevisto",
+            "tenemos un imprevisto",
+            "no podré asistir",
+            "no podremos asistir"
+        };
+
+        // Check for explicit cancellation patterns
         foreach (var pattern in cancellationPatterns)
+        {
+            if (lowerText.Contains(pattern))
+                return true;
+        }
+
+        // Check for implicit cancellation patterns
+        foreach (var pattern in implicitCancellationPatterns)
         {
             if (lowerText.Contains(pattern))
                 return true;
