@@ -549,6 +549,53 @@ public class WebhookController : ControllerBase
             return (true, sameDayMsg, updatedState);
         }
 
+        // === Early date detection: Check restaurant_days (open/closed) and daily capacity ===
+        var extractedDate = TryExtractDateFromMessage(message.MessageText);
+        if (extractedDate.HasValue && extractedDate.Value.Date > DateTime.Now.Date)
+        {
+            var requestedDate = extractedDate.Value.Date;
+            _logger.LogInformation(
+                "Early date detection: {Date} extracted from message for {Phone}",
+                requestedDate.ToString("yyyy-MM-dd"),
+                message.SenderNumber);
+
+            // Check if day is open (restaurant_days table)
+            var dayStatus = await _availability.CheckDayStatusAsync(requestedDate, cancellationToken);
+            if (!dayStatus.IsOpen)
+            {
+                _logger.LogInformation(
+                    "Day {Date} is closed for {Phone}",
+                    requestedDate.ToString("yyyy-MM-dd"),
+                    message.SenderNumber);
+
+                var closedMsg = $"Lo siento, el *{dayStatus.Weekday}* estamos cerrados. ¿Te viene bien otro día?";
+                await _whatsApp.SendTextAsync(message.SenderNumber, closedMsg, cancellationToken);
+                return (true, closedMsg, updatedState);
+            }
+
+            // Check daily capacity (if party size is also mentioned)
+            var extractedPartySize = TryExtractPartySizeFromMessage(message.MessageText);
+            if (extractedPartySize.HasValue && extractedPartySize.Value > 0)
+            {
+                var dailyLimit = await _availability.GetDailyLimitAsync(requestedDate, cancellationToken);
+                if (dailyLimit.FreeBookingSeats < extractedPartySize.Value)
+                {
+                    _logger.LogInformation(
+                        "Day {Date} is full for {PartySize} people (free: {Free}) for {Phone}",
+                        requestedDate.ToString("yyyy-MM-dd"),
+                        extractedPartySize.Value,
+                        dailyLimit.FreeBookingSeats,
+                        message.SenderNumber);
+
+                    var fullMsg = dailyLimit.FreeBookingSeats <= 0
+                        ? $"Ese día ya no tenemos disponibilidad. ¿Te viene bien otra fecha?"
+                        : $"Ese día solo nos quedan {dailyLimit.FreeBookingSeats} plazas, no podemos acoger {extractedPartySize.Value} personas. ¿Te viene bien otra fecha?";
+                    await _whatsApp.SendTextAsync(message.SenderNumber, fullMsg, cancellationToken);
+                    return (true, fullMsg, updatedState);
+                }
+            }
+        }
+
         // === Rice constraints & validation (if user mentions a rice/paella) ===
         if (DeclinesRice(message.MessageText))
         {
@@ -746,7 +793,24 @@ public class WebhookController : ControllerBase
     private static bool MentionsRice(string text)
     {
         var t = text.ToLowerInvariant();
-        return t.Contains("arroz") || t.Contains("paella") || t.Contains("fideu") || t.Contains("fideuá");
+        // Primary keywords
+        if (t.Contains("arroz") || t.Contains("paella") || t.Contains("fideu") || t.Contains("fideuá"))
+            return true;
+
+        // Common rice type patterns (specific ingredients/names users might mention)
+        var ricePatterns = new[]
+        {
+            "bogavante", "marisco", "mariscos", "langosta", "gambas", "sepia",
+            "verduras", "verdura", "vegetariano",
+            "pollo", "conejo", "pato", "costilla", "costillas",
+            "chorizo", "longaniza", "morcilla",
+            "señorito", "señorita", "banda", "abanda",
+            "negro", "negra", "caldoso", "caldosa",
+            "parellada", "mixto", "mixta", "valenciana", "valenciano",
+            "espardenyes", "espardeñas", "coliflor"
+        };
+
+        return ricePatterns.Any(pattern => t.Contains(pattern));
     }
 
     private static bool DeclinesRice(string text)
@@ -840,6 +904,147 @@ public class WebhookController : ControllerBase
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Attempts to extract a date from the user's message text.
+    /// Supports day names (sábado, domingo), relative days (mañana), and date formats (21/12).
+    /// </summary>
+    private static DateTime? TryExtractDateFromMessage(string text)
+    {
+        var t = text.ToLowerInvariant().Trim();
+        var today = DateTime.Now.Date;
+
+        // Day name mappings (Spanish)
+        var dayNames = new Dictionary<string, DayOfWeek>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["lunes"] = DayOfWeek.Monday,
+            ["martes"] = DayOfWeek.Tuesday,
+            ["miercoles"] = DayOfWeek.Wednesday,
+            ["miércoles"] = DayOfWeek.Wednesday,
+            ["jueves"] = DayOfWeek.Thursday,
+            ["viernes"] = DayOfWeek.Friday,
+            ["sabado"] = DayOfWeek.Saturday,
+            ["sábado"] = DayOfWeek.Saturday,
+            ["domingo"] = DayOfWeek.Sunday
+        };
+
+        // Check for day names
+        foreach (var (name, dayOfWeek) in dayNames)
+        {
+            if (System.Text.RegularExpressions.Regex.IsMatch(t, $@"\b{name}\b"))
+            {
+                // Find the next occurrence of this day
+                var daysUntil = ((int)dayOfWeek - (int)today.DayOfWeek + 7) % 7;
+                if (daysUntil == 0) daysUntil = 7; // If today is that day, assume next week
+                return today.AddDays(daysUntil);
+            }
+        }
+
+        // Check for "mañana"
+        if (System.Text.RegularExpressions.Regex.IsMatch(t, @"\bmañana\b"))
+        {
+            return today.AddDays(1);
+        }
+
+        // Check for "pasado mañana"
+        if (t.Contains("pasado mañana"))
+        {
+            return today.AddDays(2);
+        }
+
+        // Check for date patterns: dd/MM, dd-MM, dd/MM/yyyy
+        var dateMatch = System.Text.RegularExpressions.Regex.Match(t, @"\b(\d{1,2})[/\-](\d{1,2})(?:[/\-](\d{4}|\d{2}))?\b");
+        if (dateMatch.Success)
+        {
+            var day = int.Parse(dateMatch.Groups[1].Value);
+            var month = int.Parse(dateMatch.Groups[2].Value);
+            var year = today.Year;
+
+            if (dateMatch.Groups[3].Success)
+            {
+                var yearPart = dateMatch.Groups[3].Value;
+                year = yearPart.Length == 2 ? 2000 + int.Parse(yearPart) : int.Parse(yearPart);
+            }
+            else if (month < today.Month || (month == today.Month && day < today.Day))
+            {
+                // If month already passed, assume next year
+                year = today.Year + 1;
+            }
+
+            try
+            {
+                return new DateTime(year, month, day);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        // Check for "día X" or "el X" patterns (day number only)
+        var dayOnlyMatch = System.Text.RegularExpressions.Regex.Match(t, @"\b(?:día|el|para el)\s*(\d{1,2})\b");
+        if (dayOnlyMatch.Success)
+        {
+            var day = int.Parse(dayOnlyMatch.Groups[1].Value);
+            if (day >= 1 && day <= 31)
+            {
+                var month = today.Month;
+                var year = today.Year;
+
+                // If day already passed this month, use next month
+                if (day <= today.Day)
+                {
+                    month++;
+                    if (month > 12)
+                    {
+                        month = 1;
+                        year++;
+                    }
+                }
+
+                try
+                {
+                    return new DateTime(year, month, day);
+                }
+                catch
+                {
+                    return null;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Attempts to extract the party size from the user's message text.
+    /// </summary>
+    private static int? TryExtractPartySizeFromMessage(string text)
+    {
+        var t = text.ToLowerInvariant();
+
+        // Pattern: "X personas" or "somos X" or "para X"
+        var patterns = new[]
+        {
+            @"(\d+)\s*personas?",
+            @"somos\s*(\d+)",
+            @"seremos\s*(\d+)",
+            @"mesa\s*(?:para|de)\s*(\d+)",
+            @"para\s*(\d+)\s*(?:personas?|comensales?|adultos?)?",
+            @"(\d+)\s*(?:comensales?|adultos?)"
+        };
+
+        foreach (var pattern in patterns)
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(t, pattern);
+            if (match.Success && int.TryParse(match.Groups[1].Value, out var size) && size > 0 && size <= 50)
+            {
+                return size;
+            }
+        }
+
+        return null;
     }
 
     private static bool TryExtractRiceServings(string text, out int servings)
