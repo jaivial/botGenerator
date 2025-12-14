@@ -105,6 +105,24 @@ public class WebhookController : ControllerBase
             // Log raw payload for debugging
             _logger.LogDebug("Received webhook: {Body}", body.ToString());
 
+            // Check event type - only process actual messages
+            if (body.TryGetProperty("EventType", out var eventTypeProp))
+            {
+                var eventType = eventTypeProp.GetString();
+                if (eventType != "messages")
+                {
+                    _logger.LogDebug("Ignoring non-message event: {EventType}", eventType);
+                    return Ok();
+                }
+            }
+
+            // Also check for "message" property existence before trying to extract
+            if (!body.TryGetProperty("message", out _))
+            {
+                _logger.LogDebug("No 'message' property in payload, ignoring");
+                return Ok();
+            }
+
             // 1. Extract message data
             var message = ExtractMessage(body);
 
