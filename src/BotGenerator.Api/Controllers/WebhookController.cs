@@ -931,12 +931,57 @@ public class WebhookController : ControllerBase
 
     /// <summary>
     /// Attempts to extract a date from the user's message text.
-    /// Supports day names (sábado, domingo), relative days (mañana), and date formats (21/12).
+    /// Supports day names (sábado, domingo), relative days (mañana), date formats (21/12), and Spanish month names (24 de mayo).
     /// </summary>
     private static DateTime? TryExtractDateFromMessage(string text)
     {
         var t = text.ToLowerInvariant().Trim();
         var today = DateTime.Now.Date;
+
+        // Spanish month names mapping
+        var spanishMonths = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["enero"] = 1,
+            ["febrero"] = 2,
+            ["marzo"] = 3,
+            ["abril"] = 4,
+            ["mayo"] = 5,
+            ["junio"] = 6,
+            ["julio"] = 7,
+            ["agosto"] = 8,
+            ["septiembre"] = 9,
+            ["octubre"] = 10,
+            ["noviembre"] = 11,
+            ["diciembre"] = 12
+        };
+
+        // Check for "X de [month]" or "día X de [month]" patterns FIRST (highest priority)
+        foreach (var (monthName, monthNum) in spanishMonths)
+        {
+            // Pattern: "24 de mayo", "el 24 de mayo", "día 24 de mayo", "para el 24 de mayo"
+            var monthPattern = $@"(?:el\s+|día\s+|para\s+el\s+)?(\d{{1,2}})\s+de\s+{monthName}";
+            var monthMatch = System.Text.RegularExpressions.Regex.Match(t, monthPattern);
+            if (monthMatch.Success)
+            {
+                var day = int.Parse(monthMatch.Groups[1].Value);
+                var year = today.Year;
+
+                // If month has passed or is current month but day has passed, use next year
+                if (monthNum < today.Month || (monthNum == today.Month && day <= today.Day))
+                {
+                    year = today.Year + 1;
+                }
+
+                try
+                {
+                    return new DateTime(year, monthNum, day);
+                }
+                catch
+                {
+                    // Invalid date (e.g., 31 de febrero)
+                }
+            }
+        }
 
         // Day name mappings (Spanish)
         var dayNames = new Dictionary<string, DayOfWeek>(StringComparer.OrdinalIgnoreCase)
