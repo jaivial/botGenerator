@@ -46,48 +46,41 @@ public class AiStateExtractorService : IAiStateExtractorService
         // Get upcoming weekends for context
         var upcomingWeekends = _contextBuilder.GetUpcomingWeekends();
 
-        var systemPrompt = $@"Eres un extractor de datos de reservas. Analiza la conversación y extrae los datos de la reserva en formato JSON.
+        var systemPrompt = $@"Eres un extractor de datos de reservas de restaurante. Tu ÚNICA tarea es analizar la conversación y devolver JSON.
 
-FECHA DE HOY: {DateTime.Now:dd/MM/yyyy} ({DateTime.Now:dddd})
-PRÓXIMOS FINES DE SEMANA DISPONIBLES:
-{upcomingWeekends}
+FECHA HOY: {DateTime.Now:dd/MM/yyyy} ({DateTime.Now:dddd})
+FINES DE SEMANA: {upcomingWeekends}
 
-INSTRUCCIONES:
-1. Extrae SOLO datos que el cliente haya CONFIRMADO explícitamente
-2. Si el asistente preguntó algo y el cliente NO respondió aún, ese campo es null
-3. Para tronas/carritos:
-   - Si cliente dijo NO (""no"", ""ninguna"", ""nada"", ""0"", ""sin tronas"", etc.) → valor 0
-   - Si cliente dijo SÍ pero sin cantidad → valor -1 (necesita especificar cuántas)
-   - Si cliente dijo SÍ con cantidad (""2 tronas"", ""una trona"") → ese número
-   - Si NO se ha preguntado o no hay respuesta clara → null
-4. Para arroz:
-   - Si cliente dijo que NO quiere arroz → arrozType = """"
-   - Si eligió un arroz específico → arrozType = nombre del arroz
-   - Si no se ha decidido → arrozType = null
-5. Detecta si el cliente está CONFIRMANDO la reserva (""sí, confirmo"", ""perfecto"", ""de acuerdo"", etc.)
+REGLAS DE EXTRACCIÓN:
+1. fecha: formato DD/MM/YYYY o null si no mencionada
+2. hora: formato HH:MM o null si no mencionada
+3. personas: número entero o null
+4. arrozType: nombre EXACTO del arroz elegido, """" si dijo que no quiere arroz, null si no decidido
+5. arrozServings: número de raciones o null
+6. tronas: 0 si dijo no, -1 si dijo sí sin cantidad, número si dio cantidad, null si no preguntado
+7. carritos: igual que tronas
+8. isConfirming: true SOLO si el último mensaje del cliente es una confirmación clara (""sí"", ""confirmo"", ""perfecto"")
 
-RESPONDE SOLO CON JSON VÁLIDO, SIN TEXTO ADICIONAL:
-{{
-  ""fecha"": ""DD/MM/YYYY o null"",
-  ""hora"": ""HH:MM o null"",
-  ""personas"": ""número o null"",
-  ""arrozType"": ""nombre del arroz, cadena vacía si no quiere, o null si no decidido"",
-  ""arrozServings"": ""número de raciones o null"",
-  ""tronas"": ""número (0 si no), -1 si sí pero sin cantidad, null si no preguntado"",
-  ""carritos"": ""número (0 si no), -1 si sí pero sin cantidad, null si no preguntado"",
-  ""isConfirming"": ""true si el cliente está confirmando la reserva en su último mensaje""
-}}";
+IMPORTANTE:
+- Para tronas/carritos: ""no"", ""ninguna"", ""nada"", ""sin tronas"", ""no hace falta"" = 0
+- El arroz debe ser el nombre COMPLETO Y EXACTO como aparece en el menú
+- NO uses markdown, NO uses ```json```, responde SOLO el objeto JSON
+- Si el asistente confirmó ""0 tronas"" o ""0 carritos"", el valor es 0, NO null";
 
-        var userMessage = $"CONVERSACIÓN:\n{conversationText}\n\nExtrae los datos de la reserva:";
+        var userMessage = $@"CONVERSACIÓN:
+{conversationText}
+
+Responde SOLO con este JSON (sin markdown):
+{{""fecha"":""DD/MM/YYYY o null"",""hora"":""HH:MM o null"",""personas"":null,""arrozType"":null,""arrozServings"":null,""tronas"":null,""carritos"":null,""isConfirming"":false}}";
 
         try
         {
             var config = new GeminiGenerationConfig
             {
-                Temperature = 0.1,
-                TopP = 0.8,
-                TopK = 10,
-                MaxOutputTokens = 512
+                Temperature = 0.0,  // Deterministic for extraction
+                TopP = 0.95,
+                TopK = 40,
+                MaxOutputTokens = 1024  // Increased for complete JSON
             };
 
             var response = await _gemini.GenerateAsync(
@@ -117,8 +110,18 @@ RESPONDE SOLO CON JSON VÁLIDO, SIN TEXTO ADICIONAL:
     {
         try
         {
+            // Strip markdown code block wrappers if present
+            var cleanResponse = response.Trim();
+            if (cleanResponse.StartsWith("```json"))
+                cleanResponse = cleanResponse.Substring(7);
+            else if (cleanResponse.StartsWith("```"))
+                cleanResponse = cleanResponse.Substring(3);
+            if (cleanResponse.EndsWith("```"))
+                cleanResponse = cleanResponse.Substring(0, cleanResponse.Length - 3);
+            cleanResponse = cleanResponse.Trim();
+
             // Extract JSON from response (in case AI adds extra text)
-            var jsonMatch = Regex.Match(response, @"\{[\s\S]*\}");
+            var jsonMatch = Regex.Match(cleanResponse, @"\{[\s\S]*\}");
             if (!jsonMatch.Success)
             {
                 _logger.LogWarning("No JSON found in AI response: {Response}", response);
