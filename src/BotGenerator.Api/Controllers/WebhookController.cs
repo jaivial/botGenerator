@@ -278,11 +278,32 @@ public class WebhookController : ControllerBase
                     var adminText2 = BuildAdminNewBookingNotification(finalResponseDirect.ExtractedData, bookingId2);
                     await _whatsApp.SendTextAsync("34692747052", adminText2, cancellationToken);
 
+                    // Store history for deterministic booking
+                    await _historyService.AddMessageAsync(
+                        message.SenderNumber,
+                        ChatMessage.FromUser(message.MessageText, message.PushName),
+                        cancellationToken);
+                    await _historyService.AddMessageAsync(
+                        message.SenderNumber,
+                        ChatMessage.FromAssistant(customerText2),
+                        cancellationToken);
+
                     return Ok(new { processed = true, bookingCreated = true, bookingId = bookingId2, deterministic = true });
                 }
 
                 // Fallback: just send whatever message the handler returned
                 await _whatsApp.SendTextAsync(message.SenderNumber, finalResponseDirect.AiResponse, cancellationToken);
+
+                // Store history for deterministic fallback
+                await _historyService.AddMessageAsync(
+                    message.SenderNumber,
+                    ChatMessage.FromUser(message.MessageText, message.PushName),
+                    cancellationToken);
+                await _historyService.AddMessageAsync(
+                    message.SenderNumber,
+                    ChatMessage.FromAssistant(finalResponseDirect.AiResponse),
+                    cancellationToken);
+
                 return Ok(new { processed = true, deterministic = true });
             }
 
@@ -293,6 +314,14 @@ public class WebhookController : ControllerBase
             // 5. Route based on intent
             var finalResponse = await _intentRouter.RouteAsync(
                 agentResponse, message, state, cancellationToken) ?? agentResponse;
+
+            // 5b. Store conversation history AFTER routing (so the FINAL response is stored)
+            // This is critical for multi-turn flows like tronas/carritos where IntentRouter
+            // replaces the AI response with hardcoded questions.
+            await _historyService.AddMessageAsync(
+                message.SenderNumber,
+                ChatMessage.FromUser(message.MessageText, message.PushName),
+                cancellationToken);
 
             // 6. Send response
             // If booking was created, send the official confirmation with buttons (policies + cancel)
@@ -338,6 +367,12 @@ public class WebhookController : ControllerBase
                 var adminText = BuildAdminNewBookingNotification(finalResponse.ExtractedData, bookingId);
                 await _whatsApp.SendTextAsync("34692747052", adminText, cancellationToken);
 
+                // Store assistant response (booking confirmation)
+                await _historyService.AddMessageAsync(
+                    message.SenderNumber,
+                    ChatMessage.FromAssistant(customerText),
+                    cancellationToken);
+
                 return Ok(new { processed = true, bookingCreated = true, bookingId });
             }
 
@@ -352,6 +387,12 @@ public class WebhookController : ControllerBase
                     "Failed to send response to {Phone}",
                     message.SenderNumber);
             }
+
+            // Store assistant response (final response after routing)
+            await _historyService.AddMessageAsync(
+                message.SenderNumber,
+                ChatMessage.FromAssistant(finalResponse.AiResponse),
+                cancellationToken);
 
             return Ok(new { processed = true });
         }

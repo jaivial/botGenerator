@@ -113,16 +113,9 @@ public class MainConversationAgent : IAgent
             // 7. Parse the response for commands and clean it
             var parsedResponse = ParseAiResponse(aiResponse, message, state);
 
-            // 8. Store the new messages in history
-            await _historyService.AddMessageAsync(
-                message.SenderNumber,
-                ChatMessage.FromUser(message.MessageText, message.PushName),
-                cancellationToken);
-
-            await _historyService.AddMessageAsync(
-                message.SenderNumber,
-                ChatMessage.FromAssistant(parsedResponse.AiResponse),
-                cancellationToken);
+            // NOTE: History is now stored in WebhookController AFTER IntentRouter
+            // processes the response. This ensures the FINAL response (which may be
+            // modified by IntentRouter) is what gets stored, not the intermediate AI response.
 
             return parsedResponse;
         }
