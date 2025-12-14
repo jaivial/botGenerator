@@ -488,7 +488,12 @@ public class IntentRouterService : IIntentRouterService
             }
 
             // 2) Enforce rice flow rules
-            var arrozType = state?.ArrozType;
+            // Prefer validated rice name from ExtractedData when rice was validated
+            var riceWasValidated = response.Metadata?.ContainsKey("riceValidated") == true &&
+                                   response.Metadata["riceValidated"] is bool validated && validated;
+            var arrozType = riceWasValidated && !string.IsNullOrEmpty(response.ExtractedData?.ArrozType)
+                ? response.ExtractedData.ArrozType
+                : state?.ArrozType;
             var arrozServings = state?.ArrozServings;
 
             // Not decided yet -> must ask
@@ -533,15 +538,20 @@ public class IntentRouterService : IIntentRouterService
             var highChairsFinal = Math.Clamp(state!.HighChairs.GetValueOrDefault(0), 0, 3);
             var babyStrollersFinal = Math.Clamp(state.BabyStrollers.GetValueOrDefault(0), 0, 3);
 
+            // Use validated rice name from arrozType (already resolved above to prefer ExtractedData)
             var booking = response.ExtractedData with
             {
                 Name = message.PushName,
                 Phone = message.SenderNumber,
-                ArrozType = arrozType,
+                ArrozType = arrozType,  // Uses validated name if riceWasValidated
                 ArrozServings = arrozServings,
                 HighChairs = highChairsFinal,
                 BabyStrollers = babyStrollersFinal
             };
+
+            _logger.LogInformation(
+                "Creating booking with rice: {ArrozType} (validated={Validated})",
+                arrozType ?? "(none)", riceWasValidated);
 
             // 4) DB-backed availability checks (mirror PHP scripts)
             if (TryParseDate(booking.Date, out var date) &&

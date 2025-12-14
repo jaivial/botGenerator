@@ -657,12 +657,13 @@ public class ConversationHistoryService : IConversationHistoryService
             // Contextual answers after being asked
             if (i > 0 && WasAskedAboutHighChairs(history[i - 1]))
             {
-                // Plain "no" (or 0) => 0
-                if (Regex.IsMatch(text, @"^(no|nada|ninguna|0)$", RegexOptions.IgnoreCase))
+                // Flexible "no" patterns: "no", "no, ninguna", "ninguna", "nada", "0", "no gracias", etc.
+                if (Regex.IsMatch(text, @"^(no\s*,?\s*)?(nada|ninguna?|0)(\s*,?\s*no)?$", RegexOptions.IgnoreCase) ||
+                    Regex.IsMatch(text, @"^no(\s+gracias)?$", RegexOptions.IgnoreCase))
                     return 0;
 
                 // Plain "sí" => needs count
-                if (Regex.IsMatch(text, @"^(sí|si)$", RegexOptions.IgnoreCase))
+                if (Regex.IsMatch(text, @"^(sí|si)(\s+gracias)?$", RegexOptions.IgnoreCase))
                     return -1;
 
                 // Plain number after question => count
@@ -705,12 +706,16 @@ public class ConversationHistoryService : IConversationHistoryService
             // Contextual answers after being asked
             if (i > 0 && WasAskedAboutStrollers(history[i - 1]))
             {
-                if (Regex.IsMatch(text, @"^(no|nada|ninguno|ninguna|0)$", RegexOptions.IgnoreCase))
+                // Flexible "no" patterns: "no", "no, ninguno", "ninguno", "nada", "0", "no gracias", etc.
+                if (Regex.IsMatch(text, @"^(no\s*,?\s*)?(nada|ninguno?|ninguna?|0)(\s*,?\s*no)?$", RegexOptions.IgnoreCase) ||
+                    Regex.IsMatch(text, @"^no(\s+gracias)?$", RegexOptions.IgnoreCase))
                     return 0;
 
-                if (Regex.IsMatch(text, @"^(sí|si)$", RegexOptions.IgnoreCase))
+                // Plain "sí" => needs count
+                if (Regex.IsMatch(text, @"^(sí|si)(\s+gracias)?$", RegexOptions.IgnoreCase))
                     return -1;
 
+                // Plain number after question => count
                 if (Regex.IsMatch(text, @"^\d+$") && int.TryParse(text, out var numeric))
                     return numeric;
             }

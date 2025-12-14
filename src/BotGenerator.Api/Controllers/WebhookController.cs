@@ -17,6 +17,7 @@ public class WebhookController : ControllerBase
     private readonly IIntentRouterService _intentRouter;
     private readonly IConversationHistoryService _historyService;
     private readonly IPendingBookingStore _pendingBookingStore;
+    private readonly IPendingRiceStore _pendingRiceStore;
     private readonly IWhatsAppService _whatsApp;
     private readonly IMenuRepository _menuRepository;
     private readonly IRiceValidatorService _riceValidator;
@@ -31,6 +32,7 @@ public class WebhookController : ControllerBase
         IIntentRouterService intentRouter,
         IConversationHistoryService historyService,
         IPendingBookingStore pendingBookingStore,
+        IPendingRiceStore pendingRiceStore,
         IWhatsAppService whatsApp,
         IMenuRepository menuRepository,
         IRiceValidatorService riceValidator,
@@ -44,6 +46,7 @@ public class WebhookController : ControllerBase
         _intentRouter = intentRouter;
         _historyService = historyService;
         _pendingBookingStore = pendingBookingStore;
+        _pendingRiceStore = pendingRiceStore;
         _whatsApp = whatsApp;
         _menuRepository = menuRepository;
         _riceValidator = riceValidator;
@@ -760,18 +763,30 @@ public class WebhookController : ControllerBase
 
         // === Rice constraints & validation (if user mentions a rice/paella) ===
 
-        // Check if user is selecting from pending rice options
-        if (updatedState.PendingRiceOptions?.Count > 0)
+        // Check if user is selecting from pending rice options (persistent store)
+        var pendingRice = _pendingRiceStore.Get(message.SenderNumber);
+        if (pendingRice?.Options?.Count > 0)
         {
-            var selectedRice = TryParseRiceSelection(message.MessageText, updatedState.PendingRiceOptions);
+            var selectedRice = TryParseRiceSelection(message.MessageText, pendingRice.Options);
             if (selectedRice != null)
             {
                 _logger.LogInformation("User selected rice from pending options: {Rice}", selectedRice);
+
+                // Clear pending options from persistent store
+                _pendingRiceStore.Clear(message.SenderNumber);
+
                 updatedState = updatedState with
                 {
                     ArrozType = selectedRice,
-                    PendingRiceOptions = null // Clear pending options
+                    PendingRiceOptions = null // Also clear from ephemeral state
                 };
+
+                // Update pending booking store with the validated full rice name
+                var pendingBooking = _pendingBookingStore.Get(message.SenderNumber);
+                if (pendingBooking != null)
+                {
+                    _pendingBookingStore.Set(message.SenderNumber, pendingBooking with { ArrozType = selectedRice });
+                }
 
                 // Extract servings if mentioned
                 if (TryExtractRiceServings(message.MessageText, out var servings))
@@ -781,13 +796,23 @@ public class WebhookController : ControllerBase
 
                 // Don't return here - let the conversation continue to ask for servings if needed
             }
+            else
+            {
+                // User didn't select a valid option, prompt again
+                _logger.LogInformation("Could not parse rice selection from: {Message}", message.MessageText);
+                var formattedOptions = string.Join("\n", pendingRice.Options.Select((r, i) => $"{i + 1}. {r}"));
+                var retryMsg = $"No he entendido tu elección. Por favor, dime el número de la opción que prefieres:\n\n{formattedOptions}";
+                await _whatsApp.SendTextAsync(message.SenderNumber, retryMsg, cancellationToken);
+                return (true, retryMsg, updatedState);
+            }
         }
 
         if (DeclinesRice(message.MessageText))
         {
             updatedState = updatedState with { ArrozType = "", ArrozServings = null, PendingRiceOptions = null };
+            _pendingRiceStore.Clear(message.SenderNumber); // Also clear persistent store
         }
-        else if (updatedState.PendingRiceOptions == null && MentionsRice(message.MessageText))
+        else if (pendingRice == null && MentionsRice(message.MessageText))
         {
             var validation = await _riceValidator.ValidateAsync(
                 message.MessageText,
@@ -806,7 +831,14 @@ public class WebhookController : ControllerBase
 
                     await _whatsApp.SendTextAsync(message.SenderNumber, text, cancellationToken);
 
-                    // Store options in state for later selection parsing
+                    // Store options in PERSISTENT store for later selection parsing (next turn)
+                    _pendingRiceStore.Set(message.SenderNumber, new PendingRiceSelection
+                    {
+                        Options = validation.Options,
+                        OriginalRequest = message.MessageText
+                    });
+
+                    // Also store in ephemeral state (for same-turn logic)
                     updatedState = updatedState with { PendingRiceOptions = validation.Options };
                 }
                 else
