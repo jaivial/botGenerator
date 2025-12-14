@@ -16,7 +16,7 @@ public class MenuRepository : IMenuRepository
     public MenuRepository(IConfiguration configuration, ILogger<MenuRepository> logger)
     {
         _connectionString = configuration["MySQL:ConnectionString"]
-            ?? "Server=localhost;Database=villacarmen;User=root;Password=123123;";
+            ?? throw new InvalidOperationException("MySQL:ConnectionString not configured");
         _logger = logger;
     }
 

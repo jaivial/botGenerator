@@ -619,6 +619,10 @@ public class ConversationHistoryServiceTests
             ChatMessage.FromUser("Sí, paella valenciana"),
             ChatMessage.FromAssistant("✅ Paella valenciana disponible. ¿Cuántas raciones?"),
             ChatMessage.FromUser("4 raciones"),
+            ChatMessage.FromAssistant("¿Necesitáis tronas?"),
+            ChatMessage.FromUser("No"),
+            ChatMessage.FromAssistant("¿Vais a traer carrito de bebé?"),
+            ChatMessage.FromUser("No"),
             ChatMessage.FromAssistant("Perfecto")
         };
 

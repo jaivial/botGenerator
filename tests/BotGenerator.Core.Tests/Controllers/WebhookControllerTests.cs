@@ -1,9 +1,11 @@
 using BotGenerator.Api.Controllers;
 using BotGenerator.Core.Agents;
+using BotGenerator.Core.Handlers;
 using BotGenerator.Core.Services;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Moq;
 
@@ -13,7 +15,14 @@ public class WebhookControllerTests
 {
     private readonly Mock<IIntentRouterService> _intentRouterMock;
     private readonly Mock<IConversationHistoryService> _historyServiceMock;
+    private readonly Mock<IPendingBookingStore> _pendingBookingStoreMock;
     private readonly Mock<IWhatsAppService> _whatsAppMock;
+    private readonly Mock<IMenuRepository> _menuRepositoryMock;
+    private readonly Mock<IRiceValidatorService> _riceValidatorMock;
+    private readonly Mock<IBookingAvailabilityService> _availabilityMock;
+    private readonly Mock<BookingHandler> _bookingHandlerMock;
+    private readonly IConfiguration _configuration;
+    private readonly Mock<IHostEnvironment> _environmentMock;
     private readonly Mock<ILogger<WebhookController>> _loggerMock;
     private readonly WebhookController _controller;
 
@@ -21,8 +30,43 @@ public class WebhookControllerTests
     {
         _intentRouterMock = new Mock<IIntentRouterService>();
         _historyServiceMock = new Mock<IConversationHistoryService>();
+        _pendingBookingStoreMock = new Mock<IPendingBookingStore>();
         _whatsAppMock = new Mock<IWhatsAppService>();
+        _menuRepositoryMock = new Mock<IMenuRepository>();
+        _riceValidatorMock = new Mock<IRiceValidatorService>();
+        _availabilityMock = new Mock<IBookingAvailabilityService>();
+        _bookingHandlerMock = new Mock<BookingHandler>(MockBehavior.Loose, null!, null!, null!, null!);
+        _environmentMock = new Mock<IHostEnvironment>();
         _loggerMock = new Mock<ILogger<WebhookController>>();
+
+        _configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Restaurants:Default"] = "villacarmen"
+            })
+            .Build();
+
+        // Default environment behavior: development mode
+        _environmentMock.Setup(x => x.EnvironmentName).Returns("Development");
+
+        // Default availability behavior: do not block tests unless explicitly configured
+        _availabilityMock
+            .Setup(x => x.CheckDayStatusAsync(It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DayStatusResult
+            {
+                Date = DateTime.Today,
+                Weekday = "Sábado",
+                IsOpen = true,
+                IsDefaultClosedDay = false
+            });
+
+        _availabilityMock
+            .Setup(x => x.EvaluateAsync(It.IsAny<DateTime>(), It.IsAny<int>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new BookingAvailabilityDecision
+            {
+                IsAvailable = true,
+                Reason = "ok"
+            });
 
         // For the Health endpoint test, we don't need the MainConversationAgent
         // so we pass null! to satisfy the compiler (will only be used in webhook tests)
@@ -30,7 +74,14 @@ public class WebhookControllerTests
             null!,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _pendingBookingStoreMock.Object,
             _whatsAppMock.Object,
+            _menuRepositoryMock.Object,
+            _riceValidatorMock.Object,
+            _availabilityMock.Object,
+            _bookingHandlerMock.Object,
+            _configuration,
+            _environmentMock.Object,
             _loggerMock.Object);
     }
 
@@ -129,7 +180,14 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _pendingBookingStoreMock.Object,
             _whatsAppMock.Object,
+            _menuRepositoryMock.Object,
+            _riceValidatorMock.Object,
+            _availabilityMock.Object,
+            _bookingHandlerMock.Object,
+            _configuration,
+            _environmentMock.Object,
             _loggerMock.Object);
 
         var validPayload = """
@@ -192,6 +250,13 @@ public class WebhookControllerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
+        _riceValidatorMock
+            .Setup(x => x.ValidateAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BotGenerator.Core.Models.RiceValidationResult.Valid("Arroz al horno", "Arroz al horno"));
+
         // Act
         var result = await controller.HandleWhatsAppWebhook(jsonElement, CancellationToken.None);
 
@@ -233,7 +298,14 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _pendingBookingStoreMock.Object,
             _whatsAppMock.Object,
+            _menuRepositoryMock.Object,
+            _riceValidatorMock.Object,
+            _availabilityMock.Object,
+            _bookingHandlerMock.Object,
+            _configuration,
+            _environmentMock.Object,
             _loggerMock.Object);
 
         // Test with an empty JSON object (missing required 'message' property)
@@ -282,7 +354,14 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _pendingBookingStoreMock.Object,
             _whatsAppMock.Object,
+            _menuRepositoryMock.Object,
+            _riceValidatorMock.Object,
+            _availabilityMock.Object,
+            _bookingHandlerMock.Object,
+            _configuration,
+            _environmentMock.Object,
             _loggerMock.Object);
 
         // Payload missing "message" property
@@ -336,7 +415,14 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _pendingBookingStoreMock.Object,
             _whatsAppMock.Object,
+            _menuRepositoryMock.Object,
+            _riceValidatorMock.Object,
+            _availabilityMock.Object,
+            _bookingHandlerMock.Object,
+            _configuration,
+            _environmentMock.Object,
             _loggerMock.Object);
 
         // Message from bot itself (fromMe: true)
@@ -408,7 +494,14 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _pendingBookingStoreMock.Object,
             _whatsAppMock.Object,
+            _menuRepositoryMock.Object,
+            _riceValidatorMock.Object,
+            _availabilityMock.Object,
+            _bookingHandlerMock.Object,
+            _configuration,
+            _environmentMock.Object,
             _loggerMock.Object);
 
         // Message with empty text
@@ -480,7 +573,14 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _pendingBookingStoreMock.Object,
             _whatsAppMock.Object,
+            _menuRepositoryMock.Object,
+            _riceValidatorMock.Object,
+            _availabilityMock.Object,
+            _bookingHandlerMock.Object,
+            _configuration,
+            _environmentMock.Object,
             _loggerMock.Object);
 
         // Media message (image) with no text
@@ -551,7 +651,14 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _pendingBookingStoreMock.Object,
             _whatsAppMock.Object,
+            _menuRepositoryMock.Object,
+            _riceValidatorMock.Object,
+            _availabilityMock.Object,
+            _bookingHandlerMock.Object,
+            _configuration,
+            _environmentMock.Object,
             _loggerMock.Object);
 
         var validPayload = """
@@ -658,7 +765,14 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _pendingBookingStoreMock.Object,
             _whatsAppMock.Object,
+            _menuRepositoryMock.Object,
+            _riceValidatorMock.Object,
+            _availabilityMock.Object,
+            _bookingHandlerMock.Object,
+            _configuration,
+            _environmentMock.Object,
             _loggerMock.Object);
 
         var payload = """
@@ -760,7 +874,14 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _pendingBookingStoreMock.Object,
             _whatsAppMock.Object,
+            _menuRepositoryMock.Object,
+            _riceValidatorMock.Object,
+            _availabilityMock.Object,
+            _bookingHandlerMock.Object,
+            _configuration,
+            _environmentMock.Object,
             _loggerMock.Object);
 
         // Button response payload with vote property
@@ -864,7 +985,14 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _pendingBookingStoreMock.Object,
             _whatsAppMock.Object,
+            _menuRepositoryMock.Object,
+            _riceValidatorMock.Object,
+            _availabilityMock.Object,
+            _bookingHandlerMock.Object,
+            _configuration,
+            _environmentMock.Object,
             _loggerMock.Object);
 
         // List response payload with nested content structure
@@ -972,7 +1100,14 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _pendingBookingStoreMock.Object,
             _whatsAppMock.Object,
+            _menuRepositoryMock.Object,
+            _riceValidatorMock.Object,
+            _availabilityMock.Object,
+            _bookingHandlerMock.Object,
+            _configuration,
+            _environmentMock.Object,
             _loggerMock.Object);
 
         var payload = """
@@ -1074,7 +1209,14 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _pendingBookingStoreMock.Object,
             _whatsAppMock.Object,
+            _menuRepositoryMock.Object,
+            _riceValidatorMock.Object,
+            _availabilityMock.Object,
+            _bookingHandlerMock.Object,
+            _configuration,
+            _environmentMock.Object,
             _loggerMock.Object);
 
         var expectedTimestamp = 1700000000L;
@@ -1181,7 +1323,14 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _pendingBookingStoreMock.Object,
             _whatsAppMock.Object,
+            _menuRepositoryMock.Object,
+            _riceValidatorMock.Object,
+            _availabilityMock.Object,
+            _bookingHandlerMock.Object,
+            _configuration,
+            _environmentMock.Object,
             _loggerMock.Object);
 
         // Button response payload
@@ -1285,7 +1434,14 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _pendingBookingStoreMock.Object,
             _whatsAppMock.Object,
+            _menuRepositoryMock.Object,
+            _riceValidatorMock.Object,
+            _availabilityMock.Object,
+            _bookingHandlerMock.Object,
+            _configuration,
+            _environmentMock.Object,
             _loggerMock.Object);
 
         // List response payload
@@ -1393,7 +1549,14 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _pendingBookingStoreMock.Object,
             _whatsAppMock.Object,
+            _menuRepositoryMock.Object,
+            _riceValidatorMock.Object,
+            _availabilityMock.Object,
+            _bookingHandlerMock.Object,
+            _configuration,
+            _environmentMock.Object,
             _loggerMock.Object);
 
         // Button response payload with buttonOrListid
@@ -1505,7 +1668,14 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _pendingBookingStoreMock.Object,
             _whatsAppMock.Object,
+            _menuRepositoryMock.Object,
+            _riceValidatorMock.Object,
+            _availabilityMock.Object,
+            _bookingHandlerMock.Object,
+            _configuration,
+            _environmentMock.Object,
             _loggerMock.Object);
 
         var payload = """
@@ -1626,7 +1796,14 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _pendingBookingStoreMock.Object,
             _whatsAppMock.Object,
+            _menuRepositoryMock.Object,
+            _riceValidatorMock.Object,
+            _availabilityMock.Object,
+            _bookingHandlerMock.Object,
+            _configuration,
+            _environmentMock.Object,
             _loggerMock.Object);
 
         var payload = """
@@ -1753,7 +1930,14 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _pendingBookingStoreMock.Object,
             _whatsAppMock.Object,
+            _menuRepositoryMock.Object,
+            _riceValidatorMock.Object,
+            _availabilityMock.Object,
+            _bookingHandlerMock.Object,
+            _configuration,
+            _environmentMock.Object,
             _loggerMock.Object);
 
         var payload = """
@@ -1861,7 +2045,14 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _pendingBookingStoreMock.Object,
             _whatsAppMock.Object,
+            _menuRepositoryMock.Object,
+            _riceValidatorMock.Object,
+            _availabilityMock.Object,
+            _bookingHandlerMock.Object,
+            _configuration,
+            _environmentMock.Object,
             _loggerMock.Object);
 
         var payload = """
@@ -1975,7 +2166,14 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _pendingBookingStoreMock.Object,
             _whatsAppMock.Object,
+            _menuRepositoryMock.Object,
+            _riceValidatorMock.Object,
+            _availabilityMock.Object,
+            _bookingHandlerMock.Object,
+            _configuration,
+            _environmentMock.Object,
             _loggerMock.Object);
 
         var payload = """
@@ -2073,7 +2271,14 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _pendingBookingStoreMock.Object,
             _whatsAppMock.Object,
+            _menuRepositoryMock.Object,
+            _riceValidatorMock.Object,
+            _availabilityMock.Object,
+            _bookingHandlerMock.Object,
+            _configuration,
+            _environmentMock.Object,
             _loggerMock.Object);
 
         var payload = """
@@ -2172,7 +2377,14 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _pendingBookingStoreMock.Object,
             _whatsAppMock.Object,
+            _menuRepositoryMock.Object,
+            _riceValidatorMock.Object,
+            _availabilityMock.Object,
+            _bookingHandlerMock.Object,
+            _configuration,
+            _environmentMock.Object,
             _loggerMock.Object);
 
         var payload = """

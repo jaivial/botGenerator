@@ -24,6 +24,18 @@ public record ConversationState
     public string? Hora { get; init; }
 
     /// <summary>
+    /// True if the extracted time was rejected by the bot (e.g., outside opening hours).
+    /// When true, Hora should be treated as missing and re-asked.
+    /// </summary>
+    public bool InvalidHora { get; init; }
+
+    /// <summary>
+    /// True if the extracted date was rejected by the bot (e.g., no availability for party size).
+    /// When true, Fecha should be treated as missing and re-asked.
+    /// </summary>
+    public bool InvalidFecha { get; init; }
+
+    /// <summary>
     /// Number of people for the reservation.
     /// Null if not yet collected.
     /// </summary>
@@ -43,12 +55,12 @@ public record ConversationState
     /// <summary>
     /// Number of high chairs needed.
     /// </summary>
-    public int HighChairs { get; init; }
+    public int? HighChairs { get; init; }
 
     /// <summary>
     /// Number of baby strollers.
     /// </summary>
-    public int BabyStrollers { get; init; }
+    public int? BabyStrollers { get; init; }
 
     /// <summary>
     /// List of data fields that are still missing.
@@ -84,7 +96,7 @@ public record ConversationState
     /// </summary>
     public static ConversationState Empty() => new()
     {
-        MissingData = new List<string> { "fecha", "hora", "personas", "arroz_decision" },
+        MissingData = new List<string> { "fecha", "hora", "personas", "arroz_decision", "tronas", "carritos" },
         Stage = "collecting_info"
     };
 }

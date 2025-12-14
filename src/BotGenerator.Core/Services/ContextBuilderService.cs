@@ -11,6 +11,7 @@ namespace BotGenerator.Core.Services;
 public class ContextBuilderService : IContextBuilderService
 {
     private readonly ILogger<ContextBuilderService> _logger;
+    private readonly IOpeningHoursService? _openingHoursService;
 
     // Spanish day and month names
     private static readonly string[] DaysOfWeek =
@@ -37,9 +38,12 @@ public class ContextBuilderService : IContextBuilderService
         { DayOfWeek.Sunday, "13:30 – 18:00" }
     };
 
-    public ContextBuilderService(ILogger<ContextBuilderService> logger)
+    public ContextBuilderService(
+        ILogger<ContextBuilderService> logger,
+        IOpeningHoursService? openingHoursService = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _openingHoursService = openingHoursService;
     }
 
     public Dictionary<string, object> BuildContext(
@@ -96,8 +100,27 @@ public class ContextBuilderService : IContextBuilderService
             ["state_fecha_fullText"] = (object?)state?.FechaFullText ?? "",
             ["state_hora"] = (object?)state?.Hora ?? "",
             ["state_personas"] = (object?)state?.Personas ?? 0,
-            ["state_arroz"] = (object?)state?.ArrozType ?? "",
+            // Rice: null = not decided; "" = decided (no rice)
+            ["state_arroz_decided"] = state?.ArrozType != null,
+            ["state_arroz_hasRice"] = !string.IsNullOrEmpty(state?.ArrozType),
+            ["state_arroz_value"] = state?.ArrozType == null
+                ? ""
+                : (string.IsNullOrEmpty(state.ArrozType) ? "Sin arroz" : state.ArrozType),
             ["state_raciones"] = (object?)state?.ArrozServings ?? 0,
+            ["state_raciones_needed"] = state?.ArrozType != null && !string.IsNullOrEmpty(state.ArrozType),
+            ["state_raciones_decided"] = state?.ArrozType != null && !string.IsNullOrEmpty(state.ArrozType) && state.ArrozServings.HasValue,
+
+            // Extras:
+            // - null => not answered
+            // - -1   => user said yes but count missing
+            // - >=0  => final count
+            ["state_tronas_answered"] = state?.HighChairs.HasValue == true && state.HighChairs.Value >= 0,
+            ["state_tronas_needsCount"] = state?.HighChairs.HasValue == true && state.HighChairs.Value < 0,
+            ["state_tronas_value"] = (state?.HighChairs.HasValue == true && state.HighChairs.Value >= 0) ? state.HighChairs.Value : 0,
+
+            ["state_carritos_answered"] = state?.BabyStrollers.HasValue == true && state.BabyStrollers.Value >= 0,
+            ["state_carritos_needsCount"] = state?.BabyStrollers.HasValue == true && state.BabyStrollers.Value < 0,
+            ["state_carritos_value"] = (state?.BabyStrollers.HasValue == true && state.BabyStrollers.Value >= 0) ? state.BabyStrollers.Value : 0,
             ["state_isComplete"] = state?.IsComplete ?? false,
             ["state_stage"] = state?.Stage ?? "collecting_info",
             ["state_missingData"] = state?.MissingData != null
@@ -299,4 +322,58 @@ public class ContextBuilderService : IContextBuilderService
     }
 
     #endregion
+
+    public async Task<Dictionary<string, object>> BuildContextWithHoursAsync(
+        WhatsAppMessage message,
+        ConversationState? state,
+        List<ChatMessage>? history,
+        DateTime targetDate,
+        RestaurantConfig? restaurantConfig = null,
+        CancellationToken ct = default)
+    {
+        var context = BuildContext(message, state, history, restaurantConfig);
+
+        // Add dynamic opening hours if service is available
+        if (_openingHoursService != null)
+        {
+            try
+            {
+                var hours = await _openingHoursService.GetContextAwareHoursAsync(targetDate, ct);
+
+                context["openingTime"] = hours.OpeningTimeFormatted;
+                context["closingTime"] = hours.ClosingTimeFormatted;
+                context["hasDinner"] = hours.HasDinner;
+                context["hasLunch"] = hours.HasLunch;
+                context["availableSlots"] = string.Join(", ", hours.AvailableSlots);
+                context["hoursFromDatabase"] = hours.IsFromDatabase;
+
+                _logger.LogDebug(
+                    "Added dynamic hours to context: {Opening}-{Closing}, HasDinner={HasDinner}",
+                    hours.OpeningTimeFormatted, hours.ClosingTimeFormatted, hours.HasDinner);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to get dynamic opening hours, using defaults");
+                // Use fallback defaults
+                context["openingTime"] = "13:30";
+                context["closingTime"] = "18:00";
+                context["hasDinner"] = false;
+                context["hasLunch"] = true;
+                context["availableSlots"] = "13:30, 14:00, 15:00, 15:30";
+                context["hoursFromDatabase"] = false;
+            }
+        }
+        else
+        {
+            // No service available, use static defaults
+            context["openingTime"] = "13:30";
+            context["closingTime"] = "18:00";
+            context["hasDinner"] = false;
+            context["hasLunch"] = true;
+            context["availableSlots"] = "13:30, 14:00, 15:00, 15:30";
+            context["hoursFromDatabase"] = false;
+        }
+
+        return context;
+    }
 }

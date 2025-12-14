@@ -265,7 +265,8 @@ public class ContextBuilderServiceTests
         Assert.True(context.ContainsKey("state_fecha_fullText"), "state_fecha_fullText should be present");
         Assert.True(context.ContainsKey("state_hora"), "state_hora should be present");
         Assert.True(context.ContainsKey("state_personas"), "state_personas should be present");
-        Assert.True(context.ContainsKey("state_arroz"), "state_arroz should be present");
+        Assert.True(context.ContainsKey("state_arroz_decided"), "state_arroz_decided should be present");
+        Assert.True(context.ContainsKey("state_arroz_value"), "state_arroz_value should be present");
         Assert.True(context.ContainsKey("state_raciones"), "state_raciones should be present");
         Assert.True(context.ContainsKey("state_isComplete"), "state_isComplete should be present");
         Assert.True(context.ContainsKey("state_stage"), "state_stage should be present");
@@ -276,7 +277,8 @@ public class ContextBuilderServiceTests
         Assert.Equal("Sábado, 30 de noviembre de 2025", context["state_fecha_fullText"]);
         Assert.Equal("15:00", context["state_hora"]);
         Assert.Equal(6, context["state_personas"]);
-        Assert.Equal("Paella Valenciana", context["state_arroz"]);
+        Assert.True((bool)context["state_arroz_decided"]);
+        Assert.Equal("Paella Valenciana", context["state_arroz_value"]);
         Assert.Equal(2, context["state_raciones"]);
         Assert.Equal("confirming", context["state_stage"]);
         Assert.Equal("", context["state_missingData"]); // Empty list = empty string

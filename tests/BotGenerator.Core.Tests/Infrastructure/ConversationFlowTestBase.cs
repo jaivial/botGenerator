@@ -18,15 +18,18 @@ public abstract class ConversationFlowTestBase : IAsyncLifetime
     protected ConversationSimulator Simulator { get; private set; } = null!;
     protected Mock<IGeminiService> AiServiceMock { get; private set; } = null!;
     protected Mock<IWhatsAppService> WhatsAppMock { get; private set; } = null!;
+    protected Mock<IMenuRepository> MenuRepositoryMock { get; private set; } = null!;
     protected IServiceProvider ServiceProvider { get; private set; } = null!;
 
     public virtual async Task InitializeAsync()
     {
         AiServiceMock = new Mock<IGeminiService>();
         WhatsAppMock = new Mock<IWhatsAppService>();
+        MenuRepositoryMock = new Mock<IMenuRepository>();
 
         ConfigureDefaultAiBehavior();
         ConfigureWhatsAppMock();
+        ConfigureMenuRepositoryMock();
 
         var services = new ServiceCollection();
         ConfigureServices(services);
@@ -67,6 +70,21 @@ public abstract class ConversationFlowTestBase : IAsyncLifetime
             .ReturnsAsync(true);
     }
 
+    protected virtual void ConfigureMenuRepositoryMock()
+    {
+        // Needed by MainConversationAgent.PreValidateRiceAsync()
+        MenuRepositoryMock
+            .Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string>
+            {
+                "Paella valenciana",
+                "Arroz del señoret",
+                "Arroz negro",
+                "Arroz a banda",
+                "Fideuá"
+            });
+    }
+
     protected virtual void ConfigureServices(IServiceCollection services)
     {
         // Configuration
@@ -81,6 +99,7 @@ public abstract class ConversationFlowTestBase : IAsyncLifetime
         // Mocked services
         services.AddSingleton(AiServiceMock.Object);
         services.AddSingleton(WhatsAppMock.Object);
+        services.AddSingleton(MenuRepositoryMock.Object);
 
         // Real services for testing
         services.AddSingleton<IContextBuilderService, ContextBuilderService>();
@@ -91,6 +110,7 @@ public abstract class ConversationFlowTestBase : IAsyncLifetime
         // Agents
         services.AddSingleton<MainConversationAgent>();
         services.AddSingleton<RiceValidatorAgent>();
+        services.AddSingleton<IRiceValidatorService>(sp => sp.GetRequiredService<RiceValidatorAgent>());
         services.AddSingleton<AvailabilityCheckerAgent>();
 
         // Handlers

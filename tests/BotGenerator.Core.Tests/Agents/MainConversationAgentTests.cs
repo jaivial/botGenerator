@@ -36,7 +36,7 @@ public class MainConversationAgentTests
 
         // Setup default menu repository
         _menuRepositoryMock.Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana" });
+            .ReturnsAsync(new List<string> { "Arroz de chorizo", "Arroz Negro", "Paella valenciana", "Arroz del señoret" });
 
         // Setup default configuration
         var mockSection = new Mock<IConfigurationSection>();

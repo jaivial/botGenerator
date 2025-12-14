@@ -146,11 +146,10 @@ public class MainConversationAgent : IAgent
     /// </summary>
     private string GetRestaurantId(string senderNumber)
     {
-        // Try to find mapping in configuration
-        var mapping = _configuration
-            .GetSection("Restaurants:Mapping")
-            .GetChildren()
-            .ToDictionary(x => x.Key, x => x.Value);
+        // Try to find mapping in configuration (be resilient to missing sections / mocks)
+        var mappingSection = _configuration.GetSection("Restaurants:Mapping");
+        var children = mappingSection?.GetChildren() ?? Enumerable.Empty<IConfigurationSection>();
+        var mapping = children.ToDictionary(x => x.Key, x => x.Value);
 
         if (mapping.TryGetValue(senderNumber, out var restaurantId))
         {
@@ -306,17 +305,32 @@ public class MainConversationAgent : IAgent
     /// </summary>
     private BookingData ExtractAdditionalBookingFields(string response, BookingData booking)
     {
-        // Extract rice type
-        var riceMatch = Regex.Match(response,
-            @"arroz\s+(del?\s+)?([a-záéíóúñ\s]+?)(?:\s*[,.]|\s*\d+|$)",
+        // First check if this is a rice rejection - if so, don't extract rice type
+        var isRiceRejection = Regex.IsMatch(response,
+            @"(no\s+queremos\s+arroz|sin\s+arroz|no\s+arroz|nada\s+de\s+arroz|no,?\s+gracias|no\s+gracias)",
             RegexOptions.IgnoreCase);
 
         string? arrozType = null;
-        if (riceMatch.Success)
+
+        if (!isRiceRejection)
         {
-            var prep = riceMatch.Groups[1].Value.Trim();
-            var name = riceMatch.Groups[2].Value.Trim();
-            arrozType = string.IsNullOrEmpty(prep) ? name : $"{prep} {name}".Trim();
+            // Extract rice type only if not a rejection
+            var riceMatch = Regex.Match(response,
+                @"arroz\s+(del?\s+)?([a-záéíóúñ\s]+?)(?:\s*[,.]|\s*\d+|$)",
+                RegexOptions.IgnoreCase);
+
+            if (riceMatch.Success)
+            {
+                var prep = riceMatch.Groups[1].Value.Trim();
+                var name = riceMatch.Groups[2].Value.Trim();
+
+                // Additional filter: reject common non-rice words that might be captured
+                var invalidNames = new[] { "gracias", "por favor", "porfa", "porfavor", "vale", "ok", "si", "no" };
+                if (!invalidNames.Contains(name.ToLower()))
+                {
+                    arrozType = string.IsNullOrEmpty(prep) ? name : $"{prep} {name}".Trim();
+                }
+            }
         }
 
         // Extract rice servings
@@ -396,6 +410,15 @@ public class MainConversationAgent : IAgent
         string restaurantId,
         CancellationToken cancellationToken)
     {
+        // First check if this is a rice rejection - if so, don't validate rice
+        if (Regex.IsMatch(userMessage,
+            @"(no\s+queremos\s+arroz|sin\s+arroz|no\s+arroz|nada\s+de\s+arroz|no\s+quiero\s+arroz)",
+            RegexOptions.IgnoreCase))
+        {
+            _logger.LogInformation("Detected rice rejection, skipping validation");
+            return new RicePreValidationResult { HasRiceRequest = false };
+        }
+
         // Check if user mentions rice
         var ricePattern = @"arroz\s+(?:del?\s+)?([a-záéíóúñ\s]+?)(?:\s+para|\s+\d+|\s*$|[,.])";
         var match = Regex.Match(userMessage, ricePattern, RegexOptions.IgnoreCase);
@@ -407,6 +430,14 @@ public class MainConversationAgent : IAgent
         }
 
         var requestedRice = match.Groups[1].Value.Trim();
+
+        // Filter out common non-rice words that might be captured
+        var invalidNames = new[] { "gracias", "por favor", "porfa", "porfavor", "vale", "ok", "si", "no" };
+        if (invalidNames.Contains(requestedRice.ToLower()))
+        {
+            _logger.LogInformation("Detected non-rice word '{Word}', skipping validation", requestedRice);
+            return new RicePreValidationResult { HasRiceRequest = false };
+        }
         _logger.LogInformation("Detected rice request: {Rice}", requestedRice);
 
         // Get available rice types from database

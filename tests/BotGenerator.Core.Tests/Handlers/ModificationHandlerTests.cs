@@ -1,5 +1,7 @@
+using BotGenerator.Core.Agents;
 using BotGenerator.Core.Handlers;
 using BotGenerator.Core.Models;
+using BotGenerator.Core.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -7,88 +9,192 @@ using Moq;
 namespace BotGenerator.Core.Tests.Handlers;
 
 /// <summary>
-/// Tests for ModificationHandler - Steps 49-50: Response Building Tests
-/// Tests that modification options are built correctly for single and multiple bookings.
+/// Tests for the rewritten ModificationHandler.
+/// Tests the multi-turn modification conversation flow.
 /// </summary>
 public class ModificationHandlerTests
 {
     private readonly Mock<ILogger<ModificationHandler>> _loggerMock;
+    private readonly Mock<IBookingRepository> _bookingRepoMock;
+    private readonly Mock<IModificationStateStore> _stateStoreMock;
+    private readonly Mock<IBookingAvailabilityService> _availabilityMock;
+    private readonly Mock<IRiceValidatorService> _riceValidatorMock;
+    private readonly Mock<IWhatsAppService> _whatsAppMock;
+    private readonly Mock<IContextBuilderService> _contextBuilderMock;
     private readonly ModificationHandler _handler;
 
     public ModificationHandlerTests()
     {
         _loggerMock = new Mock<ILogger<ModificationHandler>>();
-        _handler = new ModificationHandler(_loggerMock.Object);
+        _bookingRepoMock = new Mock<IBookingRepository>();
+        _stateStoreMock = new Mock<IModificationStateStore>();
+        _availabilityMock = new Mock<IBookingAvailabilityService>();
+
+        // Use the interface instead of the concrete class to avoid complex mocking
+        _riceValidatorMock = new Mock<IRiceValidatorService>();
+        _riceValidatorMock
+            .Setup(x => x.ValidateAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(RiceValidationResult.Valid("arroz del senyoret", "senyoret"));
+
+        _whatsAppMock = new Mock<IWhatsAppService>();
+        _contextBuilderMock = new Mock<IContextBuilderService>();
+
+        // Create a real RiceValidatorAgent with mocked dependencies
+        var riceValidatorAgent = CreateMockRiceValidatorAgent();
+
+        _handler = new ModificationHandler(
+            _loggerMock.Object,
+            _bookingRepoMock.Object,
+            _stateStoreMock.Object,
+            _availabilityMock.Object,
+            riceValidatorAgent,
+            _whatsAppMock.Object,
+            _contextBuilderMock.Object);
+    }
+
+    private RiceValidatorAgent CreateMockRiceValidatorAgent()
+    {
+        var geminiMock = new Mock<IGeminiService>();
+        var promptLoaderMock = new Mock<IPromptLoaderService>();
+        var menuRepoMock = new Mock<IMenuRepository>();
+        var loggerMock = new Mock<ILogger<RiceValidatorAgent>>();
+
+        // Setup the prompt loader to return a valid prompt
+        promptLoaderMock
+            .Setup(x => x.LoadPromptAsync(It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync("Valid rice types: senyoret, banda, mixto");
+
+        promptLoaderMock
+            .Setup(x => x.LoadSpecializedPromptAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Dictionary<string, object>>()))
+            .ReturnsAsync("Valid rice types: senyoret, banda, mixto");
+
+        // Setup menu repository
+        menuRepoMock
+            .Setup(x => x.GetActiveRiceTypesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "arroz del senyoret", "arroz a banda", "arroz mixto" });
+
+        // Create actual agent (validation logic will still work)
+        return new RiceValidatorAgent(
+            geminiMock.Object,
+            promptLoaderMock.Object,
+            menuRepoMock.Object,
+            loggerMock.Object);
     }
 
     /// <summary>
-    /// Step 49: ModificationHandler_BuildsOptions_SingleBooking
-    /// Tests that when a single booking is found, the response:
+    /// Tests that when a single booking is found, the handler:
     /// - Shows booking details (date, time, people)
-    /// - Asks "¿Qué quieres modificar?" or similar
-    /// - Lists modification options numbered (Fecha, Hora, Personas, Arroz)
-    /// - Sets correct metadata (modificationState, selectedBooking)
+    /// - Asks what to modify
+    /// - Sets state to SelectingField
     /// </summary>
     [Fact]
-    public async Task ModificationHandler_BuildsOptions_SingleBooking()
+    public async Task ProcessModification_SingleBooking_AsksWhatToModify()
     {
         // Arrange
-        var senderNumber = "34612345678";
+        var phone = "34612345678";
+        var message = CreateTextMessage(phone, "quiero modificar mi reserva");
+
+        var booking = new BookingRecord
+        {
+            Id = 1,
+            CustomerName = "Test User",
+            ReservationDate = DateTime.Today.AddDays(7),
+            ReservationTime = TimeSpan.FromHours(14),
+            PartySize = 4,
+            ContactPhone = "612345678"
+        };
+
+        _bookingRepoMock
+            .Setup(x => x.FindBookingsByPhoneAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<BookingRecord> { booking });
+
+        _stateStoreMock
+            .Setup(x => x.Get(It.IsAny<string>()))
+            .Returns((ModificationState?)null);
 
         // Act
-        var result = await _handler.StartModificationFlowAsync(senderNumber);
+        var result = await _handler.ProcessModificationAsync(message, null);
 
         // Assert
         result.Should().NotBeNull();
         result.Intent.Should().Be(IntentType.Modification);
         result.AiResponse.Should().NotBeNullOrWhiteSpace();
 
-        // Should show booking details (based on default mock data)
-        result.AiResponse.Should().Contain("30/11/2025"); // Date
-        result.AiResponse.Should().Contain("14:00"); // Time
-        result.AiResponse.Should().Contain("4"); // People count
+        // Should show booking summary
+        result.AiResponse.Should().Contain("14:00");
+        result.AiResponse.Should().Contain("4 personas");
 
-        // Should ask what to modify
-        result.AiResponse.Should().MatchRegex("(qué.*modificar|modificar)");
+        // Should ask what to modify (can use various forms of "cambiar" or "modificar")
+        result.AiResponse.Should().MatchRegex("(modific|cambi)");
 
-        // Should list options
-        result.AiResponse.Should().Contain("1"); // Option 1
-        result.AiResponse.Should().Contain("2"); // Option 2
-        result.AiResponse.Should().Contain("3"); // Option 3
-        result.AiResponse.Should().Contain("4"); // Option 4
+        // Should list modification options
+        result.AiResponse.Should().MatchRegex(@"\d.*[Ff]echa");
+        result.AiResponse.Should().MatchRegex(@"\d.*[Hh]ora");
+        result.AiResponse.Should().MatchRegex(@"\d.*personas");
 
-        // Should contain modification categories
-        result.AiResponse.Should().Contain("Fecha");
-        result.AiResponse.Should().Contain("Hora");
-        result.AiResponse.Should().Contain("personas");
-        result.AiResponse.Should().Contain("arroz");
-
-        // Should set correct metadata
-        result.Metadata.Should().NotBeNull();
-        result.Metadata.Should().ContainKey("modificationState");
-        result.Metadata!["modificationState"].Should().Be("selecting_field");
-        result.Metadata.Should().ContainKey("selectedBooking");
+        // Should have set state
+        _stateStoreMock.Verify(
+            x => x.Set(It.IsAny<string>(), It.Is<ModificationState>(s =>
+                s.Stage == ModificationStage.SelectingField &&
+                s.SelectedBooking != null)),
+            Times.Once);
     }
 
     /// <summary>
-    /// Step 50: ModificationHandler_BuildsOptions_MultipleBookings
-    /// Tests that when multiple bookings are found, the response:
-    /// - Lists all bookings numbered (1, 2, 3...)
-    /// - Shows date, time, and people count for each
+    /// Tests that when multiple bookings are found, the handler:
+    /// - Lists all bookings
     /// - Asks which one to modify
-    /// - Sets correct metadata (modificationState, bookings list)
+    /// - Sets state to SelectingBooking
     /// </summary>
     [Fact]
-    public async Task ModificationHandler_BuildsOptions_MultipleBookings()
+    public async Task ProcessModification_MultipleBookings_AsksWhichToModify()
     {
         // Arrange
-        var senderNumber = "34699888777";
+        var phone = "34699888777";
+        var message = CreateTextMessage(phone, "quiero modificar mi reserva");
 
-        // Create a modified handler that returns multiple bookings
-        var modifiedHandler = new TestableModificationHandler(_loggerMock.Object);
+        var bookings = new List<BookingRecord>
+        {
+            new()
+            {
+                Id = 1,
+                CustomerName = "Test User",
+                ReservationDate = DateTime.Today.AddDays(5),
+                ReservationTime = TimeSpan.FromHours(14),
+                PartySize = 4,
+                ContactPhone = "699888777"
+            },
+            new()
+            {
+                Id = 2,
+                CustomerName = "Test User",
+                ReservationDate = DateTime.Today.AddDays(12),
+                ReservationTime = TimeSpan.FromHours(20),
+                PartySize = 2,
+                ArrozType = "banda",
+                ContactPhone = "699888777"
+            },
+            new()
+            {
+                Id = 3,
+                CustomerName = "Test User",
+                ReservationDate = DateTime.Today.AddDays(19),
+                ReservationTime = TimeSpan.FromHours(13) + TimeSpan.FromMinutes(30),
+                PartySize = 6,
+                ContactPhone = "699888777"
+            }
+        };
+
+        _bookingRepoMock
+            .Setup(x => x.FindBookingsByPhoneAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(bookings);
+
+        _stateStoreMock
+            .Setup(x => x.Get(It.IsAny<string>()))
+            .Returns((ModificationState?)null);
 
         // Act
-        var result = await modifiedHandler.StartModificationFlowAsync(senderNumber);
+        var result = await _handler.ProcessModificationAsync(message, null);
 
         // Assert
         result.Should().NotBeNull();
@@ -96,157 +202,279 @@ public class ModificationHandlerTests
         result.AiResponse.Should().NotBeNullOrWhiteSpace();
 
         // Should list multiple bookings
-        result.AiResponse.Should().Contain("varias reservas");
+        result.AiResponse.Should().Contain("1.");
+        result.AiResponse.Should().Contain("2.");
+        result.AiResponse.Should().Contain("3.");
 
-        // Should have numbered list
-        result.AiResponse.Should().Contain("1."); // First booking
-        result.AiResponse.Should().Contain("2."); // Second booking
-        result.AiResponse.Should().Contain("3."); // Third booking
-
-        // Should show booking details for each
-        result.AiResponse.Should().Contain("05/12/2024"); // First date
-        result.AiResponse.Should().Contain("12/12/2024"); // Second date
-        result.AiResponse.Should().Contain("19/12/2024"); // Third date
-
-        result.AiResponse.Should().Contain("14:00"); // First time
-        result.AiResponse.Should().Contain("20:00"); // Second time
-        result.AiResponse.Should().Contain("13:30"); // Third time
-
-        result.AiResponse.Should().Contain("4"); // First people count
-        result.AiResponse.Should().Contain("2"); // Second people count
-        result.AiResponse.Should().Contain("6"); // Third people count
+        // Should show booking details
+        result.AiResponse.Should().Contain("14:00");
+        result.AiResponse.Should().Contain("20:00");
+        result.AiResponse.Should().Contain("13:30");
 
         // Should ask which one to modify
-        result.AiResponse.Should().MatchRegex("(cuál.*modificar|modificar.*número)");
+        result.AiResponse.Should().MatchRegex("[Cc]uál");
 
-        // Should set correct metadata
-        result.Metadata.Should().NotBeNull();
-        result.Metadata.Should().ContainKey("modificationState");
-        result.Metadata!["modificationState"].Should().Be("selecting_booking");
-        result.Metadata.Should().ContainKey("bookings");
-
-        var bookings = result.Metadata["bookings"] as List<ModificationHandler.BookingInfo>;
-        bookings.Should().NotBeNull();
-        bookings.Should().HaveCount(3);
+        // Should have set state to SelectingBooking
+        _stateStoreMock.Verify(
+            x => x.Set(It.IsAny<string>(), It.Is<ModificationState>(s =>
+                s.Stage == ModificationStage.SelectingBooking &&
+                s.FoundBookings != null &&
+                s.FoundBookings.Count == 3)),
+            Times.Once);
     }
 
     /// <summary>
-    /// Additional test: Verify no bookings found returns appropriate message
+    /// Tests that when no bookings are found, the handler returns appropriate message.
     /// </summary>
     [Fact]
-    public async Task ModificationHandler_NoBookingsFound_ReturnsNoBookingsMessage()
+    public async Task ProcessModification_NoBookings_ReturnsNoBookingsMessage()
     {
         // Arrange
-        var senderNumber = "34600000000"; // No bookings for this number
-        var handlerWithNoBookings = new TestableModificationHandlerNoBookings(_loggerMock.Object);
+        var phone = "34600000000";
+        var message = CreateTextMessage(phone, "quiero modificar mi reserva");
+
+        _bookingRepoMock
+            .Setup(x => x.FindBookingsByPhoneAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<BookingRecord>());
+
+        _stateStoreMock
+            .Setup(x => x.Get(It.IsAny<string>()))
+            .Returns((ModificationState?)null);
 
         // Act
-        var result = await handlerWithNoBookings.StartModificationFlowAsync(senderNumber);
+        var result = await _handler.ProcessModificationAsync(message, null);
 
         // Assert
         result.Should().NotBeNull();
-        result.Intent.Should().Be(IntentType.Normal);
-        result.AiResponse.Should().Contain("No encontré reservas");
-        result.AiResponse.Should().MatchRegex("(nueva reserva|hacer.*reserva)");
-    }
-}
+        result.AiResponse.Should().NotBeNullOrWhiteSpace();
 
-/// <summary>
-/// Testable version of ModificationHandler that returns multiple bookings.
-/// </summary>
-internal class TestableModificationHandler : ModificationHandler
-{
-    public TestableModificationHandler(ILogger<ModificationHandler> logger) : base(logger)
-    {
-    }
+        // Should indicate no bookings found
+        result.AiResponse.Should().MatchRegex("([Nn]o.*encontr|[Nn]o.*reserva)");
 
-    public new async Task<AgentResponse> StartModificationFlowAsync(
-        string senderNumber,
-        CancellationToken cancellationToken = default)
-    {
-        // Find existing bookings for this phone number
-        var bookings = await FindBookingsForPhoneAsync(senderNumber, cancellationToken);
+        // Should offer to make a new reservation
+        result.AiResponse.Should().MatchRegex("(nueva|hacer|reservar)");
 
-        // Multiple bookings case
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine("Encontré varias reservas a tu nombre:\n");
-
-        for (int i = 0; i < bookings.Count; i++)
-        {
-            var b = bookings[i];
-            sb.AppendLine($"*{i + 1}.* {b.Date} a las {b.Time} ({b.People} personas)");
-        }
-
-        sb.AppendLine("\n¿Cuál quieres modificar? (responde con el número)");
-
-        return new AgentResponse
-        {
-            Intent = IntentType.Modification,
-            AiResponse = sb.ToString(),
-            Metadata = new Dictionary<string, object>
-            {
-                ["modificationState"] = "selecting_booking",
-                ["bookings"] = bookings
-            }
-        };
+        // Should NOT set any state
+        _stateStoreMock.Verify(
+            x => x.Set(It.IsAny<string>(), It.IsAny<ModificationState>()),
+            Times.Never);
     }
 
-    private async Task<List<BookingInfo>> FindBookingsForPhoneAsync(
-        string phoneNumber,
-        CancellationToken cancellationToken)
+    /// <summary>
+    /// Tests that lazy response "la primera" selects the first booking.
+    /// </summary>
+    [Fact]
+    public async Task HandleBookingSelection_LaPrimera_SelectsFirstBooking()
     {
-        await Task.Delay(50, cancellationToken);
+        // Arrange
+        var phone = "34612345678";
+        var message = CreateTextMessage(phone, "la primera");
 
-        // Return three bookings for testing
-        return new List<BookingInfo>
+        var bookings = new List<BookingRecord>
         {
             new()
             {
-                Id = "booking-1",
-                Date = "05/12/2024",
-                Time = "14:00",
-                People = 4
+                Id = 1,
+                ReservationDate = DateTime.Today.AddDays(5),
+                ReservationTime = TimeSpan.FromHours(14),
+                PartySize = 4,
+                ContactPhone = "612345678"
             },
             new()
             {
-                Id = "booking-2",
-                Date = "12/12/2024",
-                Time = "20:00",
-                People = 2,
-                ArrozType = "banda"
-            },
-            new()
-            {
-                Id = "booking-3",
-                Date = "19/12/2024",
-                Time = "13:30",
-                People = 6,
-                ArrozType = "del señoret"
+                Id = 2,
+                ReservationDate = DateTime.Today.AddDays(12),
+                ReservationTime = TimeSpan.FromHours(20),
+                PartySize = 2,
+                ContactPhone = "612345678"
             }
         };
-    }
-}
 
-/// <summary>
-/// Testable version that returns no bookings.
-/// </summary>
-internal class TestableModificationHandlerNoBookings : ModificationHandler
-{
-    public TestableModificationHandlerNoBookings(ILogger<ModificationHandler> logger) : base(logger)
-    {
-    }
-
-    public new async Task<AgentResponse> StartModificationFlowAsync(
-        string senderNumber,
-        CancellationToken cancellationToken = default)
-    {
-        await Task.Delay(50, cancellationToken);
-
-        return new AgentResponse
+        var currentState = new ModificationState
         {
-            Intent = IntentType.Normal,
-            AiResponse = "No encontré reservas futuras asociadas a tu número. " +
-                        "¿Quieres hacer una nueva reserva?"
+            PhoneNumber = phone,
+            Stage = ModificationStage.SelectingBooking,
+            FoundBookings = bookings
+        };
+
+        // Act
+        var result = await _handler.ProcessModificationAsync(message, currentState);
+
+        // Assert
+        result.Should().NotBeNull();
+
+        // Should transition to SelectingField and select the first booking
+        _stateStoreMock.Verify(
+            x => x.Set(It.IsAny<string>(), It.Is<ModificationState>(s =>
+                s.Stage == ModificationStage.SelectingField &&
+                s.SelectedBooking != null &&
+                s.SelectedBooking.Id == 1)),
+            Times.Once);
+    }
+
+    /// <summary>
+    /// Tests that confirmation with "sí" applies the changes.
+    /// </summary>
+    [Fact]
+    public async Task HandleConfirmation_Yes_AppliesChanges()
+    {
+        // Arrange
+        var phone = "34612345678";
+        var message = CreateTextMessage(phone, "sí, confirmo");
+
+        var selectedBooking = new BookingRecord
+        {
+            Id = 1,
+            ReservationDate = DateTime.Today.AddDays(7),
+            ReservationTime = TimeSpan.FromHours(14),
+            PartySize = 4,
+            ContactPhone = "612345678"
+        };
+
+        var pendingChanges = new BookingUpdateData
+        {
+            PartySize = 6
+        };
+
+        var currentState = new ModificationState
+        {
+            PhoneNumber = phone,
+            Stage = ModificationStage.AwaitingConfirmation,
+            SelectedBooking = selectedBooking,
+            PendingChanges = pendingChanges,
+            ChangeDescription = "cambiar de 4 a 6 personas"
+        };
+
+        _bookingRepoMock
+            .Setup(x => x.UpdateBookingAsync(1, It.IsAny<BookingUpdateData>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        // Act
+        var result = await _handler.ProcessModificationAsync(message, currentState);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.AiResponse.Should().NotBeNullOrWhiteSpace();
+
+        // Should indicate success
+        result.AiResponse.Should().MatchRegex("(modificad|actualizad|[Ll]isto|[Hh]echo|[Pp]erfecto)");
+
+        // Should clear state
+        _stateStoreMock.Verify(x => x.Clear(It.IsAny<string>()), Times.Once);
+
+        // Should update database
+        _bookingRepoMock.Verify(
+            x => x.UpdateBookingAsync(1, It.IsAny<BookingUpdateData>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    /// <summary>
+    /// Tests that cancellation with "no" cancels the modification.
+    /// </summary>
+    [Fact]
+    public async Task HandleConfirmation_No_CancelsModification()
+    {
+        // Arrange
+        var phone = "34612345678";
+        var message = CreateTextMessage(phone, "no");
+
+        var selectedBooking = new BookingRecord
+        {
+            Id = 1,
+            ReservationDate = DateTime.Today.AddDays(7),
+            ReservationTime = TimeSpan.FromHours(14),
+            PartySize = 4,
+            ContactPhone = "612345678"
+        };
+
+        var currentState = new ModificationState
+        {
+            PhoneNumber = phone,
+            Stage = ModificationStage.AwaitingConfirmation,
+            SelectedBooking = selectedBooking,
+            PendingChanges = new BookingUpdateData { PartySize = 6 },
+            ChangeDescription = "cambiar de 4 a 6 personas"
+        };
+
+        // Act
+        var result = await _handler.ProcessModificationAsync(message, currentState);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.AiResponse.Should().NotBeNullOrWhiteSpace();
+
+        // Should indicate cancellation
+        result.AiResponse.Should().MatchRegex("([Nn]o.*cambio|cancel|igual)");
+
+        // Should clear state
+        _stateStoreMock.Verify(x => x.Clear(It.IsAny<string>()), Times.Once);
+
+        // Should NOT update database
+        _bookingRepoMock.Verify(
+            x => x.UpdateBookingAsync(It.IsAny<int>(), It.IsAny<BookingUpdateData>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    /// <summary>
+    /// Tests that >10 people triggers contact card.
+    /// </summary>
+    [Fact]
+    public async Task HandlePartySize_MoreThan10_SendsContactCard()
+    {
+        // Arrange
+        var phone = "34612345678";
+        var message = CreateTextMessage(phone, "seremos 15");
+
+        var selectedBooking = new BookingRecord
+        {
+            Id = 1,
+            ReservationDate = DateTime.Today.AddDays(7),
+            ReservationTime = TimeSpan.FromHours(14),
+            PartySize = 4,
+            ContactPhone = "612345678"
+        };
+
+        var currentState = new ModificationState
+        {
+            PhoneNumber = phone,
+            Stage = ModificationStage.CollectingNewValue,
+            SelectedBooking = selectedBooking,
+            FieldToModify = "party_size"
+        };
+
+        // Act
+        var result = await _handler.ProcessModificationAsync(message, currentState);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.AiResponse.Should().NotBeNullOrWhiteSpace();
+
+        // Should mention large group/contact team
+        result.AiResponse.Should().MatchRegex("(grupo|10|equipo|contacto)");
+
+        // Should send contact card
+        _whatsAppMock.Verify(
+            x => x.SendContactCardAsync(
+                It.IsAny<string>(),  // phoneNumber
+                It.IsAny<string>(),  // fullName
+                It.IsAny<string>(),  // contactPhoneNumber
+                It.IsAny<string?>(), // organization
+                It.IsAny<string?>(), // email
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        // Should clear state
+        _stateStoreMock.Verify(x => x.Clear(It.IsAny<string>()), Times.Once);
+    }
+
+    private static WhatsAppMessage CreateTextMessage(string phone, string text)
+    {
+        return new WhatsAppMessage
+        {
+            SenderNumber = phone,
+            MessageText = text,
+            MessageType = "text",
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
         };
     }
 }

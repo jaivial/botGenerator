@@ -40,6 +40,17 @@ public interface IContextBuilderService
     /// Formats a conversation history for display in prompts.
     /// </summary>
     string FormatHistory(List<ChatMessage>? history, int maxMessages = 10);
+
+    /// <summary>
+    /// Builds context with dynamic opening hours from database.
+    /// </summary>
+    Task<Dictionary<string, object>> BuildContextWithHoursAsync(
+        WhatsAppMessage message,
+        ConversationState? state,
+        List<ChatMessage>? history,
+        DateTime targetDate,
+        RestaurantConfig? restaurantConfig = null,
+        CancellationToken ct = default);
 }
 
 /// <summary>

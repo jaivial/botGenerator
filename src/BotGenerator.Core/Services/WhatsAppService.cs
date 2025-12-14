@@ -10,7 +10,6 @@ namespace BotGenerator.Core.Services;
 public class WhatsAppService : IWhatsAppService
 {
     private readonly HttpClient _httpClient;
-    private readonly string _apiUrl;
     private readonly string _token;
     private readonly ILogger<WhatsAppService> _logger;
 
@@ -22,8 +21,6 @@ public class WhatsAppService : IWhatsAppService
         _httpClient = httpClient;
         _logger = logger;
 
-        _apiUrl = configuration["WhatsApp:ApiUrl"]
-            ?? throw new InvalidOperationException("WhatsApp:ApiUrl not configured");
         _token = configuration["WhatsApp:Token"]
             ?? throw new InvalidOperationException("WhatsApp:Token not configured");
     }
@@ -33,19 +30,21 @@ public class WhatsAppService : IWhatsAppService
         string text,
         CancellationToken cancellationToken = default)
     {
+        var normalizedNumber = NormalizeRecipientNumber(phoneNumber);
         _logger.LogInformation(
             "Sending text message to {Phone}: {Preview}",
-            phoneNumber,
+            normalizedNumber,
             text.Length > 50 ? text[..50] + "..." : text);
 
         var request = new HttpRequestMessage(
             HttpMethod.Post,
-            "/send/text");
+            $"/send/text?token={Uri.EscapeDataString(_token)}");
 
+        // Keep header token for backward compatibility (some UAZAPI setups accept it)
         request.Headers.Add("token", _token);
         request.Content = JsonContent.Create(new
         {
-            number = phoneNumber,
+            number = normalizedNumber,
             text = text
         });
 
@@ -79,13 +78,14 @@ public class WhatsAppService : IWhatsAppService
         List<ButtonOption> buttons,
         CancellationToken cancellationToken = default)
     {
+        var normalizedNumber = NormalizeRecipientNumber(phoneNumber);
         _logger.LogInformation(
             "Sending buttons message to {Phone} with {Count} buttons",
-            phoneNumber, buttons.Count);
+            normalizedNumber, buttons.Count);
 
         var request = new HttpRequestMessage(
             HttpMethod.Post,
-            $"{_apiUrl}/send/menu");
+            $"/send/menu?token={Uri.EscapeDataString(_token)}");
 
         request.Headers.Add("token", _token);
 
@@ -95,7 +95,7 @@ public class WhatsAppService : IWhatsAppService
 
         request.Content = JsonContent.Create(new
         {
-            number = phoneNumber,
+            number = normalizedNumber,
             type = "button",
             text = text,
             footerText = footer,
@@ -122,13 +122,14 @@ public class WhatsAppService : IWhatsAppService
         List<MenuSection> sections,
         CancellationToken cancellationToken = default)
     {
+        var normalizedNumber = NormalizeRecipientNumber(phoneNumber);
         _logger.LogInformation(
             "Sending menu message to {Phone}",
-            phoneNumber);
+            normalizedNumber);
 
         var request = new HttpRequestMessage(
             HttpMethod.Post,
-            $"{_apiUrl}/send/menu");
+            $"/send/menu?token={Uri.EscapeDataString(_token)}");
 
         request.Headers.Add("token", _token);
 
@@ -146,7 +147,7 @@ public class WhatsAppService : IWhatsAppService
 
         request.Content = JsonContent.Create(new
         {
-            number = phoneNumber,
+            number = normalizedNumber,
             type = "list",
             text = text,
             buttonText = buttonText,
@@ -170,16 +171,17 @@ public class WhatsAppService : IWhatsAppService
         int limit = 20,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogDebug("Getting history for {Phone}, limit: {Limit}", phoneNumber, limit);
+        var normalizedNumber = NormalizeChatIdNumber(phoneNumber);
+        _logger.LogDebug("Getting history for {Phone}, limit: {Limit}", normalizedNumber, limit);
 
         var request = new HttpRequestMessage(
             HttpMethod.Post,
-            $"{_apiUrl}/message/find");
+            $"/message/find?token={Uri.EscapeDataString(_token)}");
 
         request.Headers.Add("token", _token);
         request.Content = JsonContent.Create(new
         {
-            chatid = $"{phoneNumber}@s.whatsapp.net",
+            chatid = $"{normalizedNumber}@s.whatsapp.net",
             limit = limit
         });
 
@@ -224,5 +226,129 @@ public class WhatsAppService : IWhatsAppService
         public long MessageTimestamp { get; set; }
         public string? SenderName { get; set; }
         public string? MessageId { get; set; }
+    }
+
+    public async Task<bool> SendLinkButtonsAsync(
+        string phoneNumber,
+        string text,
+        List<LinkButtonOption> buttons,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedNumber = NormalizeRecipientNumber(phoneNumber);
+
+        _logger.LogInformation(
+            "Sending link buttons to {Phone} with {Count} buttons",
+            normalizedNumber,
+            buttons.Count);
+
+        var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/send/menu?token={Uri.EscapeDataString(_token)}");
+
+        request.Headers.Add("token", _token);
+
+        var choices = buttons
+            .Select(b => $"{b.Text}|{b.Url}")
+            .ToList();
+
+        request.Content = JsonContent.Create(new
+        {
+            number = normalizedNumber,
+            type = "button",
+            text = text,
+            choices = choices
+        });
+
+        try
+        {
+            var response = await _httpClient.SendAsync(request, cancellationToken);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error sending link buttons to {Phone}", normalizedNumber);
+            return false;
+        }
+    }
+
+    private static string NormalizeRecipientNumber(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return input;
+
+        var digits = new string(input.Where(char.IsDigit).ToArray());
+        if (digits.Length == 0) return input;
+
+        // Already Spain country code + 9 digits
+        if (digits.StartsWith("34") && digits.Length == 11)
+            return digits;
+
+        // Local 9 digits -> prefix country code
+        if (digits.Length == 9)
+            return "34" + digits;
+
+        // If longer, keep last 9 digits and prefix 34
+        if (digits.Length > 9)
+            return "34" + digits[^9..];
+
+        // Fallback: return as-is
+        return digits;
+    }
+
+    private static string NormalizeChatIdNumber(string input)
+    {
+        // For chatid lookups we want digits only, without the @ suffix (caller adds it)
+        if (string.IsNullOrWhiteSpace(input)) return input;
+        return new string(input.Where(char.IsDigit).ToArray());
+    }
+
+    public async Task<bool> SendContactCardAsync(
+        string phoneNumber,
+        string fullName,
+        string contactPhoneNumber,
+        string? organization = null,
+        string? email = null,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedNumber = NormalizeRecipientNumber(phoneNumber);
+
+        _logger.LogInformation(
+            "Sending contact card to {Phone}: {FullName} ({ContactPhone})",
+            normalizedNumber, fullName, contactPhoneNumber);
+
+        var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/send/contact?token={Uri.EscapeDataString(_token)}");
+
+        request.Headers.Add("token", _token);
+        request.Content = JsonContent.Create(new
+        {
+            number = normalizedNumber,
+            fullName = fullName,
+            phoneNumber = contactPhoneNumber,
+            organization = organization ?? "",
+            email = email ?? ""
+        });
+
+        try
+        {
+            var response = await _httpClient.SendAsync(request, cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogError(
+                    "Failed to send contact card. Status: {Status}, Error: {Error}",
+                    response.StatusCode, error);
+                return false;
+            }
+
+            _logger.LogDebug("Contact card sent successfully to {Phone}", phoneNumber);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error sending contact card to {Phone}", phoneNumber);
+            return false;
+        }
     }
 }

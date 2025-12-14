@@ -70,7 +70,9 @@ class ConversationLogger:
         """
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         test_name = self._sanitize_filename(result.name)
-        filename = f"{timestamp}_{test_name}.log"
+        # Ensure uniqueness even if multiple tests run within the same second
+        unique_suffix = uuid.uuid4().hex[:8]
+        filename = f"{timestamp}_{test_name}_{unique_suffix}.log"
         filepath = self.logs_dir / filename
 
         with open(filepath, "w", encoding="utf-8") as f:
@@ -79,6 +81,32 @@ class ConversationLogger:
             self._write_summary(f, result)
 
         return str(filepath)
+
+    def _format_ts(self, dt: Optional[datetime]) -> str:
+        """Format timestamp as dd-mm-yy hh-mm (24h)."""
+        dt = dt or datetime.now()
+        return dt.strftime("%d-%m-%y %H-%M")
+
+    def _normalize_text_single_line(self, text: str) -> str:
+        """
+        Keep logs line-oriented:
+        - Replace newlines/tabs with spaces
+        - Collapse repeated spaces
+        """
+        text = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+        text = text.replace("\n", " ").replace("\t", " ")
+        while "  " in text:
+            text = text.replace("  ", " ")
+        return text.strip()
+
+    def _parse_bot_timestamp(self, timestamp_str: Optional[str]) -> Optional[datetime]:
+        """Parse ISO-like timestamp from mock server."""
+        if not timestamp_str:
+            return None
+        try:
+            return datetime.fromisoformat(timestamp_str)
+        except Exception:
+            return None
 
     def _write_header(self, f, result: "ConversationResult"):
         """Write log header"""
@@ -93,55 +121,29 @@ class ConversationLogger:
         f.write("=" * 70 + "\n\n")
 
     def _write_conversation(self, f, result: "ConversationResult"):
-        """Write the conversation turns"""
-        f.write("CONVERSATION:\n")
-        f.write("-" * 70 + "\n\n")
+        """
+        Write the conversation as timestamped, line-oriented messages:
+        dd-mm-yy hh-mm -client <message>
+        dd-mm-yy hh-mm -bot <message>
+        """
+        f.write("CONVERSATION (timestamped):\n")
+        f.write("-" * 70 + "\n")
 
-        for i, turn in enumerate(result.turns, 1):
-            # User message
-            f.write(f"[Turn {i}] USER:\n")
-            f.write(f"  {turn.user_input}\n\n")
+        for turn in result.turns:
+            client_ts = self._format_ts(turn.user_sent_at)
+            client_msg = self._normalize_text_single_line(turn.user_input)
+            f.write(f"{client_ts} -client {client_msg}\n")
 
-            # Bot response
-            f.write(f"[Turn {i}] BOT:\n")
             if turn.bot_response:
-                # Write full response with indentation
-                response_lines = turn.bot_response.text.split("\n")
-                for line in response_lines:
-                    f.write(f"  {line}\n")
-
-                # Add message type if not plain text
-                if turn.bot_response.message_type != "text":
-                    f.write(f"\n  [Message Type: {turn.bot_response.message_type}]\n")
-
-                # Add choices/buttons if present
-                if turn.bot_response.choices:
-                    f.write(f"  [Choices: {', '.join(turn.bot_response.choices)}]\n")
-
-                # Add sections/list if present
-                if turn.bot_response.sections:
-                    f.write(f"  [Sections: {json.dumps(turn.bot_response.sections, ensure_ascii=False)}]\n")
+                bot_dt = self._parse_bot_timestamp(turn.bot_response.timestamp)
+                bot_ts = self._format_ts(bot_dt)
+                bot_msg = self._normalize_text_single_line(turn.bot_response.text)
+                f.write(f"{bot_ts} -bot {bot_msg}\n")
             else:
-                f.write("  [NO RESPONSE RECEIVED]\n")
+                bot_ts = self._format_ts(None)
+                f.write(f"{bot_ts} -bot [NO RESPONSE RECEIVED]\n")
 
-            f.write("\n")
-
-            # Validation result
-            status = "PASSED" if turn.validation_passed else "FAILED"
-            f.write(f"[Turn {i}] VALIDATION: {status}\n")
-
-            if turn.expected_contains:
-                f.write(f"  Expected to contain: {turn.expected_contains}\n")
-
-            if turn.expected_not_contains:
-                f.write(f"  Expected NOT to contain: {turn.expected_not_contains}\n")
-
-            if turn.validation_errors:
-                f.write(f"  Errors:\n")
-                for error in turn.validation_errors:
-                    f.write(f"    - {error}\n")
-
-            f.write("\n" + "-" * 70 + "\n\n")
+        f.write("-" * 70 + "\n\n")
 
     def _write_summary(self, f, result: "ConversationResult"):
         """Write summary section"""
@@ -171,6 +173,7 @@ class BotResponse:
 class ConversationTurn:
     """Represents one turn in a conversation"""
     user_input: str
+    user_sent_at: Optional[datetime] = None
     bot_response: Optional[BotResponse] = None
     expected_contains: list[str] = field(default_factory=list)
     expected_not_contains: list[str] = field(default_factory=list)
@@ -510,11 +513,13 @@ class ConversationTester:
 
             print(f"\n[Turn {i+1}] User: {user_input}")
 
+            user_sent_at = datetime.now()
             # Send message and wait for response
             response = self.send_and_wait(user_input, phone=phone)
 
             turn = ConversationTurn(
                 user_input=user_input,
+                user_sent_at=user_sent_at,
                 expected_contains=expected_contains,
                 expected_not_contains=expected_not_contains
             )

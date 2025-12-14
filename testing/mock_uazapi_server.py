@@ -149,6 +149,57 @@ async def find_messages(request: Request, token: Optional[str] = Header(None)):
     return history[-limit:]
 
 
+@app.post("/send/contact")
+async def send_contact(request: Request, token: Optional[str] = Header(None)):
+    """Mock endpoint for sending contact cards/vCards (matches UAZAPI /send/contact)"""
+    body = await request.json()
+
+    message_id = str(uuid.uuid4())
+    timestamp = datetime.now()
+
+    captured = {
+        "id": message_id,
+        "type": "contact",
+        "timestamp": timestamp.isoformat(),
+        "timestamp_unix": int(timestamp.timestamp()),
+        "phone": body.get("number"),
+        "fullName": body.get("fullName"),
+        "phoneNumber": body.get("phoneNumber"),
+        "organization": body.get("organization"),
+        "email": body.get("email"),
+        "raw_payload": body,
+        "token_present": token is not None
+    }
+
+    captured_messages.append(captured)
+
+    # Add to simulated history
+    phone = body.get("number", "")
+    if phone not in simulated_history:
+        simulated_history[phone] = []
+
+    simulated_history[phone].append({
+        "id": message_id,
+        "chatid": f"{phone}@s.whatsapp.net",
+        "contact": {
+            "fullName": body.get("fullName"),
+            "phoneNumber": body.get("phoneNumber"),
+            "organization": body.get("organization")
+        },
+        "fromMe": True,
+        "timestamp": int(timestamp.timestamp()),
+        "type": "contact"
+    })
+
+    print(f"[CAPTURED CONTACT] To: {phone} | Name: {body.get('fullName')} | Phone: {body.get('phoneNumber')}")
+
+    return {
+        "success": True,
+        "messageId": message_id,
+        "status": "sent"
+    }
+
+
 # === Test Control Endpoints ===
 
 @app.get("/captured")
