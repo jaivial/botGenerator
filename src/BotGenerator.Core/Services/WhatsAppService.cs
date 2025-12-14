@@ -133,25 +133,32 @@ public class WhatsAppService : IWhatsAppService
 
         request.Headers.Add("token", _token);
 
-        // Build menu structure (WhatsApp limits: title max 24 chars, description max 72 chars)
-        var menuSections = sections.Select(s => new
+        // Build choices array per UAZAPI docs:
+        // "[Section Title]" for section headers
+        // "text|id|description" for items (WhatsApp limits: text max 24 chars, description max 72 chars)
+        var choices = new List<string>();
+        foreach (var section in sections)
         {
-            title = s.Title?.Length > 24 ? s.Title[..24] : s.Title,
-            rows = s.Rows.Select(r => new
+            // Add section header in brackets
+            var sectionTitle = section.Title?.Length > 24 ? section.Title[..24] : section.Title;
+            choices.Add($"[{sectionTitle}]");
+
+            // Add rows as "text|id|description"
+            foreach (var row in section.Rows)
             {
-                id = r.Id,
-                title = r.Title?.Length > 24 ? r.Title[..21] + "..." : r.Title,
-                description = r.Description?.Length > 72 ? r.Description[..69] + "..." : (r.Description ?? "")
-            }).ToList()
-        }).ToList();
+                var title = row.Title?.Length > 24 ? row.Title[..21] + "..." : row.Title;
+                var desc = row.Description?.Length > 72 ? row.Description[..69] + "..." : (row.Description ?? "");
+                choices.Add($"{title}|{row.Id}|{desc}");
+            }
+        }
 
         request.Content = JsonContent.Create(new
         {
             number = normalizedNumber,
             type = "list",
             text = text,
-            buttonText = buttonText,
-            sections = menuSections
+            listButton = buttonText,  // UAZAPI uses "listButton" not "buttonText"
+            choices = choices
         });
 
         try
