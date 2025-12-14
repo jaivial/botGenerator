@@ -634,37 +634,22 @@ public class WebhookController : ControllerBase
 
             if (!validation.IsValid)
             {
-                // Send a list of available rice types as an interactive menu + include menu URL.
-                var riceTypes = await _menuRepository.GetActiveRiceTypesAsync(cancellationToken);
+                // Send simple message with link button to rice menu
                 var menuUrl = "https://alqueriavillacarmen.com/menufindesemana.php";
+                var text = "Lo siento, no tenemos ese arroz. Puedes ver nuestra carta de arroces aquí:";
 
-                var text = validation.Status == "multiple"
-                    ? "He encontrado varias opciones parecidas. Elige una, por favor:"
-                    : $"Lo siento, no tenemos ese arroz. Puedes ver el menú aquí: {menuUrl}\n\n" +
-                      "Elige uno de nuestros arroces disponibles:";
-
-                // Build menu rows (WhatsApp limit: 10 rows per section)
-                var riceList = validation.Options?.Count > 0 ? validation.Options : riceTypes;
-                var rows = riceList
-                    .Take(10)
-                    .Select((r, i) => new MenuRow($"rice_{i}", r))
-                    .ToList();
-
-                var sentMenu = await _whatsApp.SendMenuAsync(
+                var sent = await _whatsApp.SendLinkButtonsAsync(
                     message.SenderNumber,
                     text,
-                    "Ver arroces",
-                    new List<MenuSection> { new("Arroces", rows) },
+                    new List<LinkButtonOption> { new("Ver carta de arroces", menuUrl) },
                     cancellationToken);
 
-                // Fallback to plain text with numbered list if menu fails
-                if (!sentMenu)
+                // Fallback to plain text if button fails
+                if (!sent)
                 {
-                    var riceListText = string.Join("\n", riceList.Select((r, i) => $"{i + 1}. {r}"));
-                    var fallbackText = $"{text}\n\n{riceListText}";
                     await _whatsApp.SendTextAsync(
                         message.SenderNumber,
-                        fallbackText,
+                        $"{text}\n{menuUrl}",
                         cancellationToken);
                 }
 
