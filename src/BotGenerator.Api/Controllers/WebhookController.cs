@@ -643,6 +643,13 @@ public class WebhookController : ControllerBase
                 return (true, capacityMsg, updatedState);
             }
 
+            // Store validated date in state for subsequent messages
+            if (extractedDate.HasValue)
+            {
+                updatedState = updatedState with { Fecha = requestedDate.ToString("dd/MM/yyyy") };
+                _logger.LogDebug("Stored validated date in state: {Date}", updatedState.Fecha);
+            }
+
             // 3. Check hour availability (if we have time from message or state)
             if (effectiveTime.HasValue && effectivePartySize.HasValue && effectivePartySize.Value > 0)
             {
@@ -693,6 +700,20 @@ public class WebhookController : ControllerBase
                     return (true, capacityMsg, updatedState);
                 }
             }
+        }
+
+        // Store extracted party size in state for subsequent messages
+        if (extractedPartySize.HasValue && extractedPartySize.Value > 0)
+        {
+            updatedState = updatedState with { Personas = extractedPartySize.Value };
+            _logger.LogDebug("Stored party size in state: {Personas}", updatedState.Personas);
+        }
+
+        // Store extracted time in state for subsequent messages
+        if (extractedTime.HasValue)
+        {
+            updatedState = updatedState with { Hora = $"{extractedTime.Value.Hours:D2}:{extractedTime.Value.Minutes:D2}" };
+            _logger.LogDebug("Stored time in state: {Hora}", updatedState.Hora);
         }
 
         // === Rice constraints & validation (if user mentions a rice/paella) ===
@@ -1213,6 +1234,13 @@ public class WebhookController : ControllerBase
             {
                 return size;
             }
+        }
+
+        // Fallback: if the entire message is just a number (user answering "how many people?")
+        var trimmed = t.Trim();
+        if (int.TryParse(trimmed, out var bareNumber) && bareNumber > 0 && bareNumber <= 50)
+        {
+            return bareNumber;
         }
 
         return null;
