@@ -207,19 +207,20 @@ PETICIÓN DEL CLIENTE:
                 .Where(p => !string.IsNullOrEmpty(p))
                 .ToList();
 
-            // Verify each rice exists in our list
+            // Find ALL matching rice types for each partial name
+            // Use SelectMany to expand partial matches to all matching rice types
             var validOptions = parts
-                .Select(p => availableTypes.FirstOrDefault(r =>
+                .SelectMany(p => availableTypes.Where(r =>
                     r.Equals(p, StringComparison.OrdinalIgnoreCase) ||
-                    r.Contains(p, StringComparison.OrdinalIgnoreCase)))
-                .Where(r => r != null)
+                    r.Contains(p, StringComparison.OrdinalIgnoreCase) ||
+                    p.Contains(r.Split(',')[0], StringComparison.OrdinalIgnoreCase)))
                 .Distinct()
-                .ToList()!;
+                .ToList();
 
             if (validOptions.Count > 0)
             {
                 _logger.LogInformation("AI found multiple matches: {Options}", string.Join(", ", validOptions));
-                return RiceValidationResult.Multiple(validOptions!, originalRequest);
+                return RiceValidationResult.Multiple(validOptions, originalRequest);
             }
 
             return RiceValidationResult.NotFound(originalRequest);

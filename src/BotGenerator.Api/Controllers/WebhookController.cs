@@ -1539,24 +1539,59 @@ public class WebhookController : ControllerBase
 
     private static string BuildAdminNewBookingNotification(BookingData booking, string bookingId)
     {
-        var arroz = string.IsNullOrWhiteSpace(booking.ArrozType)
-            ? "Sin arroz"
-            : (booking.ArrozServings.HasValue
-                ? $"{booking.ArrozType} ({booking.ArrozServings} raciones)"
-                : booking.ArrozType);
-
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("📩 Nueva reserva insertada por el Asistente IA (Villa Carmen)");
+
+        // Header
+        sb.AppendLine("🤖 *NUEVA RESERVA - Asistente IA*");
+        sb.AppendLine("━━━━━━━━━━━━━━━━━━━━━");
+        sb.AppendLine();
+
+        // Booking ID
         if (!string.IsNullOrWhiteSpace(bookingId))
-            sb.AppendLine($"ID: {bookingId}");
-        sb.AppendLine($"Nombre: {booking.Name}");
-        sb.AppendLine($"Teléfono: {booking.Phone}");
-        sb.AppendLine($"Fecha: {booking.Date}");
-        sb.AppendLine($"Hora: {booking.Time}");
-        sb.AppendLine($"Personas: {booking.People}");
-        sb.AppendLine($"Arroz: {arroz}");
-        sb.AppendLine($"Tronas: {booking.HighChairs}");
-        sb.AppendLine($"Carritos: {booking.BabyStrollers}");
+        {
+            sb.AppendLine($"🆔 *ID:* #{bookingId}");
+            sb.AppendLine();
+        }
+
+        // Customer info
+        sb.AppendLine($"👤 *Cliente:* {booking.Name}");
+        sb.AppendLine($"📱 *Teléfono:* {booking.Phone}");
+        sb.AppendLine();
+
+        // Booking details
+        sb.AppendLine($"📅 *Fecha:* {booking.Date}");
+        sb.AppendLine($"🕐 *Hora:* {booking.Time}");
+        sb.AppendLine($"👥 *Personas:* {booking.People}");
+        sb.AppendLine();
+
+        // Rice info
+        if (!string.IsNullOrWhiteSpace(booking.ArrozType))
+        {
+            var arrozDisplay = booking.ArrozServings.HasValue
+                ? $"{booking.ArrozType} ({booking.ArrozServings} raciones)"
+                : booking.ArrozType;
+            sb.AppendLine($"🍚 *Arroz:* {arrozDisplay}");
+        }
+        else
+        {
+            sb.AppendLine("🍚 *Arroz:* Sin arroz");
+        }
+
+        // Extras
+        if (booking.HighChairs > 0 || booking.BabyStrollers > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("*Extras:*");
+            if (booking.HighChairs > 0)
+                sb.AppendLine($"  🪑 Tronas: {booking.HighChairs}");
+            if (booking.BabyStrollers > 0)
+                sb.AppendLine($"  🚼 Carritos: {booking.BabyStrollers}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("━━━━━━━━━━━━━━━━━━━━━");
+        sb.AppendLine($"⏰ {DateTime.Now:dd/MM/yyyy HH:mm}");
+
         return sb.ToString().TrimEnd();
     }
 }
