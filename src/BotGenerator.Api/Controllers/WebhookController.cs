@@ -604,25 +604,43 @@ public class WebhookController : ControllerBase
                 return (true, closedMsg, updatedState);
             }
 
-            // 2. Check daily capacity (if we have party size from message or state)
-            if (effectivePartySize.HasValue && effectivePartySize.Value > 0)
-            {
-                var dailyLimit = await _availability.GetDailyLimitAsync(requestedDate, cancellationToken);
-                if (dailyLimit.FreeBookingSeats < effectivePartySize.Value)
-                {
-                    _logger.LogInformation(
-                        "Day {Date} has insufficient capacity for {PartySize} (free: {Free}) for {Phone}",
-                        requestedDate.ToString("yyyy-MM-dd"),
-                        effectivePartySize.Value,
-                        dailyLimit.FreeBookingSeats,
-                        message.SenderNumber);
+            // 2. Check daily capacity - ALWAYS check if day is full, even without party size
+            var dailyLimit = await _availability.GetDailyLimitAsync(requestedDate, cancellationToken);
+            _logger.LogDebug(
+                "Daily limit for {Date}: limit={Limit}, booked={Booked}, free={Free}",
+                requestedDate.ToString("yyyy-MM-dd"),
+                dailyLimit.DailyLimit,
+                dailyLimit.TotalPeople,
+                dailyLimit.FreeBookingSeats);
 
-                    var fullMsg = dailyLimit.FreeBookingSeats <= 0
-                        ? $"Ese día ya no tenemos disponibilidad. ¿Te viene bien otra fecha?"
-                        : $"Ese día solo nos quedan {dailyLimit.FreeBookingSeats} plazas, no podemos acoger {effectivePartySize.Value} personas. ¿Te viene bien otra fecha?";
-                    await _whatsApp.SendTextAsync(message.SenderNumber, fullMsg, cancellationToken);
-                    return (true, fullMsg, updatedState);
-                }
+            // If day is completely full (no seats left), reject immediately
+            if (dailyLimit.FreeBookingSeats <= 0)
+            {
+                _logger.LogInformation(
+                    "Day {Date} is FULL ({Booked}/{Limit} people) for {Phone}",
+                    requestedDate.ToString("yyyy-MM-dd"),
+                    dailyLimit.TotalPeople,
+                    dailyLimit.DailyLimit,
+                    message.SenderNumber);
+
+                var fullMsg = "Lo siento, ese día ya estamos completos. ¿Te viene bien otra fecha?";
+                await _whatsApp.SendTextAsync(message.SenderNumber, fullMsg, cancellationToken);
+                return (true, fullMsg, updatedState);
+            }
+
+            // If we have party size, check if there's enough capacity for that specific group
+            if (effectivePartySize.HasValue && effectivePartySize.Value > 0 && dailyLimit.FreeBookingSeats < effectivePartySize.Value)
+            {
+                _logger.LogInformation(
+                    "Day {Date} has insufficient capacity for {PartySize} (free: {Free}) for {Phone}",
+                    requestedDate.ToString("yyyy-MM-dd"),
+                    effectivePartySize.Value,
+                    dailyLimit.FreeBookingSeats,
+                    message.SenderNumber);
+
+                var capacityMsg = $"Ese día solo nos quedan {dailyLimit.FreeBookingSeats} plazas, no podemos acoger {effectivePartySize.Value} personas. ¿Te viene bien otra fecha?";
+                await _whatsApp.SendTextAsync(message.SenderNumber, capacityMsg, cancellationToken);
+                return (true, capacityMsg, updatedState);
             }
 
             // 3. Check hour availability (if we have time from message or state)
