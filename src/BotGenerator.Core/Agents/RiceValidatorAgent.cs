@@ -94,16 +94,29 @@ public class RiceValidatorAgent : IAgent, IRiceValidatorService
         var systemPrompt = @"Eres un asistente especializado en validar pedidos de arroz para un restaurante español.
 
 Tu tarea es determinar si la petición del cliente coincide con alguno de los arroces disponibles en el menú.
-Debes entender el lenguaje natural español, incluyendo:
-- Variaciones ortográficas (señoret/señorito, fideua/fideuá)
-- Abreviaciones (arroz negro = arroz negro, paella valenciana = paella valenciana de la albufera)
-- Ingredientes mencionados (chorizo → arroz de chorizo, marisco → fideuá de marisco)
-- Sinónimos y formas coloquiales
+Debes ser MUY FLEXIBLE con el matching, entendiendo que el cliente puede usar nombres cortos o parciales:
 
-REGLAS:
-1. Si la petición coincide claramente con UN arroz del menú, responde: TRUE|[nombre exacto del arroz del menú]
-2. Si la petición podría coincidir con VARIOS arroces, responde: MULTIPLE|[arroz1]|[arroz2]|...
+MATCHING FLEXIBLE - EJEMPLOS:
+- ""paella valenciana"" → coincide con ""Paella valenciana de la Albufera, con pato, garrofo y bachoqueta. (+4€) Por encargo.""
+- ""arroz negro"" → coincide con ""Arroz Negro""
+- ""fideuá"" o ""fideua"" → coincide con ""Fideuá de marisco""
+- ""arroz de chorizo"" → coincide con ""Arroz de chorizo""
+- ""meloso de pulpo"" → coincide con ""Arroz meloso de pulpo y gambones""
+- ""arroz a banda"" → coincide con ""Arroz a banda""
+- ""carrillada"" → podría coincidir con varios (meloso o seco de carrillada)
+
+CRITERIOS DE MATCHING:
+- Ignora precios, ""por encargo"", ""(+4€)"" y texto adicional
+- El nombre corto del cliente debe coincidir con el nombre BASE del plato
+- Variaciones ortográficas son válidas (señoret/señorito, fideua/fideuá)
+- Si el cliente menciona un ingrediente clave, busca arroces que lo contengan
+
+REGLAS DE RESPUESTA:
+1. Si la petición coincide claramente con UN arroz, responde: TRUE|[NOMBRE COMPLETO EXACTO del menú, incluyendo precio y descripción]
+2. Si la petición podría coincidir con VARIOS arroces, responde: MULTIPLE|[nombre completo 1]|[nombre completo 2]|...
 3. Si la petición NO coincide con ningún arroz del menú, responde: FALSE
+
+IMPORTANTE: Siempre devuelve el nombre COMPLETO Y EXACTO como aparece en el menú, incluyendo descripciones y precios.
 
 Solo responde con el formato indicado, sin explicaciones adicionales.";
 

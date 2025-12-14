@@ -621,11 +621,35 @@ public class WebhookController : ControllerBase
         }
 
         // === Rice constraints & validation (if user mentions a rice/paella) ===
+
+        // Check if user is selecting from pending rice options
+        if (updatedState.PendingRiceOptions?.Count > 0)
+        {
+            var selectedRice = TryParseRiceSelection(message.MessageText, updatedState.PendingRiceOptions);
+            if (selectedRice != null)
+            {
+                _logger.LogInformation("User selected rice from pending options: {Rice}", selectedRice);
+                updatedState = updatedState with
+                {
+                    ArrozType = selectedRice,
+                    PendingRiceOptions = null // Clear pending options
+                };
+
+                // Extract servings if mentioned
+                if (TryExtractRiceServings(message.MessageText, out var servings))
+                {
+                    updatedState = updatedState with { ArrozServings = servings };
+                }
+
+                // Don't return here - let the conversation continue to ask for servings if needed
+            }
+        }
+
         if (DeclinesRice(message.MessageText))
         {
-            updatedState = updatedState with { ArrozType = "", ArrozServings = null };
+            updatedState = updatedState with { ArrozType = "", ArrozServings = null, PendingRiceOptions = null };
         }
-        else if (MentionsRice(message.MessageText))
+        else if (updatedState.PendingRiceOptions == null && MentionsRice(message.MessageText))
         {
             var validation = await _riceValidator.ValidateAsync(
                 message.MessageText,
@@ -634,23 +658,39 @@ public class WebhookController : ControllerBase
 
             if (!validation.IsValid)
             {
-                // Send simple message with link button to rice menu
-                var menuUrl = "https://alqueriavillacarmen.com/menufindesemana.php";
-                var text = "Lo siento, no tenemos ese arroz. Puedes ver nuestra carta de arroces aquí:";
+                string text;
 
-                var sent = await _whatsApp.SendLinkButtonsAsync(
-                    message.SenderNumber,
-                    text,
-                    new List<LinkButtonOption> { new("Ver carta de arroces", menuUrl) },
-                    cancellationToken);
-
-                // Fallback to plain text if button fails
-                if (!sent)
+                // Handle multiple matches: send numbered list so user can say "1", "la primera", etc.
+                if (validation.Status == "multiple" && validation.Options?.Count > 0)
                 {
-                    await _whatsApp.SendTextAsync(
+                    var numberedList = string.Join("\n", validation.Options.Select((r, i) => $"{i + 1}. {r}"));
+                    text = $"He encontrado varias opciones parecidas. Elige una, por favor:\n\n{numberedList}\n\nPuedes decirme el número o el nombre del arroz.";
+
+                    await _whatsApp.SendTextAsync(message.SenderNumber, text, cancellationToken);
+
+                    // Store options in state for later selection parsing
+                    updatedState = updatedState with { PendingRiceOptions = validation.Options };
+                }
+                else
+                {
+                    // Rice not found: send link button to menu
+                    var menuUrl = "https://alqueriavillacarmen.com/menufindesemana.php";
+                    text = "Lo siento, no tenemos ese arroz. Puedes ver nuestra carta de arroces aquí:";
+
+                    var sent = await _whatsApp.SendLinkButtonsAsync(
                         message.SenderNumber,
-                        $"{text}\n{menuUrl}",
+                        text,
+                        new List<LinkButtonOption> { new("Ver carta de arroces", menuUrl) },
                         cancellationToken);
+
+                    // Fallback to plain text if button fails
+                    if (!sent)
+                    {
+                        await _whatsApp.SendTextAsync(
+                            message.SenderNumber,
+                            $"{text}\n{menuUrl}",
+                            cancellationToken);
+                    }
                 }
 
                 return (true, text, updatedState);
@@ -1113,6 +1153,62 @@ public class WebhookController : ControllerBase
             return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// Tries to parse user selection from pending rice options.
+    /// Supports: "1", "numero 1", "la primera", "la segunda", "el primero", or exact/partial name match.
+    /// </summary>
+    private static string? TryParseRiceSelection(string text, List<string> options)
+    {
+        if (options == null || options.Count == 0) return null;
+
+        var t = (text ?? "").Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(t)) return null;
+
+        // Check for numeric selection: "1", "2", "numero 1", "el 1", "opcion 2"
+        var numMatch = System.Text.RegularExpressions.Regex.Match(t, @"(?:numero|número|opci[oó]n|el|la)?\s*(\d+)");
+        if (numMatch.Success && int.TryParse(numMatch.Groups[1].Value, out var num))
+        {
+            if (num >= 1 && num <= options.Count)
+                return options[num - 1];
+        }
+
+        // Check for ordinal selection: "la primera", "el primero", "la segunda", etc.
+        var ordinals = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["primera"] = 1, ["primero"] = 1, ["1ª"] = 1, ["1º"] = 1,
+            ["segunda"] = 2, ["segundo"] = 2, ["2ª"] = 2, ["2º"] = 2,
+            ["tercera"] = 3, ["tercero"] = 3, ["3ª"] = 3, ["3º"] = 3,
+            ["cuarta"] = 4, ["cuarto"] = 4, ["4ª"] = 4, ["4º"] = 4,
+            ["quinta"] = 5, ["quinto"] = 5, ["5ª"] = 5, ["5º"] = 5
+        };
+
+        foreach (var (ordinal, index) in ordinals)
+        {
+            if (t.Contains(ordinal) && index <= options.Count)
+                return options[index - 1];
+        }
+
+        // Check for partial name match against options
+        foreach (var option in options)
+        {
+            var optionLower = option.ToLowerInvariant();
+            // Extract the base name (before any price/description markers)
+            var baseName = System.Text.RegularExpressions.Regex.Replace(optionLower, @"\s*[\(\+].*$", "").Trim();
+
+            if (t.Contains(baseName) || baseName.Contains(t))
+                return option;
+
+            // Also check if user typed key words from the option
+            var userWords = t.Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(w => w.Length > 3).ToList();
+            var optionWords = baseName.Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(w => w.Length > 3).ToList();
+            var matchCount = userWords.Count(uw => optionWords.Any(ow => ow.Contains(uw) || uw.Contains(ow)));
+            if (matchCount >= 2 || (userWords.Count == 1 && matchCount == 1))
+                return option;
+        }
+
+        return null;
     }
 
     private static bool IsUserConfirming(string text)

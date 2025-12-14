@@ -53,6 +53,12 @@ public record ConversationState
     public int? ArrozServings { get; init; }
 
     /// <summary>
+    /// Pending rice options when multiple matches found.
+    /// User can select by number ("1", "la primera") or name.
+    /// </summary>
+    public List<string>? PendingRiceOptions { get; init; }
+
+    /// <summary>
     /// Number of high chairs needed.
     /// </summary>
     public int? HighChairs { get; init; }
