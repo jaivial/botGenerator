@@ -396,6 +396,16 @@ public class ModificationHandler
                 };
             }
 
+            // 35-day window exceeded for date modification
+            if (decision.Reason == "too_far_ahead")
+            {
+                return new AgentResponse
+                {
+                    Intent = IntentType.Modification,
+                    AiResponse = decision.Message + " ¿Qué otra fecha te vendría bien?"
+                };
+            }
+
             // Suggest alternatives if available
             if (decision.SuggestedHours?.Count > 0)
             {

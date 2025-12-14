@@ -247,6 +247,21 @@ public class BookingAvailabilityService : IBookingAvailabilityService
             };
         }
 
+        // 35-day booking window - bookings must be within 35 days from today
+        var today = DateTime.Now.Date;
+        var maxBookingDate = today.AddDays(35);
+        if (date.Date > maxBookingDate)
+        {
+            var daysAhead = (date.Date - today).Days;
+            return new BookingAvailabilityDecision
+            {
+                IsAvailable = false,
+                Reason = "too_far_ahead",
+                Message = $"Lo siento, solo aceptamos reservas con un máximo de 35 días de antelación. " +
+                          $"Esa fecha está a {daysAhead} días. ¿Te viene bien una fecha más cercana?"
+            };
+        }
+
         var dayStatus = await CheckDayStatusAsync(date, cancellationToken);
         if (!dayStatus.IsOpen)
         {

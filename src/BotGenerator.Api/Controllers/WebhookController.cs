@@ -549,8 +549,32 @@ public class WebhookController : ControllerBase
             return (true, sameDayMsg, updatedState);
         }
 
-        // === Early date detection: Check restaurant_days (open/closed) and daily capacity ===
+        // === FIRST-ORDER CHECK: 35-day booking window ===
+        // Bookings must be within 35 days from today
         var extractedDate = TryExtractDateFromMessage(message.MessageText);
+        if (extractedDate.HasValue)
+        {
+            var requestedDate = extractedDate.Value.Date;
+            var today = DateTime.Now.Date;
+            var maxBookingDate = today.AddDays(35);
+
+            // Check if date is beyond 35-day window
+            if (requestedDate > maxBookingDate)
+            {
+                _logger.LogInformation(
+                    "Date {Date} is beyond 35-day window for {Phone}",
+                    requestedDate.ToString("yyyy-MM-dd"),
+                    message.SenderNumber);
+
+                var daysAhead = (requestedDate - today).Days;
+                var tooFarMsg = $"Lo siento, solo aceptamos reservas con un máximo de 35 días de antelación. " +
+                                $"Esa fecha está a {daysAhead} días. ¿Te viene bien una fecha más cercana?";
+                await _whatsApp.SendTextAsync(message.SenderNumber, tooFarMsg, cancellationToken);
+                return (true, tooFarMsg, updatedState);
+            }
+        }
+
+        // === Early date detection: Check restaurant_days (open/closed) and daily capacity ===
         if (extractedDate.HasValue && extractedDate.Value.Date > DateTime.Now.Date)
         {
             var requestedDate = extractedDate.Value.Date;
@@ -793,24 +817,23 @@ public class WebhookController : ControllerBase
     private static bool MentionsRice(string text)
     {
         var t = text.ToLowerInvariant();
-        // Primary keywords
-        if (t.Contains("arroz") || t.Contains("paella") || t.Contains("fideu") || t.Contains("fideuá"))
-            return true;
 
-        // Common rice type patterns (specific ingredients/names users might mention)
-        var ricePatterns = new[]
+        // Primary rice-related keywords - if any of these appear, trigger AI validation
+        var riceKeywords = new[]
         {
-            "bogavante", "marisco", "mariscos", "langosta", "gambas", "sepia",
-            "verduras", "verdura", "vegetariano",
-            "pollo", "conejo", "pato", "costilla", "costillas",
-            "chorizo", "longaniza", "morcilla",
-            "señorito", "señorita", "banda", "abanda",
-            "negro", "negra", "caldoso", "caldosa",
-            "parellada", "mixto", "mixta", "valenciana", "valenciano",
-            "espardenyes", "espardeñas", "coliflor"
+            // Direct rice mentions
+            "arroz", "paella", "fideu", "fideuá", "fideua",
+            // Cooking styles
+            "meloso", "caldoso", "seco", "banda", "abanda",
+            // Common ingredients that suggest rice
+            "señoret", "señorito", "señorita",
+            "bogavante", "marisco", "mariscos", "langosta", "gambas",
+            "pulpo", "sepia", "negro", "negra",
+            "chorizo", "carrillada", "boletus",
+            "valenciana", "valenciano", "albufera"
         };
 
-        return ricePatterns.Any(pattern => t.Contains(pattern));
+        return riceKeywords.Any(keyword => t.Contains(keyword));
     }
 
     private static bool DeclinesRice(string text)

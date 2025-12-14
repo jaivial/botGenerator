@@ -67,19 +67,166 @@ public class RiceValidatorAgent : IAgent, IRiceValidatorService
     }
 
     /// <summary>
-    /// Validates a rice request and returns structured result.
+    /// Validates a rice request using Gemini AI for natural language matching.
+    /// Returns structured result with true/false and matched rice name.
     /// </summary>
     public async Task<RiceValidationResult> ValidateAsync(
         string userRiceRequest,
         string restaurantId,
         CancellationToken cancellationToken = default)
     {
-        // Deterministic DB-backed validation (no LLM) to avoid flaky behavior.
-        // We keep the same output semantics as the prompt-based validator: valid / not_found / multiple.
+        // Fetch available rice types from database
         var availableTypes = await GetAvailableRiceTypesAsync(cancellationToken);
         if (availableTypes.Count == 0)
+        {
+            _logger.LogWarning("No rice types found in database");
             return RiceValidationResult.NotFound(userRiceRequest);
+        }
 
+        _logger.LogInformation(
+            "Validating rice request '{Request}' against {Count} available types using AI",
+            userRiceRequest,
+            availableTypes.Count);
+
+        // Build the prompt for Gemini AI
+        var riceListFormatted = string.Join("\n", availableTypes.Select((r, i) => $"{i + 1}. {r}"));
+
+        var systemPrompt = @"Eres un asistente especializado en validar pedidos de arroz para un restaurante español.
+
+Tu tarea es determinar si la petición del cliente coincide con alguno de los arroces disponibles en el menú.
+Debes entender el lenguaje natural español, incluyendo:
+- Variaciones ortográficas (señoret/señorito, fideua/fideuá)
+- Abreviaciones (arroz negro = arroz negro, paella valenciana = paella valenciana de la albufera)
+- Ingredientes mencionados (chorizo → arroz de chorizo, marisco → fideuá de marisco)
+- Sinónimos y formas coloquiales
+
+REGLAS:
+1. Si la petición coincide claramente con UN arroz del menú, responde: TRUE|[nombre exacto del arroz del menú]
+2. Si la petición podría coincidir con VARIOS arroces, responde: MULTIPLE|[arroz1]|[arroz2]|...
+3. Si la petición NO coincide con ningún arroz del menú, responde: FALSE
+
+Solo responde con el formato indicado, sin explicaciones adicionales.";
+
+        var userMessage = $@"ARROCES DISPONIBLES EN EL MENÚ:
+{riceListFormatted}
+
+PETICIÓN DEL CLIENTE:
+""{userRiceRequest}""
+
+¿La petición coincide con algún arroz del menú?";
+
+        try
+        {
+            // Use focused configuration for more deterministic results
+            var config = new GeminiGenerationConfig
+            {
+                Temperature = 0.1,
+                TopP = 0.8,
+                TopK = 10,
+                MaxOutputTokens = 256
+            };
+
+            var aiResponse = await _gemini.GenerateAsync(
+                systemPrompt,
+                userMessage,
+                null,
+                config,
+                cancellationToken);
+
+            _logger.LogDebug("AI rice validation response: {Response}", aiResponse);
+
+            return ParseAiValidationResponse(aiResponse, userRiceRequest, availableTypes);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error calling Gemini for rice validation, falling back to pattern matching");
+            // Fallback to simple pattern matching if AI fails
+            return FallbackPatternMatch(userRiceRequest, availableTypes);
+        }
+    }
+
+    /// <summary>
+    /// Parses the AI response and returns the appropriate validation result.
+    /// </summary>
+    private RiceValidationResult ParseAiValidationResponse(
+        string aiResponse,
+        string originalRequest,
+        List<string> availableTypes)
+    {
+        var response = aiResponse.Trim().ToUpperInvariant();
+
+        // Check for TRUE|rice_name format
+        if (response.StartsWith("TRUE|"))
+        {
+            var riceName = aiResponse.Trim().Substring(5).Trim();
+            // Verify the rice name exists in our list (case-insensitive)
+            var matchedRice = availableTypes.FirstOrDefault(r =>
+                r.Equals(riceName, StringComparison.OrdinalIgnoreCase));
+
+            if (matchedRice != null)
+            {
+                _logger.LogInformation("AI validated rice: {Rice}", matchedRice);
+                return RiceValidationResult.Valid(matchedRice, originalRequest);
+            }
+
+            // If AI returned a name not in list, try to find closest match
+            var closest = availableTypes.FirstOrDefault(r =>
+                r.Contains(riceName, StringComparison.OrdinalIgnoreCase) ||
+                riceName.Contains(r, StringComparison.OrdinalIgnoreCase));
+
+            if (closest != null)
+            {
+                _logger.LogInformation("AI validated rice (closest match): {Rice}", closest);
+                return RiceValidationResult.Valid(closest, originalRequest);
+            }
+
+            _logger.LogWarning("AI returned TRUE but rice '{Rice}' not found in menu", riceName);
+            return RiceValidationResult.NotFound(originalRequest);
+        }
+
+        // Check for MULTIPLE|rice1|rice2|... format
+        if (response.StartsWith("MULTIPLE|"))
+        {
+            var parts = aiResponse.Trim().Substring(9).Split('|')
+                .Select(p => p.Trim())
+                .Where(p => !string.IsNullOrEmpty(p))
+                .ToList();
+
+            // Verify each rice exists in our list
+            var validOptions = parts
+                .Select(p => availableTypes.FirstOrDefault(r =>
+                    r.Equals(p, StringComparison.OrdinalIgnoreCase) ||
+                    r.Contains(p, StringComparison.OrdinalIgnoreCase)))
+                .Where(r => r != null)
+                .Distinct()
+                .ToList()!;
+
+            if (validOptions.Count > 0)
+            {
+                _logger.LogInformation("AI found multiple matches: {Options}", string.Join(", ", validOptions));
+                return RiceValidationResult.Multiple(validOptions!, originalRequest);
+            }
+
+            return RiceValidationResult.NotFound(originalRequest);
+        }
+
+        // Check for FALSE
+        if (response.StartsWith("FALSE"))
+        {
+            _logger.LogInformation("AI determined rice '{Request}' is not in menu", originalRequest);
+            return RiceValidationResult.NotFound(originalRequest);
+        }
+
+        // Unexpected format - log and return not found
+        _logger.LogWarning("Unexpected AI response format: {Response}", aiResponse);
+        return RiceValidationResult.NotFound(originalRequest);
+    }
+
+    /// <summary>
+    /// Fallback pattern matching when AI is unavailable.
+    /// </summary>
+    private RiceValidationResult FallbackPatternMatch(string userRiceRequest, List<string> availableTypes)
+    {
         var normalizedRequest = NormalizeForComparison(userRiceRequest);
 
         // Try simple containment against normalized menu entries
@@ -105,7 +252,7 @@ public class RiceValidatorAgent : IAgent, IRiceValidatorService
         if (matches.Count > 1)
             return RiceValidationResult.Multiple(matches.Distinct().ToList(), userRiceRequest);
 
-        // Fallback: keyword match (helps when the user mentions just an ingredient like "chorizo")
+        // Fallback: keyword match
         var requestTokens = Tokenize(normalizedRequest);
         var scored = availableTypes
             .Select(a => new { Name = a, Score = TokenOverlapScore(requestTokens, Tokenize(NormalizeForComparison(a))) })
@@ -116,7 +263,6 @@ public class RiceValidatorAgent : IAgent, IRiceValidatorService
         if (scored.Count == 0)
             return RiceValidationResult.NotFound(userRiceRequest);
 
-        // If top score is ambiguous (tie), return multiple.
         var top = scored[0].Score;
         var topMatches = scored.Where(x => x.Score == top).Select(x => x.Name).Distinct().ToList();
 
