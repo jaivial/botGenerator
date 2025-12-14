@@ -528,6 +528,27 @@ public class WebhookController : ControllerBase
             return (true, eventMsg, updatedState);
         }
 
+        // === Same-day booking detection (must call restaurant directly) ===
+        if (IsSameDayBookingRequest(message.MessageText))
+        {
+            _logger.LogInformation("Same-day booking request detected from {Phone}", message.SenderNumber);
+
+            // Send informative message
+            var sameDayIntro = BotGenerator.Core.Services.ResponseVariations.SameDayBookingIntro();
+            await _whatsApp.SendTextAsync(message.SenderNumber, sameDayIntro, cancellationToken);
+
+            // Send contact card
+            await _whatsApp.SendContactCardAsync(
+                message.SenderNumber,
+                fullName: "Gestión Reservas Villa Carmen",
+                contactPhoneNumber: "+34638857294",
+                organization: "Alquería Villa Carmen",
+                cancellationToken: cancellationToken);
+
+            var sameDayMsg = BotGenerator.Core.Services.ResponseVariations.SameDayBookingRejection();
+            return (true, sameDayMsg, updatedState);
+        }
+
         // === Rice constraints & validation (if user mentions a rice/paella) ===
         if (DeclinesRice(message.MessageText))
         {
@@ -758,6 +779,67 @@ public class WebhookController : ControllerBase
         };
 
         return eventKeywords.Any(keyword => t.Contains(keyword));
+    }
+
+    private static bool IsSameDayBookingRequest(string text)
+    {
+        var t = text.ToLowerInvariant();
+
+        // Direct "today" keywords
+        var sameDayKeywords = new[]
+        {
+            "para hoy",
+            "reservar hoy",
+            "reserva hoy",
+            "mesa hoy",
+            "hoy para",
+            "el día de hoy",
+            "dia de hoy",
+            "esta tarde",
+            "esta noche",
+            "ahora mismo",
+            "hoy mismo"
+        };
+
+        if (sameDayKeywords.Any(keyword => t.Contains(keyword)))
+        {
+            return true;
+        }
+
+        // Check for standalone "hoy" with booking context
+        if (System.Text.RegularExpressions.Regex.IsMatch(t, @"\bhoy\b"))
+        {
+            // Check if it's in a booking context (reservar, mesa, comer, etc.)
+            var bookingContextWords = new[] { "reserv", "mesa", "comer", "personas", "gente", "sitio", "hueco" };
+            if (bookingContextWords.Any(ctx => t.Contains(ctx)))
+            {
+                return true;
+            }
+
+            // Also catch simple "hoy" responses when likely answering date question
+            // (short messages that just say "hoy" or "hoy a las X")
+            if (t.Trim() == "hoy" || System.Text.RegularExpressions.Regex.IsMatch(t.Trim(), @"^hoy\s*(a\s*las)?\s*\d"))
+            {
+                return true;
+            }
+        }
+
+        // Check for today's date in dd/MM or dd/MM/yyyy format
+        var today = DateTime.Now;
+        var todayPatterns = new[]
+        {
+            $"{today.Day}/{today.Month}",
+            $"{today.Day:D2}/{today.Month:D2}",
+            $"{today.Day}/{today.Month}/{today.Year}",
+            $"{today.Day:D2}/{today.Month:D2}/{today.Year}"
+        };
+
+        if (todayPatterns.Any(pattern => t.Contains(pattern)))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static bool TryExtractRiceServings(string text, out int servings)
