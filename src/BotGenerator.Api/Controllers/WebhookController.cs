@@ -1590,16 +1590,9 @@ public class WebhookController : ControllerBase
             sb.AppendLine("🍚 *Arroz:* Sin arroz");
         }
 
-        // Extras
-        if (booking.HighChairs > 0 || booking.BabyStrollers > 0)
-        {
-            sb.AppendLine();
-            sb.AppendLine("*Extras:*");
-            if (booking.HighChairs > 0)
-                sb.AppendLine($"  🪑 Tronas: {booking.HighChairs}");
-            if (booking.BabyStrollers > 0)
-                sb.AppendLine($"  🚼 Carritos: {booking.BabyStrollers}");
-        }
+        // Extras (always show, even if 0)
+        sb.AppendLine($"🪑 *Tronas:* {booking.HighChairs}");
+        sb.AppendLine($"🚼 *Carritos:* {booking.BabyStrollers}");
 
         sb.AppendLine();
         sb.AppendLine("━━━━━━━━━━━━━━━━━━━━━");
