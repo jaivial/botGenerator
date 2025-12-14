@@ -643,9 +643,10 @@ public class WebhookController : ControllerBase
                     : $"Lo siento, no tenemos ese arroz. Puedes ver el menú aquí: {menuUrl}\n\n" +
                       "Elige uno de nuestros arroces disponibles:";
 
-                // Build menu rows (limit to avoid overly large interactive payloads)
-                var rows = (validation.Options?.Count > 0 ? validation.Options : riceTypes)
-                    .Take(15)
+                // Build menu rows (WhatsApp limit: 10 rows per section)
+                var riceList = validation.Options?.Count > 0 ? validation.Options : riceTypes;
+                var rows = riceList
+                    .Take(10)
                     .Select((r, i) => new MenuRow($"rice_{i}", r))
                     .ToList();
 
@@ -656,12 +657,14 @@ public class WebhookController : ControllerBase
                     new List<MenuSection> { new("Arroces", rows) },
                     cancellationToken);
 
-                // Fallback to plain text if menu fails
+                // Fallback to plain text with numbered list if menu fails
                 if (!sentMenu)
                 {
+                    var riceListText = string.Join("\n", riceList.Select((r, i) => $"{i + 1}. {r}"));
+                    var fallbackText = $"{text}\n\n{riceListText}";
                     await _whatsApp.SendTextAsync(
                         message.SenderNumber,
-                        text,
+                        fallbackText,
                         cancellationToken);
                 }
 
