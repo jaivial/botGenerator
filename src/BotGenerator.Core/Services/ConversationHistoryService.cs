@@ -738,10 +738,14 @@ public class ConversationHistoryService : IConversationHistoryService
     {
         if (assistantMsg.Role != "assistant") return false;
 
-        // Must be a QUESTION about tronas, not just mention "trona" anywhere
-        // Patterns: "¿Necesitáis tronas?", "¿Cuántas tronas?", "tronas?" at end
+        // Must be a QUESTION specifically asking about tronas count or need
+        // NOT just any message that mentions "trona" and has a "?" somewhere
+        // Valid patterns:
+        // - "¿Necesitáis tronas?" / "¿Cuántas tronas?"
+        // - "tronas?" at end of message (asking about tronas)
+        // - "¿Y cuántas tronas serían?"
         return Regex.IsMatch(assistantMsg.Content,
-            @"(\?.*trona|trona.*\?|¿.*trona|necesit[aá]is.*trona|cu[aá]ntas?\s+tronas?)",
+            @"(¿[^?]*trona|cu[aá]ntas?\s+tronas?|necesit[aá]is?\s+tronas?|tronas?\s*\?\s*$)",
             RegexOptions.IgnoreCase);
     }
 
@@ -749,10 +753,14 @@ public class ConversationHistoryService : IConversationHistoryService
     {
         if (assistantMsg.Role != "assistant") return false;
 
-        // Must be a QUESTION about carritos/cochecitos, not just mention them anywhere
-        // Patterns: "¿Traéis carrito?", "¿carrito de bebé?", "carrito?" at end
+        // Must be a QUESTION specifically asking about carritos/cochecitos
+        // NOT just any message that mentions "carrito" and has a "?" somewhere
+        // Valid patterns:
+        // - "¿Vais a traer carrito?" / "¿Traéis carrito?"
+        // - "carrito?" at end of message
+        // - "¿Y cochecito de bebé?"
         return Regex.IsMatch(assistantMsg.Content,
-            @"(\?.*carrito|carrito.*\?|¿.*carrito|tra[eé]is.*carrito|cochecito.*\?)",
+            @"(¿[^?]*carrito|tra[eé]is?\s+carritos?|vais\s+a\s+traer\s+carrito|carritos?\s*\?\s*$|¿[^?]*cochecito|cochecitos?\s*\?\s*$)",
             RegexOptions.IgnoreCase);
     }
 
