@@ -280,16 +280,30 @@ public class ModificationHandler
         // Check for confirmation (allow words anywhere in the message)
         if (Regex.IsMatch(text, @"\b(sí|si|yes|confirmo|vale|ok|perfecto|de acuerdo)\b"))
         {
+            var originalBooking = state.SelectedBooking!;
+            var pendingChanges = state.PendingChanges!;
+
             // Apply the changes
             var success = await _bookingRepository.UpdateBookingAsync(
-                state.SelectedBooking!.Id,
-                state.PendingChanges!,
+                originalBooking.Id,
+                pendingChanges,
                 ct);
 
             _stateStore.Clear(message.SenderNumber);
 
             if (success)
             {
+                // Get the updated booking from DB
+                var updatedBooking = await _bookingRepository.GetBookingByIdAsync(originalBooking.Id, ct);
+
+                // Send notification to restaurant
+                await SendModificationNotificationAsync(
+                    originalBooking,
+                    updatedBooking ?? originalBooking,
+                    pendingChanges,
+                    state.ChangeDescription ?? "Modificación",
+                    ct);
+
                 return new AgentResponse
                 {
                     Intent = IntentType.Normal,
@@ -1037,6 +1051,113 @@ public class ModificationHandler
             Intent = IntentType.Modification,
             AiResponse = prompt
         };
+    }
+
+    #endregion
+
+    #region Notifications
+
+    /// <summary>
+    /// Restaurant notification phone number for modification alerts.
+    /// </summary>
+    private const string NotificationPhone = "34692747052";
+
+    /// <summary>
+    /// Sends a notification to the restaurant when a booking is modified.
+    /// </summary>
+    private async Task SendModificationNotificationAsync(
+        BookingRecord originalBooking,
+        BookingRecord updatedBooking,
+        BookingUpdateData changes,
+        string changeDescription,
+        CancellationToken ct)
+    {
+        try
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("🔔 *Reserva modificada por Asistente de IA de Villa Carmen*");
+            sb.AppendLine();
+            sb.AppendLine("📋 *INFORMACIÓN DE LA RESERVA:*");
+            sb.AppendLine($"👤 Nombre: {updatedBooking.CustomerName}");
+            sb.AppendLine($"📞 Teléfono: {updatedBooking.ContactPhone}");
+            sb.AppendLine($"📅 Fecha: {updatedBooking.DateFormatted} ({updatedBooking.DayName})");
+            sb.AppendLine($"🕐 Hora: {updatedBooking.TimeFormatted}");
+            sb.AppendLine($"👥 Personas: {updatedBooking.PartySize}");
+
+            if (!string.IsNullOrEmpty(updatedBooking.ArrozType))
+            {
+                sb.AppendLine($"🍚 Arroz: {updatedBooking.ArrozType} ({updatedBooking.ArrozServings} raciones)");
+            }
+            else
+            {
+                sb.AppendLine("🍚 Arroz: Sin arroz");
+            }
+
+            sb.AppendLine($"🪑 Tronas: {updatedBooking.HighChairs}");
+            sb.AppendLine($"🛒 Carritos: {updatedBooking.BabyStrollers}");
+            sb.AppendLine();
+            sb.AppendLine("✏️ *CAMBIOS REALIZADOS:*");
+
+            // Show before/after for each changed field
+            if (changes.ReservationDate != null)
+            {
+                sb.AppendLine($"📅 Fecha: {originalBooking.DateFormatted} → {updatedBooking.DateFormatted}");
+            }
+
+            if (changes.ReservationTime != null)
+            {
+                sb.AppendLine($"🕐 Hora: {originalBooking.TimeFormatted} → {updatedBooking.TimeFormatted}");
+            }
+
+            if (changes.PartySize.HasValue)
+            {
+                sb.AppendLine($"👥 Personas: {originalBooking.PartySize} → {updatedBooking.PartySize}");
+            }
+
+            if (changes.ClearRice)
+            {
+                var originalRice = originalBooking.ArrozType != null
+                    ? $"{originalBooking.ArrozType} ({originalBooking.ArrozServings} raciones)"
+                    : "Sin arroz";
+                sb.AppendLine($"🍚 Arroz: {originalRice} → Sin arroz");
+            }
+            else if (changes.ArrozType != null || changes.ArrozServings.HasValue)
+            {
+                var originalRice = originalBooking.ArrozType != null
+                    ? $"{originalBooking.ArrozType} ({originalBooking.ArrozServings} raciones)"
+                    : "Sin arroz";
+                var newRice = updatedBooking.ArrozType != null
+                    ? $"{updatedBooking.ArrozType} ({updatedBooking.ArrozServings} raciones)"
+                    : "Sin arroz";
+                sb.AppendLine($"🍚 Arroz: {originalRice} → {newRice}");
+            }
+
+            if (changes.HighChairs.HasValue)
+            {
+                sb.AppendLine($"🪑 Tronas: {originalBooking.HighChairs} → {updatedBooking.HighChairs}");
+            }
+
+            if (changes.BabyStrollers.HasValue)
+            {
+                sb.AppendLine($"🛒 Carritos: {originalBooking.BabyStrollers} → {updatedBooking.BabyStrollers}");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine($"🆔 ID Reserva: {updatedBooking.Id}");
+
+            await _whatsAppService.SendTextAsync(NotificationPhone, sb.ToString(), ct);
+
+            _logger.LogInformation(
+                "Sent modification notification for booking {BookingId} to {Phone}",
+                updatedBooking.Id, NotificationPhone);
+        }
+        catch (Exception ex)
+        {
+            // Log but don't fail the modification if notification fails
+            _logger.LogError(ex,
+                "Failed to send modification notification for booking {BookingId}",
+                updatedBooking.Id);
+        }
     }
 
     #endregion
