@@ -2,6 +2,7 @@ using BotGenerator.Core.Models;
 using BotGenerator.Core.Services;
 using Microsoft.Extensions.Logging;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace BotGenerator.Core.Handlers;
@@ -9,6 +10,7 @@ namespace BotGenerator.Core.Handlers;
 /// <summary>
 /// Handler for cancelling bookings.
 /// Manages the multi-turn cancellation conversation flow.
+/// Uses AI agents for human-like conversation understanding.
 /// </summary>
 public class CancellationHandler
 {
@@ -16,6 +18,7 @@ public class CancellationHandler
     private readonly IBookingRepository _bookingRepository;
     private readonly ICancellationStateStore _stateStore;
     private readonly IWhatsAppService _whatsAppService;
+    private readonly IGeminiService _gemini;
 
     // Spanish day names for lazy response parsing
     private static readonly Dictionary<string, DayOfWeek> SpanishDays = new(StringComparer.OrdinalIgnoreCase)
@@ -55,9 +58,11 @@ public class CancellationHandler
         ILogger<CancellationHandler> logger,
         IBookingRepository bookingRepository,
         ICancellationStateStore stateStore,
-        IWhatsAppService whatsAppService)
+        IWhatsAppService whatsAppService,
+        IGeminiService gemini)
     {
         _logger = logger;
+        _gemini = gemini;
         _bookingRepository = bookingRepository;
         _stateStore = stateStore;
         _whatsAppService = whatsAppService;
@@ -207,18 +212,22 @@ public class CancellationHandler
     }
 
     /// <summary>
-    /// Step 3: Handle confirmation (yes/no).
+    /// Step 3: Handle confirmation (yes/no) using AI for natural language understanding.
     /// </summary>
     private async Task<AgentResponse> HandleConfirmationAsync(
         WhatsAppMessage message,
         CancellationState state,
         CancellationToken ct)
     {
-        var text = message.MessageText.ToLowerInvariant().Trim();
+        var text = message.MessageText.Trim();
         var booking = state.SelectedBooking!;
 
-        // Check for confirmation (allow words anywhere in the message)
-        if (Regex.IsMatch(text, @"\b(sí|si|yes|confirmo|vale|ok|cancelar?|cancela)\b"))
+        // Use AI to understand the user's intent
+        var userIntent = await AnalyzeConfirmationIntentAsync(text, booking, ct);
+
+        _logger.LogDebug("AI analyzed confirmation intent: {Intent}", userIntent);
+
+        if (userIntent == "CONFIRM")
         {
             // Archive to cancelled_bookings table
             var archiveSuccess = await _bookingRepository.InsertCancelledBookingAsync(
@@ -264,8 +273,7 @@ public class CancellationHandler
             }
         }
 
-        // Check for rejection (allow words anywhere in the message)
-        if (Regex.IsMatch(text, @"\b(no|mejor no|dejalo|déjalo|mantener|nada)\b"))
+        if (userIntent == "REJECT")
         {
             _stateStore.Clear(message.SenderNumber);
             return new AgentResponse
@@ -275,12 +283,79 @@ public class CancellationHandler
             };
         }
 
-        // Didn't understand
+        // AI couldn't determine intent clearly, ask again
         return new AgentResponse
         {
             Intent = IntentType.Cancellation,
             AiResponse = ResponseVariations.CancellationConfirmationNotUnderstood()
         };
+    }
+
+    /// <summary>
+    /// AI agent that analyzes user's confirmation response.
+    /// Understands natural language variations like "claro que sí", "por supuesto", "adelante", etc.
+    /// </summary>
+    private async Task<string> AnalyzeConfirmationIntentAsync(
+        string userMessage,
+        BookingRecord booking,
+        CancellationToken ct)
+    {
+        try
+        {
+            var systemPrompt = @"Eres un analizador de intenciones. Tu tarea es determinar si el usuario CONFIRMA o RECHAZA la cancelación de una reserva.
+
+Responde SOLO con una de estas palabras:
+- CONFIRM: si el usuario dice sí, confirma, acepta, quiere cancelar, adelante, ok, vale, claro, por supuesto, etc.
+- REJECT: si el usuario dice no, mejor no, déjalo, no quiero, mantener la reserva, me arrepentí, etc.
+- UNCLEAR: si no puedes determinar la intención claramente
+
+Ejemplos:
+- ""sí"" → CONFIRM
+- ""claro que sí"" → CONFIRM
+- ""adelante, cancela"" → CONFIRM
+- ""por supuesto"" → CONFIRM
+- ""ok"" → CONFIRM
+- ""no, mejor no"" → REJECT
+- ""déjalo como está"" → REJECT
+- ""me arrepentí"" → REJECT
+- ""qué hora era?"" → UNCLEAR";
+
+            var userPrompt = $@"El usuario está respondiendo a la pregunta de si quiere cancelar su reserva para el {booking.DateFormatted} a las {booking.TimeFormatted}.
+
+Mensaje del usuario: ""{userMessage}""
+
+¿CONFIRM, REJECT o UNCLEAR?";
+
+            var config = new GeminiGenerationConfig
+            {
+                Temperature = 0.0,
+                MaxOutputTokens = 10
+            };
+
+            var response = await _gemini.GenerateAsync(systemPrompt, userPrompt, null, config, ct);
+            var intent = response.Trim().ToUpperInvariant();
+
+            // Validate response
+            if (intent.Contains("CONFIRM"))
+                return "CONFIRM";
+            if (intent.Contains("REJECT"))
+                return "REJECT";
+
+            return "UNCLEAR";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in AI confirmation analysis, falling back to regex");
+
+            // Fallback to regex if AI fails
+            var lowerText = userMessage.ToLowerInvariant();
+            if (Regex.IsMatch(lowerText, @"\b(sí|si|yes|confirmo|vale|ok|cancelar?|cancela|claro|adelante)\b"))
+                return "CONFIRM";
+            if (Regex.IsMatch(lowerText, @"\b(no|mejor no|dejalo|déjalo|mantener|nada)\b"))
+                return "REJECT";
+
+            return "UNCLEAR";
+        }
     }
 
     #endregion

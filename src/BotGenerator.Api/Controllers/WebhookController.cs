@@ -174,6 +174,39 @@ public class WebhookController : ControllerBase
             var history = await _historyService.GetHistoryAsync(
                 message.SenderNumber, cancellationToken);
 
+            // 2b. EARLY CANCELLATION DETECTION
+            // Check for cancellation intent BEFORE state extraction to avoid day-full checks
+            var cancellationHandler = HttpContext.RequestServices.GetRequiredService<CancellationHandler>();
+            var cancellationStateStore = HttpContext.RequestServices.GetRequiredService<ICancellationStateStore>();
+            var cancellationState = cancellationStateStore.Get(message.SenderNumber);
+
+            // Route to cancellation if: active session OR user mentions cancellation keywords
+            if (cancellationState != null || IsCancellationRequest(message.MessageText))
+            {
+                _logger.LogInformation(
+                    "Routing to cancellation flow (activeSession={HasSession}, keywords={HasKeywords})",
+                    cancellationState != null, IsCancellationRequest(message.MessageText));
+
+                var cancellationResponse = await cancellationHandler.ProcessCancellationAsync(
+                    message, cancellationState, cancellationToken);
+
+                // Store in history
+                await _historyService.AddMessageAsync(
+                    message.SenderNumber,
+                    ChatMessage.FromUser(message.MessageText, message.PushName),
+                    cancellationToken);
+
+                if (!string.IsNullOrWhiteSpace(cancellationResponse.AiResponse))
+                {
+                    await _historyService.AddMessageAsync(
+                        message.SenderNumber,
+                        ChatMessage.FromAssistant(cancellationResponse.AiResponse),
+                        cancellationToken);
+                }
+
+                return Ok(new { processed = true, cancellationFlow = true });
+            }
+
             // 3. Extract conversation state using AI (more robust than regex)
             // AI understands natural language variations like "nah", "ninguna", "sin tronas", etc.
             var historyForState = history
@@ -1628,5 +1661,53 @@ public class WebhookController : ControllerBase
         sb.AppendLine($"⏰ {DateTime.Now:dd/MM/yyyy HH:mm}");
 
         return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>
+    /// Detects if the user message contains cancellation intent keywords.
+    /// Uses AI-like pattern matching for natural language variations.
+    /// </summary>
+    private static bool IsCancellationRequest(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        var lowerText = text.ToLowerInvariant();
+
+        // Primary cancellation keywords
+        var cancellationPatterns = new[]
+        {
+            "cancelar",
+            "anular",
+            "quitar reserva",
+            "quitar mi reserva",
+            "eliminar reserva",
+            "eliminar mi reserva",
+            "borrar reserva",
+            "borrar mi reserva",
+            "no puedo ir",
+            "no voy a poder",
+            "no podré ir",
+            "no podremos ir",
+            "deshacer reserva",
+            "dar de baja",
+            "cancel"
+        };
+
+        // Check for any cancellation pattern
+        foreach (var pattern in cancellationPatterns)
+        {
+            if (lowerText.Contains(pattern))
+                return true;
+        }
+
+        // More complex patterns (verb + reserva combinations)
+        if (System.Text.RegularExpressions.Regex.IsMatch(lowerText, @"(quiero|necesito|tengo que|puedo|como|para)\s+(cancelar|anular|quitar)"))
+            return true;
+
+        if (System.Text.RegularExpressions.Regex.IsMatch(lowerText, @"reserva.*(cancelar|anular|quitar|eliminar|borrar)"))
+            return true;
+
+        return false;
     }
 }
