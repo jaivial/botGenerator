@@ -34,6 +34,7 @@ public class WebhookController : ControllerBase
     private readonly IRiceValidatorService _riceValidator;
     private readonly IBookingAvailabilityService _availability;
     private readonly BookingHandler _bookingHandler;
+    private readonly IGeminiService _gemini;
     private readonly IConfiguration _configuration;
     private readonly IHostEnvironment _environment;
     private readonly ILogger<WebhookController> _logger;
@@ -50,6 +51,7 @@ public class WebhookController : ControllerBase
         IRiceValidatorService riceValidator,
         IBookingAvailabilityService availability,
         BookingHandler bookingHandler,
+        IGeminiService gemini,
         IConfiguration configuration,
         IHostEnvironment environment,
         ILogger<WebhookController> logger)
@@ -65,6 +67,7 @@ public class WebhookController : ControllerBase
         _riceValidator = riceValidator;
         _availability = availability;
         _bookingHandler = bookingHandler;
+        _gemini = gemini;
         _configuration = configuration;
         _environment = environment;
         _logger = logger;
@@ -174,18 +177,22 @@ public class WebhookController : ControllerBase
             var history = await _historyService.GetHistoryAsync(
                 message.SenderNumber, cancellationToken);
 
-            // 2b. EARLY CANCELLATION DETECTION
+            // 2b. EARLY CANCELLATION DETECTION (AI-based)
             // Check for cancellation intent BEFORE state extraction to avoid day-full checks
             var cancellationHandler = HttpContext.RequestServices.GetRequiredService<CancellationHandler>();
             var cancellationStateStore = HttpContext.RequestServices.GetRequiredService<ICancellationStateStore>();
             var cancellationState = cancellationStateStore.Get(message.SenderNumber);
 
-            // Route to cancellation if: active session OR user mentions cancellation keywords
-            if (cancellationState != null || IsCancellationRequest(message.MessageText))
+            // Use AI to detect cancellation intent (understands natural language variations)
+            var isCancellationIntent = cancellationState != null ||
+                await DetectCancellationIntentAsync(message.MessageText, history, cancellationToken);
+
+            // Route to cancellation if: active session OR AI detected cancellation intent
+            if (isCancellationIntent)
             {
                 _logger.LogInformation(
-                    "Routing to cancellation flow (activeSession={HasSession}, keywords={HasKeywords})",
-                    cancellationState != null, IsCancellationRequest(message.MessageText));
+                    "Routing to cancellation flow (activeSession={HasSession}, aiDetected={AiDetected})",
+                    cancellationState != null, cancellationState == null && isCancellationIntent);
 
                 var cancellationResponse = await cancellationHandler.ProcessCancellationAsync(
                     message, cancellationState, cancellationToken);
@@ -1670,83 +1677,79 @@ public class WebhookController : ControllerBase
     }
 
     /// <summary>
-    /// Detects if the user message contains cancellation intent keywords.
-    /// Uses AI-like pattern matching for natural language variations.
+    /// Uses AI to detect if the user message expresses cancellation intent.
+    /// Much more robust than regex - understands natural language variations.
     /// </summary>
-    private static bool IsCancellationRequest(string text)
+    private async Task<bool> DetectCancellationIntentAsync(
+        string messageText,
+        IEnumerable<ChatMessage> history,
+        CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(text))
+        if (string.IsNullOrWhiteSpace(messageText))
             return false;
 
-        var lowerText = text.ToLowerInvariant();
-
-        // Primary cancellation keywords (explicit)
-        var cancellationPatterns = new[]
+        try
         {
-            "cancelar",
-            "anular",
-            "quitar reserva",
-            "quitar mi reserva",
-            "eliminar reserva",
-            "eliminar mi reserva",
-            "borrar reserva",
-            "borrar mi reserva",
-            "deshacer reserva",
-            "dar de baja",
-            "cancel"
-        };
+            // Build context from recent history (last 3 messages for context)
+            var recentHistory = history.TakeLast(3).ToList();
+            var contextSummary = recentHistory.Count > 0
+                ? string.Join("\n", recentHistory.Select(m => $"{m.Role}: {m.Content}"))
+                : "(sin historial previo)";
 
-        // Implicit cancellation patterns (user says they won't come)
-        var implicitCancellationPatterns = new[]
-        {
-            "no voy a ir",
-            "no vamos a ir",
-            "no puedo ir",
-            "no podemos ir",
-            "no voy a poder",
-            "no podré ir",
-            "no podremos ir",
-            "no iré",
-            "no iremos",
-            "ya no voy",
-            "ya no puedo",
-            "ya no podemos",
-            "al final no voy",
-            "al final no puedo",
-            "al final no podemos",
-            "no va a ser posible",
-            "no será posible",
-            "me ha surgido",
-            "nos ha surgido",
-            "surgió algo",
-            "ha surgido algo",
-            "tengo un imprevisto",
-            "tenemos un imprevisto",
-            "no podré asistir",
-            "no podremos asistir"
-        };
+            var systemPrompt = @"Eres un detector de intenciones para un restaurante. Tu ÚNICA tarea es determinar si el mensaje del cliente indica que quiere CANCELAR una reserva existente.
 
-        // Check for explicit cancellation patterns
-        foreach (var pattern in cancellationPatterns)
-        {
-            if (lowerText.Contains(pattern))
-                return true;
+Responde SOLO con: YES o NO
+
+Ejemplos de CANCELACIÓN (responde YES):
+- ""Quiero cancelar mi reserva""
+- ""Cancela la reserva""
+- ""No voy a poder ir""
+- ""Al final no vamos a ir""
+- ""Lo siento pero no puedo asistir""
+- ""Me ha surgido algo y no podré ir""
+- ""Tengo que anular la reserva""
+- ""Ya no voy a ir""
+- ""Cancelar""
+- ""No iré""
+- ""Ha surgido un imprevisto""
+
+Ejemplos de NO cancelación (responde NO):
+- ""Quiero reservar mesa""
+- ""Para 4 personas""
+- ""El sábado a las 14:00""
+- ""Sí, confirmo""
+- ""¿Tienen mesa libre?""
+- ""Quiero modificar la reserva"" (esto es modificación, no cancelación)
+- ""¿Puedo cambiar la hora?"" (esto es modificación)
+- Preguntas sobre el menú, horarios, etc.";
+
+            var userPrompt = $@"Historial reciente:
+{contextSummary}
+
+Mensaje actual del cliente: ""{messageText}""
+
+¿Este mensaje indica intención de CANCELAR una reserva? (YES/NO):";
+
+            var config = new GeminiGenerationConfig
+            {
+                Temperature = 0.0,
+                MaxOutputTokens = 5
+            };
+
+            var response = await _gemini.GenerateAsync(systemPrompt, userPrompt, null, config, ct);
+            var result = response.Trim().ToUpperInvariant();
+
+            _logger.LogDebug(
+                "AI cancellation intent detection for '{Message}': {Result}",
+                messageText.Length > 50 ? messageText[..50] + "..." : messageText,
+                result);
+
+            return result.Contains("YES");
         }
-
-        // Check for implicit cancellation patterns
-        foreach (var pattern in implicitCancellationPatterns)
+        catch (Exception ex)
         {
-            if (lowerText.Contains(pattern))
-                return true;
+            _logger.LogError(ex, "Error detecting cancellation intent with AI, falling back to false");
+            return false;
         }
-
-        // More complex patterns (verb + reserva combinations)
-        if (System.Text.RegularExpressions.Regex.IsMatch(lowerText, @"(quiero|necesito|tengo que|puedo|como|para)\s+(cancelar|anular|quitar)"))
-            return true;
-
-        if (System.Text.RegularExpressions.Regex.IsMatch(lowerText, @"reserva.*(cancelar|anular|quitar|eliminar|borrar)"))
-            return true;
-
-        return false;
     }
 }
