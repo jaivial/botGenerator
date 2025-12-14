@@ -26,9 +26,8 @@ public class BookingAvailabilityService : IBookingAvailabilityService
 
     public async Task<DayStatusResult> CheckDayStatusAsync(DateTime date, CancellationToken cancellationToken = default)
     {
-        // PHP: default closed Mon/Tue/Wed (1..3)
+        // Get day of week info for display
         var dayOfWeekN = ToPhpIsoDay(date.DayOfWeek); // 1..7
-        var isDefaultClosed = dayOfWeekN is 1 or 2 or 3;
 
         var weekdayNames = new Dictionary<int, string>
         {
@@ -42,8 +41,9 @@ public class BookingAvailabilityService : IBookingAvailabilityService
         };
 
         var weekday = weekdayNames[dayOfWeekN];
-        var isOpen = !isDefaultClosed;
 
+        // ONLY check restaurant_days table - no hardcoded defaults
+        // If no entry exists, default to OPEN (business manages closures via backoffice)
         await using var connection = new MySqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
@@ -53,17 +53,15 @@ public class BookingAvailabilityService : IBookingAvailabilityService
             new { Date = date.ToString("yyyy-MM-dd") },
             cancellationToken: cancellationToken));
 
-        if (row != null)
-        {
-            isOpen = row.is_open;
-        }
+        // Default to OPEN if no database entry exists
+        var isOpen = row?.is_open ?? true;
 
         return new DayStatusResult
         {
             Date = date.Date,
             Weekday = weekday,
             IsOpen = isOpen,
-            IsDefaultClosedDay = isDefaultClosed
+            IsDefaultClosedDay = false // No longer using hardcoded defaults
         };
     }
 

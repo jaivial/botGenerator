@@ -11,9 +11,13 @@ public class AvailabilityCheckerAgent : IAgent
 {
     private readonly ILogger<AvailabilityCheckerAgent> _logger;
 
-    // Restaurant schedule (in production, load from config/database)
+    // Restaurant schedule - all days included, actual open/closed status is managed
+    // via restaurant_days table in database (checked by BookingAvailabilityService)
     private static readonly Dictionary<DayOfWeek, (TimeSpan Open, TimeSpan Close)> Schedule = new()
     {
+        { DayOfWeek.Monday, (new TimeSpan(13, 30, 0), new TimeSpan(17, 0, 0)) },
+        { DayOfWeek.Tuesday, (new TimeSpan(13, 30, 0), new TimeSpan(17, 0, 0)) },
+        { DayOfWeek.Wednesday, (new TimeSpan(13, 30, 0), new TimeSpan(17, 0, 0)) },
         { DayOfWeek.Thursday, (new TimeSpan(13, 30, 0), new TimeSpan(17, 0, 0)) },
         { DayOfWeek.Friday, (new TimeSpan(13, 30, 0), new TimeSpan(17, 30, 0)) },
         { DayOfWeek.Saturday, (new TimeSpan(13, 30, 0), new TimeSpan(18, 0, 0)) },
@@ -62,13 +66,8 @@ public class AvailabilityCheckerAgent : IAgent
             return AvailabilityResult.Invalid("Fecha inválida");
         }
 
-        // Check if restaurant is open on that day
-        if (!Schedule.ContainsKey(date.DayOfWeek))
-        {
-            var closedDays = "lunes, martes y miércoles";
-            return AvailabilityResult.Unavailable(
-                ResponseVariations.RestaurantClosed(closedDays));
-        }
+        // Note: Actual open/closed status is checked by BookingAvailabilityService
+        // via the restaurant_days database table. This agent only validates time slots.
 
         // Check if the date is in the past
         if (date.Date < DateTime.Now.Date)

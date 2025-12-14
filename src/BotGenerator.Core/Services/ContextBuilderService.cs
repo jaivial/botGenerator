@@ -26,12 +26,12 @@ public class ContextBuilderService : IContextBuilderService
         "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
     };
 
-    // Default schedules (can be overridden by RestaurantConfig)
+    // Default schedules - all days show hours, actual open/closed is in restaurant_days DB table
     private static readonly Dictionary<DayOfWeek, string> DefaultSchedule = new()
     {
-        { DayOfWeek.Monday, "Cerrado" },
-        { DayOfWeek.Tuesday, "Cerrado" },
-        { DayOfWeek.Wednesday, "Cerrado" },
+        { DayOfWeek.Monday, "13:30 – 17:00" },
+        { DayOfWeek.Tuesday, "13:30 – 17:00" },
+        { DayOfWeek.Wednesday, "13:30 – 17:00" },
         { DayOfWeek.Thursday, "13:30 – 17:00" },
         { DayOfWeek.Friday, "13:30 – 17:30" },
         { DayOfWeek.Saturday, "13:30 – 18:00" },
@@ -93,7 +93,7 @@ public class ContextBuilderService : IContextBuilderService
             ["schedule_viernes"] = GetScheduleForDay(DayOfWeek.Friday, restaurantConfig),
             ["schedule_sabado"] = GetScheduleForDay(DayOfWeek.Saturday, restaurantConfig),
             ["schedule_domingo"] = GetScheduleForDay(DayOfWeek.Sunday, restaurantConfig),
-            ["schedule_cerrado"] = "Lunes, Martes, Miércoles",
+            ["schedule_cerrado"] = "Ver disponibilidad en restaurant_days",
 
             // ========== BOOKING STATE ==========
             ["state_fecha"] = (object?)state?.Fecha ?? "",
@@ -233,11 +233,8 @@ public class ContextBuilderService : IContextBuilderService
             return false;
         }
 
-        // Default: open Thursday-Sunday
-        return day == DayOfWeek.Thursday ||
-               day == DayOfWeek.Friday ||
-               day == DayOfWeek.Saturday ||
-               day == DayOfWeek.Sunday;
+        // Default: assume open - actual status checked via restaurant_days DB table
+        return true;
     }
 
     private string GetScheduleForDay(DayOfWeek day, RestaurantConfig? config)
@@ -250,7 +247,7 @@ public class ContextBuilderService : IContextBuilderService
 
         return DefaultSchedule.TryGetValue(day, out var defaultSchedule)
             ? defaultSchedule
-            : "Cerrado";
+            : "13:30 – 17:00";
     }
 
     private string GetNextDayFormatted(DayOfWeek targetDay)
