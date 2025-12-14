@@ -455,6 +455,8 @@ public class BookingRepository : IBookingRepository
             await using var connection = new MySqlConnection(_connectionString);
             await connection.OpenAsync(cancellationToken);
 
+            // arroz_type and arroz_servings are JSON columns in the DB
+            // reservation_time is varchar(10), needs string format
             var sql = @"
                 INSERT INTO cancelled_bookings
                 (booking_id, reservation_date, reservation_time, party_size, customer_name,
@@ -463,19 +465,24 @@ public class BookingRepository : IBookingRepository
                 VALUES
                 (@BookingId, @ReservationDate, @ReservationTime, @PartySize, @CustomerName,
                  @ContactPhone, @ContactEmail, NOW(), @CancelledBy,
-                 @ArrozType, @ArrozServings, @BabyStrollers, @HighChairs, @Commentary)";
+                 CASE WHEN @ArrozType IS NULL OR @ArrozType = '' THEN NULL ELSE JSON_ARRAY(@ArrozType) END,
+                 CASE WHEN @ArrozServings IS NULL THEN NULL ELSE JSON_ARRAY(@ArrozServings) END,
+                 @BabyStrollers, @HighChairs, @Commentary)";
+
+            // Format reservation time as string (HH:mm) for varchar column
+            var timeStr = booking.ReservationTime.ToString(@"hh\:mm\:ss");
 
             var parameters = new
             {
                 BookingId = booking.Id,
                 ReservationDate = booking.ReservationDate,
-                ReservationTime = booking.ReservationTime,
+                ReservationTime = timeStr,
                 PartySize = booking.PartySize,
                 CustomerName = booking.CustomerName,
                 ContactPhone = booking.ContactPhone,
                 ContactEmail = "whatsapp@bot.local",
                 CancelledBy = cancelledBy,
-                ArrozType = booking.ArrozType,
+                ArrozType = string.IsNullOrWhiteSpace(booking.ArrozType) ? null : booking.ArrozType,
                 ArrozServings = booking.ArrozServings,
                 BabyStrollers = booking.BabyStrollers,
                 HighChairs = booking.HighChairs,
