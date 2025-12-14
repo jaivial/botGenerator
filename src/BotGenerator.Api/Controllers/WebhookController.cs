@@ -198,6 +198,12 @@ public class WebhookController : ControllerBase
 
                 if (!string.IsNullOrWhiteSpace(cancellationResponse.AiResponse))
                 {
+                    // Send response to user
+                    await _whatsApp.SendTextAsync(
+                        message.SenderNumber,
+                        cancellationResponse.AiResponse,
+                        cancellationToken);
+
                     await _historyService.AddMessageAsync(
                         message.SenderNumber,
                         ChatMessage.FromAssistant(cancellationResponse.AiResponse),
