@@ -16,6 +16,7 @@ public class WebhookController : ControllerBase
     private readonly MainConversationAgent _mainAgent;
     private readonly IIntentRouterService _intentRouter;
     private readonly IConversationHistoryService _historyService;
+    private readonly IAiStateExtractorService _aiStateExtractor;
     private readonly IPendingBookingStore _pendingBookingStore;
     private readonly IPendingRiceStore _pendingRiceStore;
     private readonly IWhatsAppService _whatsApp;
@@ -31,6 +32,7 @@ public class WebhookController : ControllerBase
         MainConversationAgent mainAgent,
         IIntentRouterService intentRouter,
         IConversationHistoryService historyService,
+        IAiStateExtractorService aiStateExtractor,
         IPendingBookingStore pendingBookingStore,
         IPendingRiceStore pendingRiceStore,
         IWhatsAppService whatsApp,
@@ -45,6 +47,7 @@ public class WebhookController : ControllerBase
         _mainAgent = mainAgent;
         _intentRouter = intentRouter;
         _historyService = historyService;
+        _aiStateExtractor = aiStateExtractor;
         _pendingBookingStore = pendingBookingStore;
         _pendingRiceStore = pendingRiceStore;
         _whatsApp = whatsApp;
@@ -161,12 +164,13 @@ public class WebhookController : ControllerBase
             var history = await _historyService.GetHistoryAsync(
                 message.SenderNumber, cancellationToken);
 
-            // 3. Extract conversation state INCLUDING current user message (for validation/guardrails)
+            // 3. Extract conversation state using AI (more robust than regex)
+            // AI understands natural language variations like "nah", "ninguna", "sin tronas", etc.
             var historyForState = history
                 .Append(ChatMessage.FromUser(message.MessageText, message.PushName))
                 .ToList();
 
-            var state = _historyService.ExtractState(historyForState);
+            var state = await _aiStateExtractor.ExtractStateAsync(historyForState, cancellationToken);
 
             // 3b. Apply pre-checks (availability + rice constraints) before calling Gemini
             var restaurantId = GetRestaurantId(message.SenderNumber);

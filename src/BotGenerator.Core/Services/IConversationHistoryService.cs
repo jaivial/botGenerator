@@ -30,7 +30,15 @@ public interface IConversationHistoryService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Extracts booking state from conversation history.
+    /// Extracts booking state from conversation history (sync, regex-based - legacy).
     /// </summary>
     ConversationState ExtractState(List<ChatMessage>? history);
+
+    /// <summary>
+    /// Extracts booking state from conversation history using AI (async, more robust).
+    /// Understands natural language variations like "nah", "ninguna", "sin tronas", etc.
+    /// </summary>
+    Task<ConversationState> ExtractStateWithAiAsync(
+        List<ChatMessage> history,
+        CancellationToken cancellationToken = default);
 }

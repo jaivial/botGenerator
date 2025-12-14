@@ -15,6 +15,7 @@ public class WebhookControllerTests
 {
     private readonly Mock<IIntentRouterService> _intentRouterMock;
     private readonly Mock<IConversationHistoryService> _historyServiceMock;
+    private readonly Mock<IAiStateExtractorService> _aiStateExtractorMock;
     private readonly Mock<IPendingBookingStore> _pendingBookingStoreMock;
     private readonly Mock<IPendingRiceStore> _pendingRiceStoreMock;
     private readonly Mock<IWhatsAppService> _whatsAppMock;
@@ -31,6 +32,7 @@ public class WebhookControllerTests
     {
         _intentRouterMock = new Mock<IIntentRouterService>();
         _historyServiceMock = new Mock<IConversationHistoryService>();
+        _aiStateExtractorMock = new Mock<IAiStateExtractorService>();
         _pendingBookingStoreMock = new Mock<IPendingBookingStore>();
         _pendingRiceStoreMock = new Mock<IPendingRiceStore>();
         _whatsAppMock = new Mock<IWhatsAppService>();
@@ -70,12 +72,18 @@ public class WebhookControllerTests
                 Reason = "ok"
             });
 
+        // Default AI state extractor behavior - return empty state
+        _aiStateExtractorMock
+            .Setup(x => x.ExtractStateAsync(It.IsAny<List<BotGenerator.Core.Models.ChatMessage>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BotGenerator.Core.Models.ConversationState.Empty());
+
         // For the Health endpoint test, we don't need the MainConversationAgent
         // so we pass null! to satisfy the compiler (will only be used in webhook tests)
         _controller = new WebhookController(
             null!,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
             _whatsAppMock.Object,
@@ -183,6 +191,7 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
             _whatsAppMock.Object,
@@ -302,6 +311,7 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
             _whatsAppMock.Object,
@@ -359,6 +369,7 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
             _whatsAppMock.Object,
@@ -421,6 +432,7 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
             _whatsAppMock.Object,
@@ -501,6 +513,7 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
             _whatsAppMock.Object,
@@ -581,6 +594,7 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
             _whatsAppMock.Object,
@@ -660,6 +674,7 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
             _whatsAppMock.Object,
@@ -775,6 +790,7 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
             _whatsAppMock.Object,
@@ -885,6 +901,7 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
             _whatsAppMock.Object,
@@ -997,6 +1014,7 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
             _whatsAppMock.Object,
@@ -1113,6 +1131,7 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
             _whatsAppMock.Object,
@@ -1223,6 +1242,7 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
             _whatsAppMock.Object,
@@ -1338,6 +1358,7 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
             _whatsAppMock.Object,
@@ -1450,6 +1471,7 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
             _whatsAppMock.Object,
@@ -1566,6 +1588,7 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
             _whatsAppMock.Object,
@@ -1686,6 +1709,7 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
             _whatsAppMock.Object,
@@ -1815,6 +1839,7 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
             _whatsAppMock.Object,
@@ -1950,6 +1975,7 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
             _whatsAppMock.Object,
@@ -2066,6 +2092,7 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
             _whatsAppMock.Object,
@@ -2188,6 +2215,7 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
             _whatsAppMock.Object,
@@ -2294,6 +2322,7 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
             _whatsAppMock.Object,
@@ -2401,6 +2430,7 @@ public class WebhookControllerTests
             mainAgent,
             _intentRouterMock.Object,
             _historyServiceMock.Object,
+            _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
             _whatsAppMock.Object,

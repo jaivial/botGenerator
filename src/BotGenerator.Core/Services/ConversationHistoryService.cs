@@ -13,6 +13,7 @@ public class ConversationHistoryService : IConversationHistoryService
 {
     private readonly Dictionary<string, List<ChatMessage>> _history = new();
     private readonly IContextBuilderService _contextBuilder;
+    private readonly IAiStateExtractorService? _aiStateExtractor;
     private readonly ILogger<ConversationHistoryService> _logger;
     private readonly int _maxMessages;
     private readonly TimeSpan _sessionTimeout;
@@ -22,9 +23,11 @@ public class ConversationHistoryService : IConversationHistoryService
     public ConversationHistoryService(
         IContextBuilderService contextBuilder,
         IConfiguration configuration,
-        ILogger<ConversationHistoryService> logger)
+        ILogger<ConversationHistoryService> logger,
+        IAiStateExtractorService? aiStateExtractor = null)
     {
         _contextBuilder = contextBuilder;
+        _aiStateExtractor = aiStateExtractor;
         _logger = logger;
         _maxMessages = configuration.GetValue("History:MaxMessages", 30);
         _sessionTimeout = TimeSpan.FromMinutes(
@@ -150,6 +153,33 @@ public class ConversationHistoryService : IConversationHistoryService
             IsComplete = isComplete,
             Stage = isComplete ? "awaiting_confirmation" : "collecting_info"
         };
+    }
+
+    /// <summary>
+    /// Extracts booking state using AI (Gemini) - more robust than regex.
+    /// Falls back to regex-based extraction if AI service is not available.
+    /// </summary>
+    public async Task<ConversationState> ExtractStateWithAiAsync(
+        List<ChatMessage> history,
+        CancellationToken cancellationToken = default)
+    {
+        if (_aiStateExtractor == null)
+        {
+            _logger.LogWarning("AI state extractor not available, falling back to regex extraction");
+            return ExtractState(history);
+        }
+
+        try
+        {
+            var aiState = await _aiStateExtractor.ExtractStateAsync(history, cancellationToken);
+            _logger.LogInformation("AI extraction complete: {State}", aiState);
+            return aiState;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "AI state extraction failed, falling back to regex extraction");
+            return ExtractState(history);
+        }
     }
 
     #region Extraction Methods

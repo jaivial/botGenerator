@@ -116,6 +116,7 @@ builder.Services.AddSingleton<IPendingRiceStore, PendingRiceStore>();
 
 // ========== Scoped Services ==========
 builder.Services.AddScoped<IIntentRouterService, IntentRouterService>();
+builder.Services.AddScoped<IAiStateExtractorService, AiStateExtractorService>();
 
 // ========== Agents ==========
 builder.Services.AddScoped<MainConversationAgent>();
