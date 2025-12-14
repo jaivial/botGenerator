@@ -16,16 +16,19 @@ public class IntentRouterService : IIntentRouterService
     private readonly ILogger<IntentRouterService> _logger;
     private readonly IPendingBookingStore _pendingBookingStore;
     private readonly IModificationStateStore _modificationStateStore;
+    private readonly ICancellationStateStore _cancellationStateStore;
 
     public IntentRouterService(
         IServiceProvider services,
         IPendingBookingStore pendingBookingStore,
         IModificationStateStore modificationStateStore,
+        ICancellationStateStore cancellationStateStore,
         ILogger<IntentRouterService> logger)
     {
         _services = services;
         _pendingBookingStore = pendingBookingStore;
         _modificationStateStore = modificationStateStore;
+        _cancellationStateStore = cancellationStateStore;
         _logger = logger;
     }
 
@@ -142,6 +145,20 @@ public class IntentRouterService : IIntentRouterService
                     mainAgentResponse, originalMessage, modificationState, cancellationToken);
             }
 
+            // ========== CHECK FOR ACTIVE CANCELLATION SESSION ==========
+            // If user has an active cancellation session, route ALL messages to the handler
+            // This ensures multi-turn cancellation flows work correctly
+            var cancellationState = _cancellationStateStore.Get(originalMessage.SenderNumber);
+            if (cancellationState != null || mainAgentResponse.Intent == IntentType.Cancellation)
+            {
+                _logger.LogInformation(
+                    "Routing to cancellation handler (activeSession={HasSession}, intent={Intent})",
+                    cancellationState != null, mainAgentResponse.Intent);
+
+                return await HandleCancellationAsync(
+                    mainAgentResponse, originalMessage, cancellationState, cancellationToken);
+            }
+
             // If we have a pending BOOKING_REQUEST from a previous turn, we can keep progressing
             // even if the AI doesn't re-emit BOOKING_REQUEST on follow-up messages.
             // This is critical when we ask mandatory follow-up questions (rice decision/servings, tronas, carritos).
@@ -169,8 +186,9 @@ public class IntentRouterService : IIntentRouterService
                 IntentType.Booking => await HandleBookingAsync(
                     mainAgentResponse, originalMessage, state, cancellationToken),
 
+                // Note: Cancellation is handled earlier via state check, this is fallback
                 IntentType.Cancellation => await HandleCancellationAsync(
-                    mainAgentResponse, originalMessage, cancellationToken),
+                    mainAgentResponse, originalMessage, null, cancellationToken),
 
                 // Note: Modification is handled earlier via state check, this is fallback
                 IntentType.Modification => await HandleModificationAsync(
@@ -511,19 +529,17 @@ public class IntentRouterService : IIntentRouterService
     private async Task<AgentResponse> HandleCancellationAsync(
         AgentResponse response,
         WhatsAppMessage message,
+        CancellationState? currentState,
         CancellationToken cancellationToken)
     {
-        _logger.LogDebug("Handling cancellation intent");
-
-        if (response.ExtractedData == null)
-        {
-            return response; // Still collecting cancellation data
-        }
+        _logger.LogDebug(
+            "Handling cancellation intent (stage={Stage})",
+            currentState?.Stage.ToString() ?? "New");
 
         var cancellationHandler = _services.GetRequiredService<CancellationHandler>();
         return await cancellationHandler.ProcessCancellationAsync(
-            response.ExtractedData,
-            message.SenderNumber,
+            message,
+            currentState,
             cancellationToken);
     }
 

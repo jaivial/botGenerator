@@ -417,4 +417,88 @@ public class BookingRepository : IBookingRepository
             return false;
         }
     }
+
+    public async Task<bool> CancelBookingAsync(int bookingId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await using var connection = new MySqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            var sql = @"
+                UPDATE bookings
+                SET status = 'cancelled'
+                WHERE id = @BookingId";
+
+            var rowsAffected = await connection.ExecuteAsync(sql, new { BookingId = bookingId });
+
+            if (rowsAffected > 0)
+            {
+                _logger.LogInformation("Cancelled booking {BookingId}", bookingId);
+                return true;
+            }
+
+            _logger.LogWarning("No rows updated when cancelling booking {BookingId}", bookingId);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error cancelling booking {BookingId}", bookingId);
+            return false;
+        }
+    }
+
+    public async Task<bool> InsertCancelledBookingAsync(BookingRecord booking, string cancelledBy, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await using var connection = new MySqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            var sql = @"
+                INSERT INTO cancelled_bookings
+                (booking_id, reservation_date, reservation_time, party_size, customer_name,
+                 contact_phone, contact_email, cancellation_date, cancelled_by,
+                 arroz_type, arroz_servings, babyStrollers, highChairs, commentary)
+                VALUES
+                (@BookingId, @ReservationDate, @ReservationTime, @PartySize, @CustomerName,
+                 @ContactPhone, @ContactEmail, NOW(), @CancelledBy,
+                 @ArrozType, @ArrozServings, @BabyStrollers, @HighChairs, @Commentary)";
+
+            var parameters = new
+            {
+                BookingId = booking.Id,
+                ReservationDate = booking.ReservationDate,
+                ReservationTime = booking.ReservationTime,
+                PartySize = booking.PartySize,
+                CustomerName = booking.CustomerName,
+                ContactPhone = booking.ContactPhone,
+                ContactEmail = "whatsapp@bot.local",
+                CancelledBy = cancelledBy,
+                ArrozType = booking.ArrozType,
+                ArrozServings = booking.ArrozServings,
+                BabyStrollers = booking.BabyStrollers,
+                HighChairs = booking.HighChairs,
+                Commentary = (string?)null
+            };
+
+            var rowsAffected = await connection.ExecuteAsync(sql, parameters);
+
+            if (rowsAffected > 0)
+            {
+                _logger.LogInformation(
+                    "Inserted cancelled booking record for booking {BookingId}, cancelled by {CancelledBy}",
+                    booking.Id, cancelledBy);
+                return true;
+            }
+
+            _logger.LogWarning("Failed to insert cancelled booking record for {BookingId}", booking.Id);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error inserting cancelled booking record for {BookingId}", booking.Id);
+            return false;
+        }
+    }
 }

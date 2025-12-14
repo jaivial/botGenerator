@@ -520,6 +520,93 @@ public static class ResponseVariations
         "¿Cuántos carritos traeréis finalmente?"
     });
 
+    // ========== CANCELLATION FLOW RESPONSES ==========
+
+    /// <summary>
+    /// No future bookings found for cancellation.
+    /// </summary>
+    public static string CancellationNoBookingsFound() => Pick(new[]
+    {
+        "No encuentro ninguna reserva a tu nombre. ¿Quieres hacer una nueva?",
+        "Vaya, no veo reservas futuras con este teléfono. ¿Hacemos una reserva?",
+        "No tengo reservas registradas para ti. ¿Te ayudo a hacer una?",
+        "Mmm, no encuentro ninguna reserva tuya. ¿Quieres reservar mesa?",
+        "No hay reservas asociadas a este número. ¿Hacemos una nueva?",
+        "No veo ninguna reserva a tu nombre. ¿Te ayudo a reservar?",
+        "Parece que no tienes reservas pendientes. ¿Quieres hacer una?",
+        "No encuentro reservas con tu teléfono. ¿Reservamos mesa?",
+        "No hay reservas futuras para ti. ¿Te gustaría hacer una?",
+        "No tienes reservas activas. ¿Quieres que hagamos una?"
+    });
+
+    /// <summary>
+    /// Asking which booking to cancel when multiple exist.
+    /// </summary>
+    public static string CancellationSelectBooking() => Pick(new[]
+    {
+        "Tienes varias reservas. ¿Cuál quieres cancelar?",
+        "Veo que tienes más de una reserva. ¿Cuál cancelamos?",
+        "Tienes estas reservas pendientes. ¿Cuál quieres cancelar?",
+        "Hay varias reservas a tu nombre. ¿Cuál deseas cancelar?",
+        "Tienes múltiples reservas. Dime cuál quieres cancelar.",
+        "Veo varias reservas tuyas. ¿Cuál cancelamos?",
+        "Tienes estas reservas. ¿Cuál quieres que cancele?",
+        "Hay más de una reserva. ¿Cuál es la que quieres cancelar?",
+        "Tienes varias reservas activas. ¿Cuál cancelo?",
+        "Veo múltiples reservas. ¿Cuál quieres cancelar?"
+    });
+
+    /// <summary>
+    /// Confirmation prompt for cancellation.
+    /// </summary>
+    public static string CancellationConfirmPrompt() => Pick(new[]
+    {
+        "¿Estás seguro/a de que quieres cancelar esta reserva?",
+        "¿Confirmas que quieres cancelar? Responde sí o no.",
+        "¿Seguro que quieres cancelar esta reserva?",
+        "¿De verdad quieres cancelar? Dime sí para confirmar.",
+        "¿Cancelamos esta reserva? Responde sí o no.",
+        "¿Confirmo la cancelación? Dime sí o no.",
+        "¿Quieres que cancele esta reserva? Sí o no.",
+        "¿Estás seguro? Una vez cancelada no se puede recuperar.",
+        "¿Confirmas la cancelación de esta reserva?",
+        "¿Seguro? Responde sí para cancelar o no para mantenerla."
+    });
+
+    /// <summary>
+    /// Cancellation successful.
+    /// </summary>
+    public static string CancellationSuccess() => Pick(new[]
+    {
+        "Listo, tu reserva ha sido cancelada. ¡Esperamos verte pronto!",
+        "Reserva cancelada correctamente. ¡Te esperamos otro día!",
+        "Hecho, he cancelado tu reserva. ¡Hasta pronto!",
+        "Tu reserva está cancelada. ¡Esperamos verte en otra ocasión!",
+        "Perfecto, reserva cancelada. ¡Vuelve cuando quieras!",
+        "Ya está, reserva cancelada. ¡Te esperamos!",
+        "Cancelación completada. ¡Esperamos verte pronto!",
+        "Tu reserva ha sido cancelada. ¡Hasta la próxima!",
+        "Listo, cancelada. ¡Te esperamos otro día!",
+        "Reserva cancelada. ¡Esperamos verte muy pronto!"
+    });
+
+    /// <summary>
+    /// Cancellation aborted by user.
+    /// </summary>
+    public static string CancellationAborted() => Pick(new[]
+    {
+        "Perfecto, tu reserva sigue activa. ¡Te esperamos!",
+        "Vale, no cancelamos nada. Tu reserva sigue en pie.",
+        "Entendido, mantenemos tu reserva. ¡Nos vemos!",
+        "Ok, dejamos la reserva como está. ¡Te esperamos!",
+        "Muy bien, tu reserva sigue confirmada.",
+        "Perfecto, no hay cambios. ¡Te esperamos el día de tu reserva!",
+        "Vale, tu reserva se mantiene. ¡Hasta entonces!",
+        "Entendido, no cancelamos. Tu reserva sigue activa.",
+        "Ok, reserva mantenida. ¡Te esperamos!",
+        "Muy bien, dejamos tu reserva. ¡Nos vemos!"
+    });
+
     private static string Pick(string[] options) =>
         options[_random.Next(options.Length)];
 }

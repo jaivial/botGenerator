@@ -111,6 +111,7 @@ builder.Services.AddSingleton<IBookingRepository, BookingRepository>();
 builder.Services.AddSingleton<IBookingAvailabilityService, BookingAvailabilityService>();
 builder.Services.AddSingleton<IPendingBookingStore, PendingBookingStore>();
 builder.Services.AddSingleton<IModificationStateStore, ModificationStateStore>();
+builder.Services.AddSingleton<ICancellationStateStore, CancellationStateStore>();
 
 // ========== Scoped Services ==========
 builder.Services.AddScoped<IIntentRouterService, IntentRouterService>();

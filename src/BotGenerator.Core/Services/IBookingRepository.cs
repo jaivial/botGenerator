@@ -44,4 +44,21 @@ public interface IBookingRepository
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The booking record, or null if not found.</returns>
     Task<BookingRecord?> GetBookingByIdAsync(int bookingId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Cancels a booking by setting its status to 'cancelled'.
+    /// </summary>
+    /// <param name="bookingId">The booking ID to cancel.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>True if the cancellation succeeded, false otherwise.</returns>
+    Task<bool> CancelBookingAsync(int bookingId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Inserts a cancelled booking record into the cancelled_bookings archive table.
+    /// </summary>
+    /// <param name="booking">The booking record to archive.</param>
+    /// <param name="cancelledBy">Who cancelled the booking (e.g., "AI_ASSISTANT").</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>True if the insert succeeded, false otherwise.</returns>
+    Task<bool> InsertCancelledBookingAsync(BookingRecord booking, string cancelledBy, CancellationToken cancellationToken = default);
 }
