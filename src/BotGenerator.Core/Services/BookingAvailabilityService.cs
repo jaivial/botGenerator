@@ -238,16 +238,7 @@ public class BookingAvailabilityService : IBookingAvailabilityService
             };
         }
 
-        // Same-day policy: reject
-        if (date.Date == DateTime.Now.Date)
-        {
-            return new BookingAvailabilityDecision
-            {
-                IsAvailable = false,
-                Reason = "invalid",
-                Message = ResponseVariations.SameDayBookingRejection()
-            };
-        }
+        // Same-day bookings are now allowed via WhatsApp
 
         var dayStatus = await CheckDayStatusAsync(date, cancellationToken);
         if (!dayStatus.IsOpen)

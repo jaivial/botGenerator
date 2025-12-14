@@ -76,12 +76,7 @@ public class AvailabilityCheckerAgent : IAgent
             return AvailabilityResult.Invalid("No se puede reservar para una fecha pasada");
         }
 
-        // Check if same day (policy: no same-day bookings)
-        if (date.Date == DateTime.Now.Date)
-        {
-            return AvailabilityResult.SameDay(
-                ResponseVariations.SameDayBookingRejection());
-        }
+        // Same-day bookings are now allowed via WhatsApp
 
         // Parse the time
         if (!TryParseTime(booking.Time, out var time))
