@@ -86,3 +86,10 @@ venv/
 # Uncomment if needed:
 # src/BotGenerator.Prompts/**/*.txt
 # src/BotGenerator.Prompts/**/*.md
+
+# Swarm files
+.swarm/
+*.db
+
+# Claude flow files
+.claude-flow/

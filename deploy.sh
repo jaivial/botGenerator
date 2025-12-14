@@ -53,6 +53,9 @@ echo "🔄 Fetching latest changes from remote..."
 git fetch origin
 git reset --hard origin/master
 
+echo "⏹️  Stopping botgenerator service for build..."
+systemctl stop botgenerator
+
 echo "🔨 Building application..."
 dotnet publish src/BotGenerator.Api/BotGenerator.Api.csproj -c Release -o ./publish
 
