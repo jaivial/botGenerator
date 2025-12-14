@@ -210,7 +210,6 @@ public class BookingRepository : IBookingRepository
                 FROM bookings
                 WHERE contact_phone = @Phone
                   AND reservation_date >= CURDATE()
-                  AND (status IS NULL OR status != 'cancelled')
                 ORDER BY reservation_date ASC, reservation_time ASC";
 
             var results = await connection.QueryAsync<dynamic>(sql, new { Phone = normalizedPhone });
