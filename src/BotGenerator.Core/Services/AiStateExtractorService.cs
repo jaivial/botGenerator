@@ -46,32 +46,24 @@ public class AiStateExtractorService : IAiStateExtractorService
         // Get upcoming weekends for context
         var upcomingWeekends = _contextBuilder.GetUpcomingWeekends();
 
-        var systemPrompt = $@"Eres un extractor de datos de reservas de restaurante. Tu ÚNICA tarea es analizar la conversación y devolver JSON.
+        var systemPrompt = $@"Extrae datos de reserva. Responde SOLO JSON sin markdown.
 
-FECHA HOY: {DateTime.Now:dd/MM/yyyy} ({DateTime.Now:dddd})
-FINES DE SEMANA: {upcomingWeekends}
+HOY: {DateTime.Now:dd/MM/yyyy}
 
-REGLAS DE EXTRACCIÓN:
-1. fecha: formato DD/MM/YYYY o null si no mencionada
-2. hora: formato HH:MM o null si no mencionada
-3. personas: número entero o null
-4. arrozType: nombre EXACTO del arroz elegido, """" si dijo que no quiere arroz, null si no decidido
-5. arrozServings: número de raciones o null
-6. tronas: 0 si dijo no, -1 si dijo sí sin cantidad, número si dio cantidad, null si no preguntado
-7. carritos: igual que tronas
-8. isConfirming: true SOLO si el último mensaje del cliente es una confirmación clara (""sí"", ""confirmo"", ""perfecto"")
+REGLAS:
+- fecha: DD/MM/YYYY o null
+- hora: HH:MM o null
+- personas: número o null
+- arrozType: nombre exacto, """" si no quiere, null si no decidido
+- arrozServings: número o null
+- tronas: 0=no necesita, número si dijo cuántas, null si no preguntado
+- carritos: igual que tronas
 
-IMPORTANTE:
-- Para tronas/carritos: ""no"", ""ninguna"", ""nada"", ""sin tronas"", ""no hace falta"" = 0
-- El arroz debe ser el nombre COMPLETO Y EXACTO como aparece en el menú
-- NO uses markdown, NO uses ```json```, responde SOLO el objeto JSON
-- Si el asistente confirmó ""0 tronas"" o ""0 carritos"", el valor es 0, NO null";
+IMPORTANTE: tronas/carritos ""no""/""ninguna""/""nada""=0, ""sí"" sin cantidad=-1";
 
-        var userMessage = $@"CONVERSACIÓN:
-{conversationText}
+        var userMessage = $@"{conversationText}
 
-Responde SOLO con este JSON (sin markdown):
-{{""fecha"":""DD/MM/YYYY o null"",""hora"":""HH:MM o null"",""personas"":null,""arrozType"":null,""arrozServings"":null,""tronas"":null,""carritos"":null,""isConfirming"":false}}";
+JSON:";
 
         try
         {
@@ -122,13 +114,52 @@ Responde SOLO con este JSON (sin markdown):
 
             // Extract JSON from response (in case AI adds extra text)
             var jsonMatch = Regex.Match(cleanResponse, @"\{[\s\S]*\}");
+            string json;
+
             if (!jsonMatch.Success)
             {
-                _logger.LogWarning("No JSON found in AI response: {Response}", response);
-                return CreateEmptyState();
-            }
+                // Try to repair truncated JSON (missing closing brace)
+                if (cleanResponse.StartsWith("{") && !cleanResponse.EndsWith("}"))
+                {
+                    _logger.LogWarning("Attempting to repair truncated JSON: {Response}", cleanResponse);
 
-            var json = jsonMatch.Value;
+                    // Remove trailing comma or incomplete field
+                    var repaired = cleanResponse.TrimEnd(',', '"', ':', ' ', '\n', '\r');
+
+                    // If it ends with a partial field name or value, remove it
+                    var lastQuoteIdx = repaired.LastIndexOf('"');
+                    var lastColonIdx = repaired.LastIndexOf(':');
+                    var lastCommaIdx = repaired.LastIndexOf(',');
+
+                    // If there's an unfinished key-value pair, trim to last complete one
+                    if (lastColonIdx > lastCommaIdx && lastQuoteIdx > lastColonIdx)
+                    {
+                        // Ends like: "key":"value" (complete)
+                    }
+                    else if (lastColonIdx > lastCommaIdx)
+                    {
+                        // Ends like: ,"key": or ,"key":null (may be incomplete)
+                        // Find the comma before this field and trim there
+                        if (lastCommaIdx > 0)
+                        {
+                            repaired = repaired.Substring(0, lastCommaIdx);
+                        }
+                    }
+
+                    repaired = repaired.TrimEnd(',', ' ') + "}";
+                    _logger.LogDebug("Repaired JSON: {Json}", repaired);
+                    json = repaired;
+                }
+                else
+                {
+                    _logger.LogWarning("No JSON found in AI response: {Response}", response);
+                    return CreateEmptyState();
+                }
+            }
+            else
+            {
+                json = jsonMatch.Value;
+            }
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
