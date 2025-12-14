@@ -1140,9 +1140,14 @@ public class ModificationHandler
     #region Notifications
 
     /// <summary>
-    /// Restaurant notification phone number for modification alerts.
+    /// Management team phone numbers for modification alerts.
     /// </summary>
-    private const string NotificationPhone = "34692747052";
+    private static readonly string[] ManagementPhones = new[]
+    {
+        "34692747052",
+        "34638857294",
+        "34686969914"
+    };
 
     /// <summary>
     /// Sends a notification to the restaurant when a booking is modified.
@@ -1227,11 +1232,23 @@ public class ModificationHandler
             sb.AppendLine();
             sb.AppendLine($"🆔 ID Reserva: {updatedBooking.Id}");
 
-            await _whatsAppService.SendTextAsync(NotificationPhone, sb.ToString(), ct);
+            var message = sb.ToString();
+            foreach (var phone in ManagementPhones)
+            {
+                try
+                {
+                    await _whatsAppService.SendTextAsync(phone, message, ct);
+                    _logger.LogDebug("Sent modification notification to {Phone}", phone);
+                }
+                catch (Exception phoneEx)
+                {
+                    _logger.LogError(phoneEx, "Failed to send modification notification to {Phone}", phone);
+                }
+            }
 
             _logger.LogInformation(
-                "Sent modification notification for booking {BookingId} to {Phone}",
-                updatedBooking.Id, NotificationPhone);
+                "Sent modification notification for booking {BookingId} to management team",
+                updatedBooking.Id);
         }
         catch (Exception ex)
         {

@@ -42,9 +42,14 @@ public class CancellationHandler
     };
 
     /// <summary>
-    /// Restaurant notification phone number for cancellation alerts.
+    /// Management team phone numbers for cancellation alerts.
     /// </summary>
-    private const string NotificationPhone = "34692747052";
+    private static readonly string[] ManagementPhones = new[]
+    {
+        "34692747052",
+        "34638857294",
+        "34686969914"
+    };
 
     public CancellationHandler(
         ILogger<CancellationHandler> logger,
@@ -425,21 +430,35 @@ public class CancellationHandler
             {
                 sb.AppendLine($"🍚 *Arroz:* {booking.ArrozType} ({booking.ArrozServings} raciones)");
             }
+            else
+            {
+                sb.AppendLine("🍚 *Arroz:* Sin arroz");
+            }
 
-            if (booking.HighChairs > 0)
-                sb.AppendLine($"🪑 *Tronas:* {booking.HighChairs}");
-            if (booking.BabyStrollers > 0)
-                sb.AppendLine($"🚼 *Carritos:* {booking.BabyStrollers}");
+            sb.AppendLine($"🪑 *Tronas:* {booking.HighChairs}");
+            sb.AppendLine($"🚼 *Carritos:* {booking.BabyStrollers}");
 
             sb.AppendLine();
             sb.AppendLine($"⏰ *Cancelada:* {DateTime.Now:dd/MM/yyyy HH:mm}");
             sb.AppendLine($"🆔 *ID Reserva:* {booking.Id}");
 
-            await _whatsAppService.SendTextAsync(NotificationPhone, sb.ToString(), ct);
+            var message = sb.ToString();
+            foreach (var phone in ManagementPhones)
+            {
+                try
+                {
+                    await _whatsAppService.SendTextAsync(phone, message, ct);
+                    _logger.LogDebug("Sent cancellation notification to {Phone}", phone);
+                }
+                catch (Exception phoneEx)
+                {
+                    _logger.LogError(phoneEx, "Failed to send cancellation notification to {Phone}", phone);
+                }
+            }
 
             _logger.LogInformation(
-                "Sent cancellation notification for booking {BookingId} to {Phone}",
-                booking.Id, NotificationPhone);
+                "Sent cancellation notification for booking {BookingId} to management team",
+                booking.Id);
         }
         catch (Exception ex)
         {

@@ -13,6 +13,16 @@ namespace BotGenerator.Api.Controllers;
 [Route("api/[controller]")]
 public class WebhookController : ControllerBase
 {
+    /// <summary>
+    /// Management team phone numbers for booking notifications.
+    /// </summary>
+    private static readonly string[] ManagementPhones = new[]
+    {
+        "34692747052",
+        "34638857294",
+        "34686969914"
+    };
+
     private readonly MainConversationAgent _mainAgent;
     private readonly IIntentRouterService _intentRouter;
     private readonly IConversationHistoryService _historyService;
@@ -291,7 +301,7 @@ public class WebhookController : ControllerBase
                     }
 
                     var adminText2 = BuildAdminNewBookingNotification(finalResponseDirect.ExtractedData, bookingId2);
-                    await _whatsApp.SendTextAsync("34692747052", adminText2, cancellationToken);
+                    await SendToManagementTeamAsync(adminText2, cancellationToken);
 
                     // Store history for deterministic booking
                     await _historyService.AddMessageAsync(
@@ -378,9 +388,9 @@ public class WebhookController : ControllerBase
                     await _whatsApp.SendTextAsync(message.SenderNumber, customerText, cancellationToken);
                 }
 
-                // Notify admin
+                // Notify management team
                 var adminText = BuildAdminNewBookingNotification(finalResponse.ExtractedData, bookingId);
-                await _whatsApp.SendTextAsync("34692747052", adminText, cancellationToken);
+                await SendToManagementTeamAsync(adminText, cancellationToken);
 
                 // Store assistant response (booking confirmation)
                 await _historyService.AddMessageAsync(
@@ -1548,6 +1558,25 @@ public class WebhookController : ControllerBase
         sb.AppendLine("Al hacer esta reserva, usted ha confirmado y aceptado las condiciones de reserva y políticas del restaurante, las cuales puede consultar en el botón de abajo.");
 
         return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>
+    /// Sends a message to all management team phone numbers.
+    /// </summary>
+    private async Task SendToManagementTeamAsync(string message, CancellationToken ct)
+    {
+        foreach (var phone in ManagementPhones)
+        {
+            try
+            {
+                await _whatsApp.SendTextAsync(phone, message, ct);
+                _logger.LogDebug("Sent notification to management phone {Phone}", phone);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send notification to management phone {Phone}", phone);
+            }
+        }
     }
 
     private static string BuildAdminNewBookingNotification(BookingData booking, string bookingId)
