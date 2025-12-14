@@ -75,9 +75,9 @@ public class MainConversationAgent : IAgent
                 return new AgentResponse
                 {
                     Intent = IntentType.Normal,
-                    AiResponse = $"Lo siento, no tenemos \"{riceValidation.RequestedRice}\" en nuestro menú. " +
-                                $"Nuestros arroces disponibles son: {string.Join(", ", riceValidation.AvailableTypes)}. " +
-                                "¿Te gustaría alguno de estos?"
+                    AiResponse = ResponseVariations.RiceNotOnMenu(
+                        riceValidation.RequestedRice ?? "",
+                        string.Join(", ", riceValidation.AvailableTypes))
                 };
             }
 
@@ -262,8 +262,7 @@ public class MainConversationAgent : IAgent
             // If response is empty, provide default message
             if (string.IsNullOrWhiteSpace(cleanResponse))
             {
-                cleanResponse = "Lo sentimos, no aceptamos reservas para el mismo día. " +
-                               "Por favor, llámanos al +34 638 857 294 para ver disponibilidad.";
+                cleanResponse = ResponseVariations.SameDayBookingRejection();
             }
         }
 
@@ -287,7 +286,7 @@ public class MainConversationAgent : IAgent
         // Ensure we have some response
         if (string.IsNullOrWhiteSpace(cleanResponse))
         {
-            cleanResponse = "Disculpa, no he entendido bien. ¿Puedes repetirlo?";
+            cleanResponse = ResponseVariations.FallbackNotUnderstood();
         }
 
         return new AgentResponse

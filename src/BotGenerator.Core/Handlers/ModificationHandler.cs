@@ -171,9 +171,7 @@ public class ModificationHandler
             return new AgentResponse
             {
                 Intent = IntentType.Modification,
-                AiResponse = "No entendí cuál reserva quieres modificar. " +
-                            "Por favor, indica el número (1, 2, 3...) o describe cuál " +
-                            "(\"la del sábado\", \"la de 6 personas\", etc.)"
+                AiResponse = ResponseVariations.BookingSelectionNotUnderstood()
             };
         }
 
@@ -223,8 +221,7 @@ public class ModificationHandler
             return new AgentResponse
             {
                 Intent = IntentType.Modification,
-                AiResponse = "No entendí qué quieres modificar. Por favor elige:\n" +
-                            "1️⃣ Fecha\n2️⃣ Hora\n3️⃣ Personas\n4️⃣ Arroz\n5️⃣ Tronas\n6️⃣ Carritos"
+                AiResponse = ResponseVariations.FieldSelectionNotUnderstood()
             };
         }
 
@@ -262,7 +259,7 @@ public class ModificationHandler
             _ => new AgentResponse
             {
                 Intent = IntentType.Normal,
-                AiResponse = "Ha ocurrido un error. Por favor, empieza de nuevo diciendo que quieres modificar tu reserva."
+                AiResponse = ResponseVariations.ModificationUnknownError()
             }
         };
     }
@@ -315,7 +312,7 @@ public class ModificationHandler
                 return new AgentResponse
                 {
                     Intent = IntentType.Normal,
-                    AiResponse = "Lo siento, hubo un error al guardar los cambios. Por favor, inténtalo de nuevo."
+                    AiResponse = ResponseVariations.ModificationSaveError()
                 };
             }
         }
@@ -335,7 +332,7 @@ public class ModificationHandler
         return new AgentResponse
         {
             Intent = IntentType.Modification,
-            AiResponse = "Por favor, confirma con *Sí* o cancela con *No*."
+            AiResponse = ResponseVariations.ConfirmationNotUnderstood()
         };
     }
 
@@ -358,7 +355,7 @@ public class ModificationHandler
             return new AgentResponse
             {
                 Intent = IntentType.Modification,
-                AiResponse = "No entendí la fecha. Por favor, indica el día (ej: \"el sábado\", \"21/12\", \"21 de diciembre\")"
+                AiResponse = ResponseVariations.DateNotUnderstood()
             };
         }
 
@@ -436,7 +433,7 @@ public class ModificationHandler
             return new AgentResponse
             {
                 Intent = IntentType.Modification,
-                AiResponse = "No entendí la hora. Por favor, indica la hora (ej: \"14:00\", \"a las 15:30\")"
+                AiResponse = ResponseVariations.TimeNotUnderstood()
             };
         }
 
@@ -501,7 +498,7 @@ public class ModificationHandler
             return new AgentResponse
             {
                 Intent = IntentType.Modification,
-                AiResponse = "No entendí el número de personas. Por favor, indica cuántas personas seréis."
+                AiResponse = ResponseVariations.PartySizeNotUnderstood()
             };
         }
 
@@ -510,7 +507,7 @@ public class ModificationHandler
         {
             await _whatsAppService.SendTextAsync(
                 message.SenderNumber,
-                "Para grupos de más de 10 personas, te pongo en contacto con nuestro equipo de reservas.",
+                ResponseVariations.LargeGroupIntro(),
                 ct);
 
             await _whatsAppService.SendContactCardAsync(
@@ -602,7 +599,7 @@ public class ModificationHandler
                 return new AgentResponse
                 {
                     Intent = IntentType.Modification,
-                    AiResponse = "El mínimo son 2 raciones de arroz. ¿Cuántas raciones quieres?"
+                    AiResponse = ResponseVariations.MinRicePortions()
                 };
             }
 
@@ -611,7 +608,7 @@ public class ModificationHandler
                 return new AgentResponse
                 {
                     Intent = IntentType.Modification,
-                    AiResponse = $"El máximo de raciones es {booking.PartySize} (número de comensales). ¿Cuántas raciones quieres?"
+                    AiResponse = ResponseVariations.RiceServingsExceedPartySize(booking.PartySize)
                 };
             }
 
@@ -667,7 +664,7 @@ public class ModificationHandler
             return new AgentResponse
             {
                 Intent = IntentType.Modification,
-                AiResponse = "El mínimo son 2 raciones de arroz. ¿Cuántas raciones quieres?"
+                AiResponse = ResponseVariations.MinRicePortions()
             };
         }
 
@@ -676,7 +673,7 @@ public class ModificationHandler
             return new AgentResponse
             {
                 Intent = IntentType.Modification,
-                AiResponse = $"El máximo de raciones es {booking.PartySize} (número de comensales). ¿Cuántas raciones quieres?"
+                AiResponse = ResponseVariations.RiceServingsExceedPartySize(booking.PartySize)
             };
         }
 
@@ -713,7 +710,7 @@ public class ModificationHandler
             return new AgentResponse
             {
                 Intent = IntentType.Modification,
-                AiResponse = "No entendí cuántas tronas necesitas. Por favor, indica el número (0-3)."
+                AiResponse = ResponseVariations.TronasNotUnderstood()
             };
         }
 
@@ -722,7 +719,7 @@ public class ModificationHandler
             return new AgentResponse
             {
                 Intent = IntentType.Modification,
-                AiResponse = "El máximo son 3 tronas. ¿Cuántas necesitas?"
+                AiResponse = ResponseVariations.MaxTronas()
             };
         }
 
@@ -755,7 +752,7 @@ public class ModificationHandler
             return new AgentResponse
             {
                 Intent = IntentType.Modification,
-                AiResponse = "No entendí cuántos carritos traes. Por favor, indica el número (0-3)."
+                AiResponse = ResponseVariations.CarritosNotUnderstood()
             };
         }
 
@@ -764,7 +761,7 @@ public class ModificationHandler
             return new AgentResponse
             {
                 Intent = IntentType.Modification,
-                AiResponse = "El máximo son 3 carritos. ¿Cuántos traes?"
+                AiResponse = ResponseVariations.MaxCarritos()
             };
         }
 

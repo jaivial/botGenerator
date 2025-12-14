@@ -514,8 +514,8 @@ public class CancellationHandlerTests
         result.Should().NotBeNull();
         result.AiResponse.Should().NotBeNullOrWhiteSpace();
 
-        // Should indicate booking is kept
-        result.AiResponse.Should().MatchRegex("([Pp]erfecto|[Ss]igue|[Mm]antene)");
+        // Should indicate booking is kept (any variation from CancellationAborted)
+        result.AiResponse.Should().MatchRegex("([Pp]erfecto|[Ss]igue|manten|[Vv]ale|[Ee]ntendido|[Oo]k|dejamos)");
 
         // Should clear state
         _stateStoreMock.Verify(x => x.Clear(It.IsAny<string>()), Times.Once);

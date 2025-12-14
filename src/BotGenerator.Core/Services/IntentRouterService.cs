@@ -65,7 +65,7 @@ public class IntentRouterService : IIntentRouterService
 
                     await whatsApp.SendTextAsync(
                         originalMessage.SenderNumber,
-                        $"Para grupos de más de 10 personas, te pongo en contacto con nuestro equipo de reservas que te ayudará personalmente.",
+                        ResponseVariations.LargeGroupIntro(),
                         cancellationToken);
 
                     await whatsApp.SendContactCardAsync(
@@ -113,7 +113,7 @@ public class IntentRouterService : IIntentRouterService
 
                     await whatsApp.SendTextAsync(
                         originalMessage.SenderNumber,
-                        "Para solicitudes especiales como tartas de cumpleaños, celebraciones o eventos privados, te pongo en contacto con nuestro equipo que te ayudará personalmente.",
+                        ResponseVariations.SpecialRequestIntro(),
                         cancellationToken);
 
                     await whatsApp.SendContactCardAsync(
@@ -240,7 +240,7 @@ public class IntentRouterService : IIntentRouterService
             // Send introductory message
             await whatsApp.SendTextAsync(
                 message.SenderNumber,
-                $"Para grupos de más de 10 personas, te pongo en contacto con nuestro equipo de reservas que te ayudará personalmente.",
+                ResponseVariations.LargeGroupIntro(),
                 cancellationToken);
 
             // Send contact card
@@ -282,7 +282,7 @@ public class IntentRouterService : IIntentRouterService
                 return new AgentResponse
                 {
                     Intent = IntentType.Normal,
-                    AiResponse = riceResult.Message ?? "No se pudo validar el arroz",
+                    AiResponse = riceResult.Message ?? ResponseVariations.RiceTypeNotFound(),
                     Metadata = new Dictionary<string, object>
                     {
                         ["riceValidation"] = riceResult
@@ -317,7 +317,7 @@ public class IntentRouterService : IIntentRouterService
                 return response with
                 {
                     Intent = IntentType.Normal,
-                    AiResponse = "Perfecto. ¿Me confirmas *fecha*, *hora* y *personas* para la reserva?"
+                    AiResponse = ResponseVariations.IncompleteBookingPrompt()
                 };
             }
 
@@ -565,8 +565,7 @@ public class IntentRouterService : IIntentRouterService
         _logger.LogDebug("Handling same-day booking rejection");
 
         var message = string.IsNullOrWhiteSpace(response.AiResponse)
-            ? "Lo sentimos, no aceptamos reservas para el mismo día. " +
-              "Por favor, llámanos al +34 638 857 294 para ver disponibilidad."
+            ? ResponseVariations.SameDayBookingRejection()
             : response.AiResponse;
 
         return response with { AiResponse = message };
@@ -585,8 +584,7 @@ public class IntentRouterService : IIntentRouterService
     {
         _logger.LogWarning("Handling error response");
 
-        var message = "Disculpa, hubo un problema con el asistente. " +
-                     "Por favor, llámanos al +34 638 857 294.";
+        var message = ResponseVariations.GenericError();
 
         return response with { AiResponse = message };
     }

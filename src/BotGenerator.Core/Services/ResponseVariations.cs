@@ -520,6 +520,195 @@ public static class ResponseVariations
         "¿Cuántos carritos traeréis finalmente?"
     });
 
+    // ========== MODIFICATION ERROR RESPONSES ==========
+
+    /// <summary>
+    /// Booking selection not understood (multiple bookings exist).
+    /// </summary>
+    public static string BookingSelectionNotUnderstood() => Pick(new[]
+    {
+        "No entendí cuál reserva quieres. Por favor, indica el número (1, 2, 3...) o describe cuál (\"la del sábado\", \"la de 6 personas\", etc.)",
+        "Perdona, no pillé cuál reserva dices. ¿Puedes indicarme el número o describirla?",
+        "No me quedó claro cuál reserva quieres. Dime el número o descríbela (ej: \"la primera\", \"la del viernes\").",
+        "¿Cuál de las reservas? Puedes decirme el número o describir cuál (\"la de las 14:00\", \"la de 4 personas\").",
+        "No entendí bien. Dime qué reserva quieres: el número (1, 2...) o una descripción.",
+        "Perdona, ¿cuál de las reservas? Indica el número o descríbela.",
+        "No me ha quedado claro. ¿Me dices el número de la reserva o la describes?",
+        "¿Cuál reserva dices? Puedes usar el número o describir (\"la del domingo\", \"la segunda\").",
+        "No entendí cuál. Dime el número (1, 2, 3...) o descríbela (día, hora, personas...).",
+        "Perdona, no pillé cuál. ¿Me indicas el número o me la describes?"
+    });
+
+    /// <summary>
+    /// Field selection not understood in modification.
+    /// </summary>
+    public static string FieldSelectionNotUnderstood() => Pick(new[]
+    {
+        "No entendí qué quieres modificar. Por favor elige:\n1️⃣ Fecha\n2️⃣ Hora\n3️⃣ Personas\n4️⃣ Arroz\n5️⃣ Tronas\n6️⃣ Carritos",
+        "Perdona, no pillé qué quieres cambiar. Elige una opción:\n1️⃣ Fecha\n2️⃣ Hora\n3️⃣ Personas\n4️⃣ Arroz\n5️⃣ Tronas\n6️⃣ Carritos",
+        "No me quedó claro qué modificar. Dime qué cambiar:\n1️⃣ Fecha\n2️⃣ Hora\n3️⃣ Personas\n4️⃣ Arroz\n5️⃣ Tronas\n6️⃣ Carritos",
+        "¿Qué parte quieres cambiar? Elige:\n1️⃣ Fecha\n2️⃣ Hora\n3️⃣ Personas\n4️⃣ Arroz\n5️⃣ Tronas\n6️⃣ Carritos",
+        "No entendí bien. ¿Qué modificamos?\n1️⃣ Fecha\n2️⃣ Hora\n3️⃣ Personas\n4️⃣ Arroz\n5️⃣ Tronas\n6️⃣ Carritos",
+        "Perdona, ¿qué quieres cambiar?\n1️⃣ Fecha\n2️⃣ Hora\n3️⃣ Personas\n4️⃣ Arroz\n5️⃣ Tronas\n6️⃣ Carritos",
+        "No me ha quedado claro. Dime qué cambiar:\n1️⃣ Fecha\n2️⃣ Hora\n3️⃣ Personas\n4️⃣ Arroz\n5️⃣ Tronas\n6️⃣ Carritos",
+        "¿Qué necesitas modificar? Opciones:\n1️⃣ Fecha\n2️⃣ Hora\n3️⃣ Personas\n4️⃣ Arroz\n5️⃣ Tronas\n6️⃣ Carritos",
+        "No pillé qué cambiar. ¿Qué modificamos?\n1️⃣ Fecha\n2️⃣ Hora\n3️⃣ Personas\n4️⃣ Arroz\n5️⃣ Tronas\n6️⃣ Carritos",
+        "¿Qué aspecto cambiamos?\n1️⃣ Fecha\n2️⃣ Hora\n3️⃣ Personas\n4️⃣ Arroz\n5️⃣ Tronas\n6️⃣ Carritos"
+    });
+
+    /// <summary>
+    /// Unknown error during modification - restart needed.
+    /// </summary>
+    public static string ModificationUnknownError() => Pick(new[]
+    {
+        "Ha ocurrido un error. Por favor, empieza de nuevo diciendo que quieres modificar tu reserva.",
+        "Vaya, algo ha fallado. Vuelve a indicarme que quieres modificar la reserva.",
+        "Ups, ha habido un problema. Dime otra vez que quieres modificar la reserva.",
+        "Lo siento, algo salió mal. Por favor, vuelve a decirme que quieres modificar.",
+        "Ha habido un error. Empieza de nuevo indicando que quieres modificar tu reserva.",
+        "Perdona, algo falló. Di otra vez que quieres modificar la reserva.",
+        "Vaya, hubo un problema. Vuelve a indicar que quieres modificar.",
+        "Lo siento, ha ocurrido un error. Empieza de nuevo con la modificación.",
+        "Ups, algo no fue bien. Dime otra vez que quieres modificar tu reserva.",
+        "Ha fallado algo. Por favor, vuelve a empezar diciendo que quieres modificar."
+    });
+
+    /// <summary>
+    /// Database save error during modification.
+    /// </summary>
+    public static string ModificationSaveError() => Pick(new[]
+    {
+        "Lo siento, hubo un error al guardar los cambios. Por favor, inténtalo de nuevo.",
+        "Vaya, no se pudieron guardar los cambios. ¿Puedes intentarlo otra vez?",
+        "Ups, hubo un problema al guardar. Por favor, inténtalo de nuevo.",
+        "Lo siento, falló al guardar los cambios. Vuelve a intentarlo.",
+        "No se han podido guardar los cambios. Por favor, inténtalo otra vez.",
+        "Perdona, hubo un error guardando. ¿Puedes volver a intentarlo?",
+        "Vaya, algo falló al guardar. Inténtalo de nuevo, por favor.",
+        "Lo siento, los cambios no se guardaron. Por favor, vuelve a intentarlo.",
+        "Hubo un problema al aplicar los cambios. Inténtalo otra vez.",
+        "Ups, no se pudieron guardar. Por favor, inténtalo de nuevo."
+    });
+
+    /// <summary>
+    /// Confirmation yes/no not understood.
+    /// </summary>
+    public static string ConfirmationNotUnderstood() => Pick(new[]
+    {
+        "Por favor, confirma con *Sí* o cancela con *No*.",
+        "No entendí. ¿Confirmas? Responde *Sí* o *No*.",
+        "¿Sí o no? No me quedó claro tu respuesta.",
+        "Perdona, no pillé tu respuesta. ¿*Sí* para confirmar o *No* para cancelar?",
+        "¿Confirmas? Dime *Sí* o *No*.",
+        "No entendí bien. Responde *Sí* para confirmar o *No* para cancelar.",
+        "¿Qué me dices? *Sí* para adelante o *No* para dejarlo.",
+        "Por favor, dime *Sí* para confirmar o *No* para cancelar.",
+        "No me quedó claro. ¿*Sí* o *No*?",
+        "¿Confirmas o no? Responde *Sí* o *No*."
+    });
+
+    /// <summary>
+    /// Date input not understood.
+    /// </summary>
+    public static string DateNotUnderstood() => Pick(new[]
+    {
+        "No entendí la fecha. Por favor, indica el día (ej: \"el sábado\", \"21/12\", \"21 de diciembre\")",
+        "Perdona, no pillé la fecha. ¿Puedes decirme el día? (ej: \"viernes\", \"15/01\")",
+        "No me quedó clara la fecha. Dímela de otra forma (ej: \"el domingo\", \"22 de enero\")",
+        "¿Qué día dices? No lo entendí. Prueba con \"el jueves\" o \"20/12\" o \"20 de diciembre\".",
+        "No entendí bien el día. ¿Me lo repites? (ej: \"sábado\", \"25/12\")",
+        "Perdona, no capté la fecha. Dime el día de otra forma.",
+        "No pillé la fecha. ¿Puedes indicarla como \"el viernes\" o \"18/01\"?",
+        "No me quedó claro el día. Indícalo como \"el lunes\", \"15/12\" o \"15 de diciembre\".",
+        "¿Qué fecha? No la entendí. Prueba con el nombre del día o formato dd/mm.",
+        "No entendí qué día. Dímelo como \"el sábado\", \"21/12\" o \"21 de diciembre\"."
+    });
+
+    /// <summary>
+    /// Time input not understood.
+    /// </summary>
+    public static string TimeNotUnderstood() => Pick(new[]
+    {
+        "No entendí la hora. Por favor, indica la hora (ej: \"14:00\", \"a las 15:30\")",
+        "Perdona, no pillé la hora. ¿Puedes decírmela? (ej: \"15:00\", \"a las dos\")",
+        "No me quedó clara la hora. Dímela de otra forma (ej: \"14:30\", \"a las tres\")",
+        "¿Qué hora dices? No la entendí. Prueba con \"14:00\" o \"a las 14:00\".",
+        "No entendí bien la hora. ¿Me la repites? (ej: \"15:30\")",
+        "Perdona, no capté la hora. Dímela de otra forma.",
+        "No pillé la hora. ¿Puedes indicarla como \"14:00\" o \"a las 15:00\"?",
+        "No me quedó clara la hora. Indícala como \"14:30\" o \"a las dos y media\".",
+        "¿A qué hora? No la entendí. Prueba con formato HH:MM.",
+        "No entendí qué hora. Dímela como \"14:00\", \"15:30\" o \"a las dos\"."
+    });
+
+    /// <summary>
+    /// Party size input not understood.
+    /// </summary>
+    public static string PartySizeNotUnderstood() => Pick(new[]
+    {
+        "No entendí el número de personas. Por favor, indica cuántas personas seréis.",
+        "Perdona, no pillé cuántos seréis. ¿Puedes decirme el número?",
+        "No me quedó claro cuántas personas. Dime el número (ej: \"4 personas\", \"seremos 6\").",
+        "¿Cuántas personas? No lo entendí. Indica un número.",
+        "No entendí bien cuántos seréis. ¿Me lo repites?",
+        "Perdona, no capté el número de personas. ¿Cuántos seréis?",
+        "No pillé cuántos sois. ¿Puedes indicar el número de personas?",
+        "No me quedó claro. ¿Cuántas personas seréis?",
+        "¿Cuántos comensales? No entendí. Dime el número.",
+        "No entendí cuántos. Indica el número de personas (ej: \"4\", \"seremos 5\")."
+    });
+
+    /// <summary>
+    /// Rice servings exceed party size.
+    /// </summary>
+    public static string RiceServingsExceedPartySize(int partySize) => Pick(new[]
+    {
+        $"El máximo de raciones es {partySize} (número de comensales). ¿Cuántas raciones quieres?",
+        $"Solo podéis pedir hasta {partySize} raciones (sois {partySize}). ¿Cuántas queréis?",
+        $"El límite son {partySize} raciones (una por persona). ¿Cuántas os pongo?",
+        $"Como máximo pueden ser {partySize} raciones. ¿Cuántas quieres?",
+        $"No podéis pedir más de {partySize} raciones (sois {partySize}). ¿Cuántas?",
+        $"El tope son {partySize} raciones. ¿Cuántas os preparo?",
+        $"Máximo {partySize} raciones (igual que comensales). ¿Cuántas queréis?",
+        $"El máximo es {partySize} raciones. ¿Cuántas os pongo?",
+        $"Solo hasta {partySize} raciones. ¿Cuántas quieres?",
+        $"Podéis pedir hasta {partySize} raciones como máximo. ¿Cuántas?"
+    });
+
+    /// <summary>
+    /// Tronas count not understood.
+    /// </summary>
+    public static string TronasNotUnderstood() => Pick(new[]
+    {
+        "No entendí cuántas tronas necesitas. Por favor, indica el número (0-3).",
+        "Perdona, no pillé cuántas tronas. ¿Puedes decirme el número? (máximo 3)",
+        "No me quedó claro. ¿Cuántas tronas necesitáis? (0-3)",
+        "¿Cuántas tronas? No lo entendí. Indica un número del 0 al 3.",
+        "No entendí bien. ¿Cuántas tronas queréis? (máximo 3)",
+        "Perdona, no capté el número de tronas. ¿Cuántas? (0-3)",
+        "No pillé cuántas tronas. Dime un número entre 0 y 3.",
+        "No me quedó claro cuántas tronas. ¿Me lo repites?",
+        "¿Cuántas tronas decías? Indica el número (0-3).",
+        "No entendí cuántas tronas. Dime un número del 0 al 3."
+    });
+
+    /// <summary>
+    /// Carritos count not understood.
+    /// </summary>
+    public static string CarritosNotUnderstood() => Pick(new[]
+    {
+        "No entendí cuántos carritos traes. Por favor, indica el número (0-3).",
+        "Perdona, no pillé cuántos carritos. ¿Puedes decirme el número? (máximo 3)",
+        "No me quedó claro. ¿Cuántos carritos traeréis? (0-3)",
+        "¿Cuántos carritos? No lo entendí. Indica un número del 0 al 3.",
+        "No entendí bien. ¿Cuántos carritos traéis? (máximo 3)",
+        "Perdona, no capté el número de carritos. ¿Cuántos? (0-3)",
+        "No pillé cuántos carritos. Dime un número entre 0 y 3.",
+        "No me quedó claro cuántos carritos. ¿Me lo repites?",
+        "¿Cuántos carritos decías? Indica el número (0-3).",
+        "No entendí cuántos carritos. Dime un número del 0 al 3."
+    });
+
     // ========== CANCELLATION FLOW RESPONSES ==========
 
     /// <summary>
@@ -605,6 +794,292 @@ public static class ResponseVariations
         "Entendido, no cancelamos. Tu reserva sigue activa.",
         "Ok, reserva mantenida. ¡Te esperamos!",
         "Muy bien, dejamos tu reserva. ¡Nos vemos!"
+    });
+
+    /// <summary>
+    /// Cancellation database error.
+    /// </summary>
+    public static string CancellationError() => Pick(new[]
+    {
+        "Lo siento, hubo un error al cancelar la reserva. Por favor, inténtalo de nuevo.",
+        "Vaya, no se pudo cancelar la reserva. ¿Puedes intentarlo otra vez?",
+        "Ups, hubo un problema al cancelar. Por favor, inténtalo de nuevo.",
+        "Lo siento, falló la cancelación. Vuelve a intentarlo.",
+        "No se ha podido cancelar la reserva. Por favor, inténtalo otra vez.",
+        "Perdona, hubo un error cancelando. ¿Puedes volver a intentarlo?",
+        "Vaya, algo falló al cancelar. Inténtalo de nuevo, por favor.",
+        "Lo siento, la cancelación no se procesó. Por favor, vuelve a intentarlo.",
+        "Hubo un problema al procesar la cancelación. Inténtalo otra vez.",
+        "Ups, no se pudo cancelar. Por favor, inténtalo de nuevo."
+    });
+
+    /// <summary>
+    /// Cancellation confirmation not understood (specific for cancellation flow).
+    /// </summary>
+    public static string CancellationConfirmationNotUnderstood() => Pick(new[]
+    {
+        "Por favor, confirma con *Sí* para cancelar o *No* para mantener tu reserva.",
+        "No entendí. ¿Cancelamos? Responde *Sí* o *No*.",
+        "¿Sí o no? Dime si quieres cancelar la reserva.",
+        "Perdona, no pillé tu respuesta. ¿*Sí* para cancelar o *No* para mantenerla?",
+        "¿Cancelamos la reserva? Dime *Sí* o *No*.",
+        "No entendí bien. ¿*Sí* para cancelar o *No* para dejarla?",
+        "¿Qué me dices? *Sí* para cancelar o *No* para mantener la reserva.",
+        "Por favor, dime *Sí* para cancelar o *No* para mantenerla.",
+        "No me quedó claro. ¿Cancelamos? *Sí* o *No*.",
+        "¿Confirmas la cancelación? Responde *Sí* o *No*."
+    });
+
+    // ========== BOOKING ERROR RESPONSES ==========
+
+    /// <summary>
+    /// Booking creation failed.
+    /// </summary>
+    public static string BookingCreationFailed() => Pick(new[]
+    {
+        "No se pudo crear la reserva. Por favor, inténtalo de nuevo o llámanos al +34 638 857 294.",
+        "Vaya, hubo un error creando la reserva. ¿Puedes intentarlo otra vez o llamarnos al +34 638 857 294?",
+        "Lo siento, no se pudo guardar la reserva. Inténtalo de nuevo o llámanos al +34 638 857 294.",
+        "Ups, falló al crear la reserva. Por favor, prueba otra vez o llámanos al +34 638 857 294.",
+        "No se ha podido procesar la reserva. Inténtalo de nuevo o contacta con nosotros al +34 638 857 294.",
+        "Ha habido un problema con la reserva. ¿Lo intentamos de nuevo? También puedes llamarnos al +34 638 857 294.",
+        "Lo siento, la reserva no se guardó. Por favor, inténtalo otra vez o llámanos al +34 638 857 294.",
+        "Vaya, algo falló. Prueba de nuevo o llámanos directamente al +34 638 857 294.",
+        "No se pudo completar la reserva. Inténtalo otra vez o contacta al +34 638 857 294.",
+        "Hubo un error con la reserva. Por favor, prueba de nuevo o llámanos al +34 638 857 294."
+    });
+
+    /// <summary>
+    /// Error processing booking (exception).
+    /// </summary>
+    public static string BookingProcessingError() => Pick(new[]
+    {
+        "Error al procesar la reserva. Por favor, inténtalo de nuevo.",
+        "Vaya, hubo un problema procesando tu reserva. ¿Puedes intentarlo otra vez?",
+        "Lo siento, ocurrió un error. Por favor, inténtalo de nuevo.",
+        "Ups, algo salió mal. Vuelve a intentarlo, por favor.",
+        "Ha habido un error procesando. Inténtalo otra vez.",
+        "Lo siento, falló el procesamiento. Por favor, prueba de nuevo.",
+        "Vaya, no se pudo procesar. ¿Puedes intentarlo otra vez?",
+        "Hubo un problema. Por favor, inténtalo de nuevo.",
+        "Error inesperado. Vuelve a intentarlo, por favor.",
+        "Lo siento, algo falló. Inténtalo otra vez."
+    });
+
+    // ========== SAME-DAY BOOKING RESPONSES ==========
+
+    /// <summary>
+    /// Same-day booking rejection.
+    /// </summary>
+    public static string SameDayBookingRejection() => Pick(new[]
+    {
+        "Lo sentimos, no aceptamos reservas para el mismo día. Por favor, llámanos al +34 638 857 294 para ver disponibilidad.",
+        "Vaya, no podemos hacer reservas para hoy. Llámanos al +34 638 857 294 y miramos disponibilidad.",
+        "Las reservas para el mismo día no las gestionamos por aquí. Llámanos al +34 638 857 294.",
+        "Para reservar para hoy, por favor llámanos al +34 638 857 294. Así comprobamos disponibilidad directamente.",
+        "No hacemos reservas para el día de hoy por chat. Llámanos al +34 638 857 294 y te atendemos.",
+        "Lo siento, para hoy mismo tienes que llamarnos al +34 638 857 294.",
+        "Las reservas del mismo día las gestionamos por teléfono. Llámanos al +34 638 857 294.",
+        "Para hoy no puedo hacer la reserva aquí. Llámanos al +34 638 857 294 y vemos qué podemos hacer.",
+        "No aceptamos reservas para el mismo día por este canal. Por favor, llama al +34 638 857 294.",
+        "Para reservar hoy mismo, contacta con nosotros al +34 638 857 294. Así te atendemos mejor."
+    });
+
+    // ========== RESTAURANT CLOSED RESPONSES ==========
+
+    /// <summary>
+    /// Restaurant closed on requested day.
+    /// </summary>
+    public static string RestaurantClosed(string closedDay) => Pick(new[]
+    {
+        $"Lo siento, estamos cerrados el {closedDay}. ¿Te viene bien otro día?",
+        $"Vaya, el {closedDay} no abrimos. ¿Qué tal otro día?",
+        $"El {closedDay} cerramos. ¿Quieres reservar para otro día?",
+        $"Lo siento, el {closedDay} no estamos. ¿Te viene bien otra fecha?",
+        $"Ese día ({closedDay}) estamos cerrados. ¿Probamos con otro?",
+        $"El {closedDay} no abrimos. ¿Te gustaría reservar para otro día?",
+        $"Vaya, ese día cerramos ({closedDay}). ¿Qué otro día te vendría bien?",
+        $"Lo siento, no abrimos el {closedDay}. ¿Qué otra fecha te iría bien?",
+        $"El {closedDay} no estamos disponibles. ¿Probamos con otro día?",
+        $"Cerramos el {closedDay}. ¿Te gustaría reservar para otra fecha?"
+    });
+
+    /// <summary>
+    /// Restaurant closed with next open day suggestion.
+    /// </summary>
+    public static string RestaurantClosedWithSuggestion(string closedDay, string nextOpenDay) => Pick(new[]
+    {
+        $"Lo siento, estamos cerrados el {closedDay}. ¿Te viene bien reservar para el {nextOpenDay}?",
+        $"Vaya, el {closedDay} no abrimos. ¿Qué tal el {nextOpenDay}?",
+        $"El {closedDay} cerramos. ¿Quieres reservar para el {nextOpenDay}?",
+        $"Lo siento, el {closedDay} no estamos. ¿Te viene bien el {nextOpenDay}?",
+        $"Ese día cerramos. ¿Te gustaría el {nextOpenDay}?",
+        $"El {closedDay} no abrimos. ¿Probamos con el {nextOpenDay}?",
+        $"Vaya, ese día no abrimos. ¿Te iría bien el {nextOpenDay}?",
+        $"Lo siento, no abrimos el {closedDay}. ¿Y el {nextOpenDay}?",
+        $"El {closedDay} no estamos. ¿Qué tal el {nextOpenDay}?",
+        $"Cerramos el {closedDay}. ¿Te vendría bien el {nextOpenDay}?"
+    });
+
+    // ========== LARGE GROUP / SPECIAL REQUEST INTRO ==========
+
+    /// <summary>
+    /// Large group intro message (before sending contact card).
+    /// </summary>
+    public static string LargeGroupIntro() => Pick(new[]
+    {
+        "Para grupos de más de 10 personas, te pongo en contacto con nuestro equipo de reservas que te ayudará personalmente.",
+        "Los grupos de más de 10 personas los gestionamos de forma personalizada. Te paso el contacto de nuestro equipo.",
+        "Para grupos grandes te atiende mejor nuestro equipo de reservas. Te envío su contacto.",
+        "Para más de 10 personas, mejor que hables con nuestro equipo directamente. Te paso su contacto.",
+        "Grupos de más de 10 personas los llevamos de forma especial. Te pongo en contacto con nuestro equipo.",
+        "Para un grupo tan grande, nuestro equipo de reservas te atenderá mejor. Te paso el contacto.",
+        "Los grupos numerosos los gestionamos de forma personalizada. Te envío el contacto de nuestro equipo.",
+        "Para más de 10 personas, te pongo en contacto directo con nuestro equipo de reservas.",
+        "Grupos grandes requieren atención especial. Te paso el contacto de nuestro equipo.",
+        "Para ese número de personas, mejor contacta con nuestro equipo de reservas. Te envío sus datos."
+    });
+
+    /// <summary>
+    /// Special request intro message (before sending contact card).
+    /// </summary>
+    public static string SpecialRequestIntro() => Pick(new[]
+    {
+        "Para solicitudes especiales como tartas de cumpleaños, celebraciones o eventos privados, te pongo en contacto con nuestro equipo que te ayudará personalmente.",
+        "Las solicitudes especiales las gestiona nuestro equipo directamente. Te paso su contacto.",
+        "Para tartas, celebraciones o eventos, mejor que hables con nuestro equipo. Te envío su contacto.",
+        "Eso lo gestiona mejor nuestro equipo de eventos. Te paso su contacto.",
+        "Para solicitudes especiales, te pongo en contacto con quien mejor te puede ayudar.",
+        "Las celebraciones y eventos los organizamos de forma personalizada. Te paso el contacto de nuestro equipo.",
+        "Para peticiones especiales, nuestro equipo te atenderá mejor. Te envío su contacto.",
+        "Eso requiere atención especial. Te pongo en contacto con nuestro equipo de eventos.",
+        "Para tartas y celebraciones, mejor que hables directamente con nuestro equipo. Aquí tienes su contacto.",
+        "Las solicitudes así las gestionamos de forma personalizada. Te paso el contacto de nuestro equipo."
+    });
+
+    // ========== GENERIC ERROR RESPONSES ==========
+
+    /// <summary>
+    /// Generic assistant error (fallback).
+    /// </summary>
+    public static string GenericError() => Pick(new[]
+    {
+        "Disculpa, hubo un problema con el asistente. Por favor, llámanos al +34 638 857 294.",
+        "Lo siento, algo ha fallado. ¿Puedes llamarnos al +34 638 857 294?",
+        "Vaya, ha habido un error. Llámanos al +34 638 857 294 y te atendemos.",
+        "Perdona, algo salió mal. Por favor, contacta con nosotros al +34 638 857 294.",
+        "Ha ocurrido un error. Llámanos al +34 638 857 294 para ayudarte.",
+        "Lo siento, hubo un problema. ¿Puedes llamar al +34 638 857 294?",
+        "Disculpa, algo no funcionó bien. Llámanos al +34 638 857 294.",
+        "Vaya, falló algo. Por favor, llámanos al +34 638 857 294.",
+        "Perdona, hubo un error técnico. Contacta con nosotros al +34 638 857 294.",
+        "Lo siento, algo ha ido mal. Llámanos al +34 638 857 294 para ayudarte mejor."
+    });
+
+    /// <summary>
+    /// Fallback when AI doesn't understand (no valid response).
+    /// </summary>
+    public static string FallbackNotUnderstood() => Pick(new[]
+    {
+        "Disculpa, no he entendido bien. ¿Puedes repetirlo?",
+        "Perdona, no te he pillado. ¿Puedes decirlo de otra forma?",
+        "No he entendido bien. ¿Me lo repites?",
+        "Lo siento, no he captado lo que dices. ¿Puedes repetirlo?",
+        "Perdona, no lo he entendido. ¿Puedes decirlo de nuevo?",
+        "No te he pillado bien. ¿Me lo explicas de otra forma?",
+        "Disculpa, no he entendido. ¿Puedes repetir?",
+        "Lo siento, no he captado eso. ¿Me lo dices otra vez?",
+        "Perdona, no te entendí. ¿Puedes reformularlo?",
+        "No he entendido bien tu mensaje. ¿Puedes repetirlo?"
+    });
+
+    // ========== RICE VALIDATION RESPONSES ==========
+
+    /// <summary>
+    /// Rice type not found on menu.
+    /// </summary>
+    public static string RiceTypeNotFound() => Pick(new[]
+    {
+        "Lo siento, no tenemos ese tipo de arroz. ¿Te gustaría ver nuestros arroces disponibles?",
+        "Vaya, ese arroz no está en nuestra carta. ¿Quieres ver qué arroces tenemos?",
+        "No tenemos ese arroz. ¿Te muestro los que sí tenemos?",
+        "Ese tipo de arroz no lo tenemos. ¿Quieres saber cuáles sí tenemos?",
+        "Lo siento, no servimos ese arroz. ¿Te interesa ver nuestras opciones?",
+        "No está ese arroz en nuestro menú. ¿Te cuento qué arroces tenemos?",
+        "Vaya, ese arroz no lo servimos. ¿Quieres ver nuestros arroces?",
+        "No tenemos ese tipo de arroz. ¿Te gustaría conocer los que sí ofrecemos?",
+        "Lo siento, ese arroz no está disponible. ¿Te muestro los que tenemos?",
+        "No servimos ese arroz. ¿Te interesa ver qué opciones tenemos?"
+    });
+
+    /// <summary>
+    /// Rice not on menu with specific type mentioned.
+    /// </summary>
+    public static string RiceNotOnMenu(string requestedRice, string availableTypes) => Pick(new[]
+    {
+        $"Lo siento, no tenemos \"{requestedRice}\" en nuestro menú. Nuestros arroces disponibles son: {availableTypes}. ¿Te gustaría alguno de estos?",
+        $"Vaya, \"{requestedRice}\" no está en nuestra carta. Tenemos: {availableTypes}. ¿Te apetece alguno?",
+        $"No tenemos \"{requestedRice}\". Nuestros arroces son: {availableTypes}. ¿Cuál prefieres?",
+        $"Ese arroz (\"{requestedRice}\") no lo tenemos. Disponemos de: {availableTypes}. ¿Alguno te interesa?",
+        $"Lo siento, \"{requestedRice}\" no está disponible. Tenemos: {availableTypes}. ¿Te gustaría probar alguno?",
+        $"No servimos \"{requestedRice}\". Nuestras opciones son: {availableTypes}. ¿Cuál te apetece?",
+        $"Vaya, no tenemos \"{requestedRice}\". Los arroces que ofrecemos son: {availableTypes}. ¿Cuál prefieres?",
+        $"Ese tipo de arroz no lo tenemos. Puedes elegir entre: {availableTypes}. ¿Alguno te gusta?",
+        $"Lo siento, \"{requestedRice}\" no está en el menú. Tenemos: {availableTypes}. ¿Te interesa alguno?",
+        $"No disponemos de \"{requestedRice}\". Nuestros arroces son: {availableTypes}. ¿Cuál te gustaría?"
+    });
+
+    /// <summary>
+    /// Multiple rice options found - asking for clarification.
+    /// </summary>
+    public static string MultipleRiceOptions(string options) => Pick(new[]
+    {
+        $"Tenemos varias opciones: {options}. ¿Cuál prefieres?",
+        $"Hay varias opciones de arroz: {options}. ¿Cuál te apetece?",
+        $"Tenemos: {options}. ¿Cuál te gustaría?",
+        $"Disponemos de varios: {options}. ¿Cuál eliges?",
+        $"Nuestras opciones son: {options}. ¿Cuál prefieres?",
+        $"Tenemos estos arroces: {options}. ¿Cuál te apetece más?",
+        $"Hay varios tipos: {options}. ¿Cuál te gusta más?",
+        $"Puedes elegir entre: {options}. ¿Cuál prefieres?",
+        $"Tenemos varias opciones de arroz: {options}. ¿Cuál eliges?",
+        $"Las opciones son: {options}. ¿Cuál te gustaría?"
+    });
+
+    // ========== BOOKING AVAILABILITY RESPONSES ==========
+
+    /// <summary>
+    /// Asking for party size when not provided or invalid.
+    /// </summary>
+    public static string AskPartySize() => Pick(new[]
+    {
+        "¿Para cuántas personas sería la reserva?",
+        "¿Cuántas personas seréis?",
+        "¿Para cuántos comensales?",
+        "¿Cuántos vais a venir?",
+        "¿Para cuántas personas os reservo?",
+        "Dime, ¿cuántas personas seréis?",
+        "¿Cuántos seréis en total?",
+        "¿Para cuántos hago la reserva?",
+        "¿Cuántas personas vendréis?",
+        "¿Para cuántos comensales sería?"
+    });
+
+    /// <summary>
+    /// Incomplete booking data - asking for confirmation of missing fields.
+    /// </summary>
+    public static string IncompleteBookingPrompt() => Pick(new[]
+    {
+        "Perfecto. ¿Me confirmas *fecha*, *hora* y *personas* para la reserva?",
+        "Vale. Necesito que me confirmes *fecha*, *hora* y *número de personas*.",
+        "Genial. ¿Me dices *fecha*, *hora* y *cuántas personas* seréis?",
+        "De acuerdo. Dime *fecha*, *hora* y *personas* para completar la reserva.",
+        "Perfecto. ¿Qué *fecha*, *hora* y para *cuántas personas*?",
+        "Vale. ¿Me confirmas los datos? *Fecha*, *hora* y *número de personas*.",
+        "Genial. Para la reserva necesito: *fecha*, *hora* y *personas*.",
+        "De acuerdo. ¿Qué *día*, a qué *hora* y *cuántas personas* seréis?",
+        "Perfecto. Dime *fecha*, *hora* y *número de comensales*.",
+        "Vale. ¿Me indicas *fecha*, *hora* y *personas* para la reserva?"
     });
 
     private static string Pick(string[] options) =>

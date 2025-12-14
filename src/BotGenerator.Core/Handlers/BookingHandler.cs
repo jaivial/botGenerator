@@ -55,12 +55,12 @@ public class BookingHandler
                 };
             }
 
-            return AgentResponse.Error("No se pudo crear la reserva. Por favor, inténtalo de nuevo o llámanos al +34 638 857 294.");
+            return AgentResponse.Error(ResponseVariations.BookingCreationFailed());
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error creating booking");
-            return AgentResponse.Error("Error al procesar la reserva");
+            return AgentResponse.Error(ResponseVariations.BookingProcessingError());
         }
     }
 

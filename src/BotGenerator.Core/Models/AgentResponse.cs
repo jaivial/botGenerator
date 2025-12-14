@@ -1,3 +1,5 @@
+using BotGenerator.Core.Services;
+
 namespace BotGenerator.Core.Models;
 
 /// <summary>
@@ -50,8 +52,7 @@ public record AgentResponse
     public static AgentResponse Error(string message) => new()
     {
         Intent = IntentType.Error,
-        AiResponse = "Disculpa, hubo un problema con el asistente. " +
-                    "Por favor, llámanos al +34638857294.",
+        AiResponse = ResponseVariations.GenericError(),
         ErrorMessage = message
     };
 

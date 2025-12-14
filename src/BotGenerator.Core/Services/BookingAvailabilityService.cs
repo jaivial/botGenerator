@@ -234,7 +234,7 @@ public class BookingAvailabilityService : IBookingAvailabilityService
             {
                 IsAvailable = false,
                 Reason = "invalid",
-                Message = "¿Para cuántas personas sería la reserva?"
+                Message = ResponseVariations.AskPartySize()
             };
         }
 
@@ -245,7 +245,7 @@ public class BookingAvailabilityService : IBookingAvailabilityService
             {
                 IsAvailable = false,
                 Reason = "invalid",
-                Message = "No aceptamos reservas para el mismo día. Por favor, llámanos al +34 638 857 294."
+                Message = ResponseVariations.SameDayBookingRejection()
             };
         }
 

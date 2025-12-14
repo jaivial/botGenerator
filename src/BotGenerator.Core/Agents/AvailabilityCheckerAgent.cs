@@ -67,7 +67,7 @@ public class AvailabilityCheckerAgent : IAgent
         {
             var closedDays = "lunes, martes y miércoles";
             return AvailabilityResult.Unavailable(
-                $"Lo siento, estamos cerrados ese día. Cerramos los {closedDays}.");
+                ResponseVariations.RestaurantClosed(closedDays));
         }
 
         // Check if the date is in the past
@@ -80,8 +80,7 @@ public class AvailabilityCheckerAgent : IAgent
         if (date.Date == DateTime.Now.Date)
         {
             return AvailabilityResult.SameDay(
-                "No aceptamos reservas para el mismo día. " +
-                "Por favor, llámanos al +34 638 857 294.");
+                ResponseVariations.SameDayBookingRejection());
         }
 
         // Parse the time

@@ -156,9 +156,7 @@ public class CancellationHandler
             return Task.FromResult(new AgentResponse
             {
                 Intent = IntentType.Cancellation,
-                AiResponse = "No entendí cuál reserva quieres cancelar. " +
-                            "Por favor, indica el número (1, 2, 3...) o describe cuál " +
-                            "(\"la del sábado\", \"la de 6 personas\", etc.)"
+                AiResponse = ResponseVariations.BookingSelectionNotUnderstood()
             });
         }
 
@@ -226,7 +224,7 @@ public class CancellationHandler
                 return new AgentResponse
                 {
                     Intent = IntentType.Normal,
-                    AiResponse = "Lo siento, hubo un error al cancelar la reserva. Por favor, inténtalo de nuevo."
+                    AiResponse = ResponseVariations.CancellationError()
                 };
             }
         }
@@ -246,7 +244,7 @@ public class CancellationHandler
         return new AgentResponse
         {
             Intent = IntentType.Cancellation,
-            AiResponse = "Por favor, confirma con *Sí* para cancelar o *No* para mantener tu reserva."
+            AiResponse = ResponseVariations.CancellationConfirmationNotUnderstood()
         };
     }
 

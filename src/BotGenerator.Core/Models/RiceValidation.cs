@@ -1,3 +1,5 @@
+using BotGenerator.Core.Services;
+
 namespace BotGenerator.Core.Models;
 
 /// <summary>
@@ -53,8 +55,7 @@ public record RiceValidationResult
     {
         Status = "not_found",
         OriginalRequest = originalRequest,
-        Message = "Lo siento, no tenemos ese tipo de arroz. " +
-                 "¿Te gustaría ver nuestros arroces disponibles?"
+        Message = ResponseVariations.RiceTypeNotFound()
     };
 
     /// <summary>
@@ -65,7 +66,7 @@ public record RiceValidationResult
         Status = "multiple",
         Options = options,
         OriginalRequest = originalRequest,
-        Message = $"Tenemos varias opciones: {string.Join(" y ", options)}. ¿Cuál prefieres?"
+        Message = ResponseVariations.MultipleRiceOptions(string.Join(" y ", options))
     };
 }
 
