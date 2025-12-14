@@ -604,6 +604,14 @@ public class WebhookController : ControllerBase
                 return (true, closedMsg, updatedState);
             }
 
+            // Store validated date in state EARLY - even if capacity fails, date is remembered
+            // (user can try with fewer people or different time on subsequent messages)
+            if (extractedDate.HasValue)
+            {
+                updatedState = updatedState with { Fecha = requestedDate.ToString("dd/MM/yyyy") };
+                _logger.LogDebug("Stored validated date in state: {Date}", updatedState.Fecha);
+            }
+
             // 2. Check daily capacity - ALWAYS check if day is full, even without party size
             var dailyLimit = await _availability.GetDailyLimitAsync(requestedDate, cancellationToken);
             _logger.LogDebug(
@@ -641,13 +649,6 @@ public class WebhookController : ControllerBase
                 var capacityMsg = $"Ese día solo nos quedan {dailyLimit.FreeBookingSeats} plazas, no podemos acoger {effectivePartySize.Value} personas. ¿Te viene bien otra fecha?";
                 await _whatsApp.SendTextAsync(message.SenderNumber, capacityMsg, cancellationToken);
                 return (true, capacityMsg, updatedState);
-            }
-
-            // Store validated date in state for subsequent messages
-            if (extractedDate.HasValue)
-            {
-                updatedState = updatedState with { Fecha = requestedDate.ToString("dd/MM/yyyy") };
-                _logger.LogDebug("Stored validated date in state: {Date}", updatedState.Fecha);
             }
 
             // 3. Check hour availability (if we have time from message or state)
