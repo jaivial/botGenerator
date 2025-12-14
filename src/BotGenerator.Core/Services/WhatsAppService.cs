@@ -133,15 +133,15 @@ public class WhatsAppService : IWhatsAppService
 
         request.Headers.Add("token", _token);
 
-        // Build menu structure
+        // Build menu structure (WhatsApp limits: title max 24 chars, description max 72 chars)
         var menuSections = sections.Select(s => new
         {
-            title = s.Title,
+            title = s.Title?.Length > 24 ? s.Title[..24] : s.Title,
             rows = s.Rows.Select(r => new
             {
                 id = r.Id,
-                title = r.Title,
-                description = r.Description ?? ""
+                title = r.Title?.Length > 24 ? r.Title[..21] + "..." : r.Title,
+                description = r.Description?.Length > 72 ? r.Description[..69] + "..." : (r.Description ?? "")
             }).ToList()
         }).ToList();
 
@@ -157,7 +157,24 @@ public class WhatsAppService : IWhatsAppService
         try
         {
             var response = await _httpClient.SendAsync(request, cancellationToken);
-            return response.IsSuccessStatusCode;
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("UAZAPI menu response {Status}: {Body}", (int)response.StatusCode, responseBody);
+                return false;
+            }
+
+            _logger.LogDebug("UAZAPI menu response: {Body}", responseBody);
+
+            // Check if response body contains error indicators
+            if (responseBody.Contains("\"error\"") || responseBody.Contains("\"status\":\"error\""))
+            {
+                _logger.LogWarning("UAZAPI returned success status but body contains error: {Body}", responseBody);
+                return false;
+            }
+
+            return true;
         }
         catch (Exception ex)
         {
