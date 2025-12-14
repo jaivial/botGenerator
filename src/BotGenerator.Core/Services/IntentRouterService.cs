@@ -17,18 +17,21 @@ public class IntentRouterService : IIntentRouterService
     private readonly IPendingBookingStore _pendingBookingStore;
     private readonly IModificationStateStore _modificationStateStore;
     private readonly ICancellationStateStore _cancellationStateStore;
+    private readonly IPendingRiceStore _pendingRiceStore;
 
     public IntentRouterService(
         IServiceProvider services,
         IPendingBookingStore pendingBookingStore,
         IModificationStateStore modificationStateStore,
         ICancellationStateStore cancellationStateStore,
+        IPendingRiceStore pendingRiceStore,
         ILogger<IntentRouterService> logger)
     {
         _services = services;
         _pendingBookingStore = pendingBookingStore;
         _modificationStateStore = modificationStateStore;
         _cancellationStateStore = cancellationStateStore;
+        _pendingRiceStore = pendingRiceStore;
         _logger = logger;
     }
 
@@ -159,6 +162,60 @@ public class IntentRouterService : IIntentRouterService
                     mainAgentResponse, originalMessage, cancellationState, cancellationToken);
             }
 
+            // ========== CHECK FOR PENDING RICE SELECTION ==========
+            // If user was asked to choose between multiple rice options, process their selection
+            var pendingRice = _pendingRiceStore.Get(originalMessage.SenderNumber);
+            if (pendingRice != null)
+            {
+                var selectedRice = TryParseRiceSelection(originalMessage.MessageText, pendingRice.Options);
+                if (selectedRice != null)
+                {
+                    _logger.LogInformation(
+                        "User selected rice: {Rice} from options",
+                        selectedRice);
+
+                    // Clear pending rice selection
+                    _pendingRiceStore.Clear(originalMessage.SenderNumber);
+
+                    // Update the pending booking with selected rice
+                    var pendingBooking = _pendingBookingStore.Get(originalMessage.SenderNumber);
+                    if (pendingBooking != null)
+                    {
+                        var updatedBooking = pendingBooking with { ArrozType = selectedRice };
+                        _pendingBookingStore.Set(originalMessage.SenderNumber, updatedBooking);
+
+                        // Continue with booking flow
+                        var synthetic = mainAgentResponse with
+                        {
+                            Intent = IntentType.Booking,
+                            ExtractedData = updatedBooking,
+                            Metadata = new Dictionary<string, object>
+                            {
+                                ["riceValidated"] = true,
+                                ["validatedRiceName"] = selectedRice
+                            }
+                        };
+
+                        return await HandleBookingAsync(
+                            synthetic,
+                            originalMessage,
+                            state,
+                            cancellationToken);
+                    }
+                }
+                else
+                {
+                    // User's response didn't match any option, ask again
+                    _logger.LogInformation("Could not parse rice selection from: {Message}", originalMessage.MessageText);
+                    var formattedOptions = FormatRiceOptionsForSelection(pendingRice.Options);
+                    return new AgentResponse
+                    {
+                        Intent = IntentType.Normal,
+                        AiResponse = ResponseVariations.RiceSelectionNotUnderstood(formattedOptions)
+                    };
+                }
+            }
+
             // If we have a pending BOOKING_REQUEST from a previous turn, we can keep progressing
             // even if the AI doesn't re-emit BOOKING_REQUEST on follow-up messages.
             // This is critical when we ask mandatory follow-up questions (rice decision/servings, tronas, carritos).
@@ -273,6 +330,35 @@ public class IntentRouterService : IIntentRouterService
                 "villacarmen",
                 cancellationToken);
 
+            // Handle MULTIPLE matches - ask user to choose
+            if (riceResult.Status == "multiple" && riceResult.Options?.Count > 1)
+            {
+                _logger.LogInformation(
+                    "Multiple rice matches found: {Options}",
+                    string.Join(", ", riceResult.Options));
+
+                // Store pending rice selection
+                _pendingRiceStore.Set(message.SenderNumber, new PendingRiceSelection
+                {
+                    Options = riceResult.Options,
+                    OriginalRequest = response.ExtractedData.ArrozType
+                });
+
+                // Format options with numbers for easy selection
+                var formattedOptions = FormatRiceOptionsForSelection(riceResult.Options);
+
+                return new AgentResponse
+                {
+                    Intent = IntentType.Normal,
+                    AiResponse = ResponseVariations.MultipleRiceOptionsSelection(formattedOptions),
+                    Metadata = new Dictionary<string, object>
+                    {
+                        ["riceValidation"] = riceResult,
+                        ["pendingRiceSelection"] = true
+                    }
+                };
+            }
+
             if (!riceResult.IsValid)
             {
                 _logger.LogInformation(
@@ -290,7 +376,7 @@ public class IntentRouterService : IIntentRouterService
                 };
             }
 
-            // Update booking data with validated rice name
+            // Update booking data with validated rice name (full database name)
             response = response with
             {
                 ExtractedData = response.ExtractedData with
@@ -605,6 +691,120 @@ public class IntentRouterService : IIntentRouterService
         var message = ResponseVariations.GenericError();
 
         return response with { AiResponse = message };
+    }
+
+    #endregion
+
+    #region Rice Selection Helpers
+
+    /// <summary>
+    /// Tries to parse user's rice selection from their message.
+    /// Supports: numbers (1, 2), ordinals (la primera, la segunda), partial names.
+    /// </summary>
+    private static string? TryParseRiceSelection(string userMessage, List<string> options)
+    {
+        var text = userMessage.Trim().ToLowerInvariant();
+
+        // Direct number selection: "1", "2", etc.
+        if (int.TryParse(text, out var num) && num >= 1 && num <= options.Count)
+        {
+            return options[num - 1];
+        }
+
+        // Ordinal selection: "la primera", "la 1", "la segunda", "la 2"
+        var ordinalPatterns = new Dictionary<string, int>
+        {
+            [@"^(la\s+)?primer[ao]?$"] = 1,
+            [@"^(la\s+)?1$"] = 1,
+            [@"^(el\s+)?1$"] = 1,
+            [@"^(la\s+)?segund[ao]?$"] = 2,
+            [@"^(la\s+)?2$"] = 2,
+            [@"^(el\s+)?2$"] = 2,
+            [@"^(la\s+)?tercer[ao]?$"] = 3,
+            [@"^(la\s+)?3$"] = 3,
+            [@"^(el\s+)?3$"] = 3,
+            [@"^(la\s+)?cuart[ao]?$"] = 4,
+            [@"^(la\s+)?4$"] = 4,
+            [@"^(el\s+)?4$"] = 4
+        };
+
+        foreach (var (pattern, index) in ordinalPatterns)
+        {
+            if (System.Text.RegularExpressions.Regex.IsMatch(text, pattern) && index <= options.Count)
+            {
+                return options[index - 1];
+            }
+        }
+
+        // Partial name match: "la de Albufera", "la del pato", "paella valenciana"
+        foreach (var option in options)
+        {
+            var optionLower = option.ToLowerInvariant();
+            // Check if user message contains significant words from option
+            var significantWords = ExtractSignificantWords(optionLower);
+            var userWords = ExtractSignificantWords(text);
+
+            // If user mentions at least one significant word that uniquely identifies this option
+            foreach (var word in userWords)
+            {
+                if (word.Length >= 4 && optionLower.Contains(word))
+                {
+                    // Check this word doesn't appear in other options
+                    var matchCount = options.Count(o => o.ToLowerInvariant().Contains(word));
+                    if (matchCount == 1)
+                    {
+                        return option;
+                    }
+                }
+            }
+        }
+
+        // Check for "de la" pattern: "la de la Albufera"
+        var delaMatch = System.Text.RegularExpressions.Regex.Match(text, @"(?:la\s+)?de\s+(?:la\s+)?(\w+)");
+        if (delaMatch.Success)
+        {
+            var keyword = delaMatch.Groups[1].Value;
+            foreach (var option in options)
+            {
+                if (option.ToLowerInvariant().Contains(keyword))
+                {
+                    return option;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Extracts significant words (ignoring common articles and prepositions).
+    /// </summary>
+    private static HashSet<string> ExtractSignificantWords(string text)
+    {
+        var stopWords = new HashSet<string>
+        {
+            "el", "la", "los", "las", "un", "una", "de", "del", "con", "y", "por", "para",
+            "arroz", "paella", "fideua", "fideuá", "encargo", "€"
+        };
+
+        return text.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Where(w => w.Length >= 3 && !stopWords.Contains(w))
+            .Select(w => System.Text.RegularExpressions.Regex.Replace(w, @"[^\w]", ""))
+            .Where(w => w.Length >= 3)
+            .ToHashSet();
+    }
+
+    /// <summary>
+    /// Formats rice options with numbers for display.
+    /// </summary>
+    private static string FormatRiceOptionsForSelection(List<string> options)
+    {
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < options.Count; i++)
+        {
+            sb.AppendLine($"{i + 1}. {options[i]}");
+        }
+        return sb.ToString().TrimEnd();
     }
 
     #endregion

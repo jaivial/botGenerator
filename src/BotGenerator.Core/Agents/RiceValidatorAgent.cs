@@ -94,30 +94,32 @@ public class RiceValidatorAgent : IAgent, IRiceValidatorService
         var systemPrompt = @"Eres un asistente especializado en validar pedidos de arroz para un restaurante español.
 
 Tu tarea es determinar si la petición del cliente coincide con alguno de los arroces disponibles en el menú.
-Debes ser MUY FLEXIBLE con el matching, entendiendo que el cliente puede usar nombres cortos o parciales:
-
-MATCHING FLEXIBLE - EJEMPLOS:
-- ""paella valenciana"" → coincide con ""Paella valenciana de la Albufera, con pato, garrofo y bachoqueta. (+4€) Por encargo.""
-- ""arroz negro"" → coincide con ""Arroz Negro""
-- ""fideuá"" o ""fideua"" → coincide con ""Fideuá de marisco""
-- ""arroz de chorizo"" → coincide con ""Arroz de chorizo""
-- ""meloso de pulpo"" → coincide con ""Arroz meloso de pulpo y gambones""
-- ""arroz a banda"" → coincide con ""Arroz a banda""
-- ""carrillada"" → podría coincidir con varios (meloso o seco de carrillada)
+Debes ser MUY FLEXIBLE con el matching, entendiendo que el cliente puede usar nombres cortos o parciales.
 
 CRITERIOS DE MATCHING:
-- Ignora precios, ""por encargo"", ""(+4€)"" y texto adicional
+- Ignora precios, ""por encargo"", ""(+4€)"" y texto adicional para comparar
 - El nombre corto del cliente debe coincidir con el nombre BASE del plato
 - Variaciones ortográficas son válidas (señoret/señorito, fideua/fideuá)
 - Si el cliente menciona un ingrediente clave, busca arroces que lo contengan
 
-REGLAS DE RESPUESTA:
-1. Si la petición coincide claramente con UN arroz, responde: TRUE|[NOMBRE COMPLETO EXACTO del menú, incluyendo precio y descripción]
-2. Si la petición podría coincidir con VARIOS arroces, responde: MULTIPLE|[nombre completo 1]|[nombre completo 2]|...
-3. Si la petición NO coincide con ningún arroz del menú, responde: FALSE
+REGLAS DE RESPUESTA - MUY IMPORTANTE:
+1. Si la petición coincide con EXACTAMENTE UN arroz: TRUE|[NOMBRE COMPLETO EXACTO]
+2. Si la petición podría coincidir con DOS O MÁS arroces: MULTIPLE|[nombre completo 1]|[nombre completo 2]|...
+3. Si NO coincide con ninguno: FALSE
 
-IMPORTANTE: Siempre devuelve el nombre COMPLETO Y EXACTO como aparece en el menú, incluyendo descripciones y precios.
+EJEMPLOS DE UN SOLO MATCH (TRUE):
+- ""arroz a banda"" → TRUE|Arroz a banda.
+- ""meloso de pulpo"" → TRUE|Arroz meloso de pulpo y gambones (+5€)
+- ""fideuá de pato"" → TRUE|Fideuá de pato y setas (+4€)
+- ""arroz de señoret"" → TRUE|Arroz de señoret (+3€).
 
+EJEMPLOS DE MÚLTIPLES MATCHES (MULTIPLE):
+- ""paella valenciana"" → MULTIPLE|Paella Valenciana, por encargo (+6€)|Paella valenciana de la Albufera, con pato, garrofo y bachoqueta. (+4€) Por encargo.
+- ""carrillada"" → MULTIPLE|Arroz meloso de carrillada con boletus|Arroz seco de carrillada con boletus
+- ""pato"" → MULTIPLE|Arroz meloso de pato, setas y foie (+6€)|Arroz seco de pato, setas y foie (+6€).|Fideuá de pato y setas (+4€)
+- ""fideuá"" → MULTIPLE|Fideuá de pato y setas (+4€)|Fideuá de pescado
+
+CRÍTICO: Siempre devuelve el nombre COMPLETO Y EXACTO como aparece en el menú, incluyendo descripciones y precios.
 Solo responde con el formato indicado, sin explicaciones adicionales.";
 
         var userMessage = $@"ARROCES DISPONIBLES EN EL MENÚ:

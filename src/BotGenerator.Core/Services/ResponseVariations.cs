@@ -1063,6 +1063,30 @@ public static class ResponseVariations
         $"Las opciones son: {options}. ¿Cuál te gustaría?"
     });
 
+    /// <summary>
+    /// Multiple rice options with numbered list - asking user to select.
+    /// </summary>
+    public static string MultipleRiceOptionsSelection(string formattedOptions) => Pick(new[]
+    {
+        $"Tenemos varias opciones de ese tipo. Por favor, dime cuál prefieres:\n\n{formattedOptions}\n\nPuedes responder con el número (1, 2...) o el nombre.",
+        $"Hay varias paellas/arroces de ese tipo. ¿Cuál te gustaría?\n\n{formattedOptions}\n\nDime el número o el nombre.",
+        $"Tenemos estas opciones disponibles:\n\n{formattedOptions}\n\n¿Cuál prefieres? Puedes decir el número o el nombre.",
+        $"Veo que tenemos varias opciones:\n\n{formattedOptions}\n\n¿Cuál eliges? Dime el número o el nombre.",
+        $"Disponemos de varias opciones:\n\n{formattedOptions}\n\nDime cuál prefieres (número o nombre)."
+    });
+
+    /// <summary>
+    /// When user's rice selection couldn't be understood.
+    /// </summary>
+    public static string RiceSelectionNotUnderstood(string formattedOptions) => Pick(new[]
+    {
+        $"No he entendido tu elección. Por favor, dime el número de la opción que prefieres:\n\n{formattedOptions}",
+        $"Perdona, no entendí. ¿Podrías decirme el número de tu elección?\n\n{formattedOptions}",
+        $"No pillé cuál quieres. Dime el número (1, 2...) de estas opciones:\n\n{formattedOptions}",
+        $"Disculpa, ¿puedes decirme el número de la opción que prefieres?\n\n{formattedOptions}",
+        $"No te entendí bien. Indica el número de tu elección:\n\n{formattedOptions}"
+    });
+
     // ========== BOOKING AVAILABILITY RESPONSES ==========
 
     /// <summary>
