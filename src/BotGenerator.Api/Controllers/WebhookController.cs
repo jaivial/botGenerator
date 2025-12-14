@@ -179,6 +179,14 @@ public class WebhookController : ControllerBase
             // Allow pre-checks to enrich the state (e.g., validated rice name)
             state = precheck.UpdatedState;
 
+            // Prefer ArrozType from pending booking store (contains full validated name from DB)
+            // This ensures the full rice name is used even when extracted from abbreviated AI text
+            var pendingBookingForRice = _pendingBookingStore.Get(message.SenderNumber);
+            if (pendingBookingForRice != null && !string.IsNullOrWhiteSpace(pendingBookingForRice.ArrozType))
+            {
+                state = state with { ArrozType = pendingBookingForRice.ArrozType };
+            }
+
             if (precheck.Handled)
             {
                 // Persist to conversation history so the bot keeps context
