@@ -158,6 +158,14 @@ public class ConversationHistoryService : IConversationHistoryService
     {
         var upcomingWeekends = _contextBuilder.GetUpcomingWeekends();
 
+        // Spanish month names to number mapping
+        var monthNames = new Dictionary<string, int>
+        {
+            ["enero"] = 1, ["febrero"] = 2, ["marzo"] = 3, ["abril"] = 4,
+            ["mayo"] = 5, ["junio"] = 6, ["julio"] = 7, ["agosto"] = 8,
+            ["septiembre"] = 9, ["octubre"] = 10, ["noviembre"] = 11, ["diciembre"] = 12
+        };
+
         for (int i = history.Count - 1; i >= 0; i--)
         {
             var msg = history[i];
@@ -165,20 +173,57 @@ public class ConversationHistoryService : IConversationHistoryService
 
             var text = msg.Content.ToLower();
 
-            // Check for day names
-            var dayMatch = Regex.Match(text, @"(?:para|el)\s+(domingo|sábado)");
+            // Check for "21 de diciembre" format (with or without year)
+            var spanishDateMatch = Regex.Match(text, @"(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)(?:\s+(?:de\s+)?(\d{4}))?", RegexOptions.IgnoreCase);
+            if (spanishDateMatch.Success)
+            {
+                var day = int.Parse(spanishDateMatch.Groups[1].Value);
+                var monthName = spanishDateMatch.Groups[2].Value.ToLower();
+                var year = spanishDateMatch.Groups[3].Success
+                    ? int.Parse(spanishDateMatch.Groups[3].Value)
+                    : DateTime.Now.Year;
+
+                if (monthNames.TryGetValue(monthName, out var month))
+                {
+                    // If the date is in the past this year, assume next year
+                    var candidateDate = new DateTime(year, month, day);
+                    if (candidateDate < DateTime.Now.Date && !spanishDateMatch.Groups[3].Success)
+                    {
+                        candidateDate = candidateDate.AddYears(1);
+                    }
+                    return candidateDate.ToString("dd/MM/yyyy");
+                }
+            }
+
+            // Check for day names (domingo, sábado, viernes, jueves)
+            var dayMatch = Regex.Match(text, @"(?:para\s+el|el|para)\s+(domingo|sábado|viernes|jueves)");
             if (dayMatch.Success)
             {
                 var dayName = dayMatch.Groups[1].Value;
+                // Try to find in upcoming weekends first
                 var weekend = upcomingWeekends.FirstOrDefault(
                     w => w.DayName == dayName);
                 if (weekend != null)
                 {
                     return weekend.Formatted;
                 }
+                // Otherwise calculate next occurrence of this day
+                var targetDay = dayName switch
+                {
+                    "domingo" => DayOfWeek.Sunday,
+                    "sábado" => DayOfWeek.Saturday,
+                    "viernes" => DayOfWeek.Friday,
+                    "jueves" => DayOfWeek.Thursday,
+                    _ => DayOfWeek.Sunday
+                };
+                var today = DateTime.Now.Date;
+                var daysUntil = ((int)targetDay - (int)today.DayOfWeek + 7) % 7;
+                if (daysUntil == 0) daysUntil = 7; // Next week if today
+                var nextDate = today.AddDays(daysUntil);
+                return nextDate.ToString("dd/MM/yyyy");
             }
 
-            // Check for explicit date
+            // Check for explicit date (dd/mm/yyyy or dd-mm-yyyy)
             var dateMatch = Regex.Match(text, @"(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})");
             if (dateMatch.Success)
             {
