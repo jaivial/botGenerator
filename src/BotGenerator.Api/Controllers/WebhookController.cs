@@ -506,6 +506,28 @@ public class WebhookController : ControllerBase
     {
         var updatedState = state;
 
+        // === Event booking detection (weddings, birthdays, communions, etc.) ===
+        if (IsEventBookingRequest(message.MessageText))
+        {
+            _logger.LogInformation("Event booking request detected from {Phone}", message.SenderNumber);
+
+            // Send informative message
+            var eventMsg = "Para reservas de *eventos especiales* (bodas, comuniones, cumpleaños, celebraciones de empresa, etc.) " +
+                           "te atenderá nuestro equipo de gestión de eventos.\n\n" +
+                           "Te comparto su contacto para que puedas hablar directamente con ellos:";
+            await _whatsApp.SendTextAsync(message.SenderNumber, eventMsg, cancellationToken);
+
+            // Send contact card for events team
+            await _whatsApp.SendContactCardAsync(
+                message.SenderNumber,
+                fullName: "Eventos Villa Carmen",
+                contactPhoneNumber: "+34638857294",
+                organization: "Alquería Villa Carmen",
+                cancellationToken: cancellationToken);
+
+            return (true, eventMsg, updatedState);
+        }
+
         // === Rice constraints & validation (if user mentions a rice/paella) ===
         if (DeclinesRice(message.MessageText))
         {
@@ -714,6 +736,28 @@ public class WebhookController : ControllerBase
                t.Contains("no queremos arroz") ||
                t.Contains("no, sin arroz") ||
                t == "no";
+    }
+
+    private static bool IsEventBookingRequest(string text)
+    {
+        var t = text.ToLowerInvariant();
+        var eventKeywords = new[]
+        {
+            "boda", "bodas", "casamiento",
+            "cumpleaños", "cumple",
+            "comunión", "comunion", "comuniones",
+            "bautizo", "bautizos",
+            "bodas de oro", "bodas de plata",
+            "aniversario",
+            "celebración", "celebracion", "celebrar",
+            "comida de empresa", "cena de empresa",
+            "evento", "eventos",
+            "despedida", "despedidas",
+            "fiesta", "fiestas",
+            "banquete", "banquetes"
+        };
+
+        return eventKeywords.Any(keyword => t.Contains(keyword));
     }
 
     private static bool TryExtractRiceServings(string text, out int servings)
