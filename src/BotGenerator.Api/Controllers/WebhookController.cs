@@ -796,12 +796,10 @@ public class WebhookController : ControllerBase
                     PendingRiceOptions = null // Also clear from ephemeral state
                 };
 
-                // Update pending booking store with the validated full rice name
-                var pendingBooking = _pendingBookingStore.Get(message.SenderNumber);
-                if (pendingBooking != null)
-                {
-                    _pendingBookingStore.Set(message.SenderNumber, pendingBooking with { ArrozType = selectedRice });
-                }
+                // ALWAYS store the full rice name in pending booking store
+                // This ensures the full DB name persists across messages (AI extractor might extract abbreviated names)
+                var pendingBooking = _pendingBookingStore.Get(message.SenderNumber) ?? new BookingData();
+                _pendingBookingStore.Set(message.SenderNumber, pendingBooking with { ArrozType = selectedRice });
 
                 // Extract servings if mentioned
                 if (TryExtractRiceServings(message.MessageText, out var servings))
