@@ -869,20 +869,37 @@ public static class ResponseVariations
     // ========== SAME-DAY BOOKING RESPONSES ==========
 
     /// <summary>
-    /// Same-day booking rejection.
+    /// Same-day booking intro message (before sending contact card).
+    /// </summary>
+    public static string SameDayBookingIntro() => Pick(new[]
+    {
+        "Las reservas para el mismo día las gestionamos por teléfono para poder atenderte mejor. Te paso el contacto.",
+        "Para reservar para hoy, mejor que hables directamente con nuestro equipo. Te envío su contacto.",
+        "Las reservas del día de hoy las gestionamos por teléfono. Te paso el contacto de nuestro equipo.",
+        "Para hoy mismo, nuestro equipo te atenderá mejor por teléfono. Te envío su contacto.",
+        "Para reservas del mismo día, te pongo en contacto con nuestro equipo que te ayudará personalmente.",
+        "Las reservas para hoy las hacemos por teléfono para confirmar disponibilidad. Te paso el contacto.",
+        "Para hoy, mejor contacta directamente con nosotros. Te envío la tarjeta de contacto.",
+        "Las reservas del mismo día requieren confirmación directa. Te paso el contacto de nuestro equipo.",
+        "Para reservar para hoy, te pongo en contacto con nuestro equipo de reservas.",
+        "Las reservas para el día de hoy las gestionamos personalmente. Te envío el contacto."
+    });
+
+    /// <summary>
+    /// Same-day booking rejection (after contact card).
     /// </summary>
     public static string SameDayBookingRejection() => Pick(new[]
     {
-        "Lo sentimos, no aceptamos reservas para el mismo día. Por favor, llámanos al +34 638 857 294 para ver disponibilidad.",
-        "Vaya, no podemos hacer reservas para hoy. Llámanos al +34 638 857 294 y miramos disponibilidad.",
-        "Las reservas para el mismo día no las gestionamos por aquí. Llámanos al +34 638 857 294.",
-        "Para reservar para hoy, por favor llámanos al +34 638 857 294. Así comprobamos disponibilidad directamente.",
-        "No hacemos reservas para el día de hoy por chat. Llámanos al +34 638 857 294 y te atendemos.",
-        "Lo siento, para hoy mismo tienes que llamarnos al +34 638 857 294.",
-        "Las reservas del mismo día las gestionamos por teléfono. Llámanos al +34 638 857 294.",
-        "Para hoy no puedo hacer la reserva aquí. Llámanos al +34 638 857 294 y vemos qué podemos hacer.",
-        "No aceptamos reservas para el mismo día por este canal. Por favor, llama al +34 638 857 294.",
-        "Para reservar hoy mismo, contacta con nosotros al +34 638 857 294. Así te atendemos mejor."
+        "Te he enviado la tarjeta de contacto. Llámanos y vemos disponibilidad para hoy. ¡Gracias!",
+        "Ahí tienes el contacto. Llámanos y te atendemos para ver si hay hueco hoy. ¡Un saludo!",
+        "Ya tienes el contacto. Llámanos para consultar disponibilidad para hoy. ¡Gracias!",
+        "Te paso el contacto. Llámanos y te confirmamos si hay sitio para hoy. ¡Hasta pronto!",
+        "Listo, te he enviado el contacto. Llámanos y miramos disponibilidad. ¡Gracias!",
+        "Ahí va la tarjeta. Llámanos para ver si podemos atenderos hoy. ¡Un saludo!",
+        "Te envío el contacto. Llámanos y comprobamos si hay mesa para hoy. ¡Gracias!",
+        "Ya tienes la tarjeta. Contacta con nosotros para ver disponibilidad. ¡Hasta pronto!",
+        "Te he pasado el contacto. Llámanos y te decimos si hay hueco. ¡Gracias!",
+        "Ahí tienes la tarjeta de contacto. Llámanos y te atendemos. ¡Un saludo!"
     });
 
     // ========== RESTAURANT CLOSED RESPONSES ==========

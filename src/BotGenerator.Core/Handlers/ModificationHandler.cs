@@ -371,6 +371,31 @@ public class ModificationHandler
 
         if (!decision.IsAvailable)
         {
+            // Same-day modifications: send intro message + contact card and end flow
+            if (decision.Reason == "same_day")
+            {
+                _stateStore.Clear(message.SenderNumber);
+
+                await _whatsAppService.SendTextAsync(
+                    message.SenderNumber,
+                    ResponseVariations.SameDayBookingIntro(),
+                    ct);
+
+                await _whatsAppService.SendContactCardAsync(
+                    message.SenderNumber,
+                    fullName: "Gestión Reservas Villa Carmen",
+                    contactPhoneNumber: "34638857294",
+                    organization: "Alquería Villa Carmen",
+                    email: null,
+                    cancellationToken: ct);
+
+                return new AgentResponse
+                {
+                    Intent = IntentType.Normal,
+                    AiResponse = ResponseVariations.SameDayBookingRejection()
+                };
+            }
+
             // Suggest alternatives if available
             if (decision.SuggestedHours?.Count > 0)
             {
@@ -446,6 +471,31 @@ public class ModificationHandler
 
         if (!decision.IsAvailable)
         {
+            // Same-day modifications: send intro message + contact card and end flow
+            if (decision.Reason == "same_day")
+            {
+                _stateStore.Clear(message.SenderNumber);
+
+                await _whatsAppService.SendTextAsync(
+                    message.SenderNumber,
+                    ResponseVariations.SameDayBookingIntro(),
+                    ct);
+
+                await _whatsAppService.SendContactCardAsync(
+                    message.SenderNumber,
+                    fullName: "Gestión Reservas Villa Carmen",
+                    contactPhoneNumber: "34638857294",
+                    organization: "Alquería Villa Carmen",
+                    email: null,
+                    cancellationToken: ct);
+
+                return new AgentResponse
+                {
+                    Intent = IntentType.Normal,
+                    AiResponse = ResponseVariations.SameDayBookingRejection()
+                };
+            }
+
             if (decision.SuggestedHours?.Count > 0)
             {
                 return new AgentResponse
@@ -535,6 +585,31 @@ public class ModificationHandler
 
         if (!decision.IsAvailable)
         {
+            // Same-day modifications: send intro message + contact card and end flow
+            if (decision.Reason == "same_day")
+            {
+                _stateStore.Clear(message.SenderNumber);
+
+                await _whatsAppService.SendTextAsync(
+                    message.SenderNumber,
+                    ResponseVariations.SameDayBookingIntro(),
+                    ct);
+
+                await _whatsAppService.SendContactCardAsync(
+                    message.SenderNumber,
+                    fullName: "Gestión Reservas Villa Carmen",
+                    contactPhoneNumber: "34638857294",
+                    organization: "Alquería Villa Carmen",
+                    email: null,
+                    cancellationToken: ct);
+
+                return new AgentResponse
+                {
+                    Intent = IntentType.Normal,
+                    AiResponse = ResponseVariations.SameDayBookingRejection()
+                };
+            }
+
             return new AgentResponse
             {
                 Intent = IntentType.Modification,

@@ -96,7 +96,37 @@ public class CancellationHandler
         var phone9 = NormalizePhoneTo9Digits(message.SenderNumber);
 
         // Find bookings in database
-        var bookings = await _bookingRepository.FindBookingsByPhoneAsync(phone9, ct);
+        var allBookings = await _bookingRepository.FindBookingsByPhoneAsync(phone9, ct);
+
+        // Filter out same-day bookings - those must be cancelled by phone
+        var today = DateTime.Now.Date;
+        var bookings = allBookings.Where(b => b.ReservationDate > today).ToList();
+        var sameDayBookings = allBookings.Where(b => b.ReservationDate <= today).ToList();
+
+        // If all bookings are same-day, send contact card
+        if (bookings.Count == 0 && sameDayBookings.Count > 0)
+        {
+            _stateStore.Clear(message.SenderNumber);
+
+            await _whatsAppService.SendTextAsync(
+                message.SenderNumber,
+                ResponseVariations.SameDayBookingIntro(),
+                ct);
+
+            await _whatsAppService.SendContactCardAsync(
+                message.SenderNumber,
+                fullName: "Gestión Reservas Villa Carmen",
+                contactPhoneNumber: "34638857294",
+                organization: "Alquería Villa Carmen",
+                email: null,
+                cancellationToken: ct);
+
+            return new AgentResponse
+            {
+                Intent = IntentType.Normal,
+                AiResponse = ResponseVariations.SameDayBookingRejection()
+            };
+        }
 
         if (bookings.Count == 0)
         {

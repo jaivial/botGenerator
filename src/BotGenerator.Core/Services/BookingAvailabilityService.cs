@@ -236,7 +236,16 @@ public class BookingAvailabilityService : IBookingAvailabilityService
             };
         }
 
-        // Same-day bookings are now allowed via WhatsApp
+        // Same-day bookings NOT allowed via WhatsApp - must call directly
+        if (date.Date <= DateTime.Now.Date)
+        {
+            return new BookingAvailabilityDecision
+            {
+                IsAvailable = false,
+                Reason = "same_day",
+                Message = ResponseVariations.SameDayBookingRejection()
+            };
+        }
 
         var dayStatus = await CheckDayStatusAsync(date, cancellationToken);
         if (!dayStatus.IsOpen)

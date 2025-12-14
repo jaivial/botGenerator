@@ -469,12 +469,30 @@ public class IntentRouterService : IIntentRouterService
                 {
                     // Clear the pending booking with invalid time/date to prevent loops
                     // The user needs to provide new valid data
-                    if (decision.Reason == "hour_unavailable" || decision.Reason == "closed_day" || decision.Reason == "daily_full")
+                    if (decision.Reason == "hour_unavailable" || decision.Reason == "closed_day" || decision.Reason == "daily_full" || decision.Reason == "same_day")
                     {
                         _pendingBookingStore.Clear(message.SenderNumber);
                         _logger.LogInformation(
                             "Cleared pending booking for {Phone} due to availability issue: {Reason}",
                             message.SenderNumber, decision.Reason);
+                    }
+
+                    // Same-day bookings: send intro message + contact card
+                    if (decision.Reason == "same_day")
+                    {
+                        var whatsApp = _services.GetRequiredService<IWhatsAppService>();
+
+                        await whatsApp.SendTextAsync(
+                            message.SenderNumber,
+                            ResponseVariations.SameDayBookingIntro(),
+                            cancellationToken);
+
+                        await whatsApp.SendContactCardAsync(
+                            message.SenderNumber,
+                            fullName: "Gestión Reservas Villa Carmen",
+                            contactPhoneNumber: "34638857294",
+                            organization: "Alquería Villa Carmen",
+                            cancellationToken: cancellationToken);
                     }
 
                     return new AgentResponse
