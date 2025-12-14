@@ -574,22 +574,29 @@ public class WebhookController : ControllerBase
             }
         }
 
-        // === Early date detection: Check restaurant_days (open/closed) and daily capacity ===
-        if (extractedDate.HasValue && extractedDate.Value.Date > DateTime.Now.Date)
-        {
-            var requestedDate = extractedDate.Value.Date;
-            _logger.LogInformation(
-                "Early date detection: {Date} extracted from message for {Phone}",
-                requestedDate.ToString("yyyy-MM-dd"),
-                message.SenderNumber);
+        // === COMPREHENSIVE VALIDATION: Date, Party Size, and Time ===
+        // Extract values from current message
+        var extractedPartySize = TryExtractPartySizeFromMessage(message.MessageText);
+        var extractedTime = TryExtractTimeFromMessage(message.MessageText);
 
-            // Check if day is open (restaurant_days table)
+        // Determine effective values (from message or state)
+        DateTime? effectiveDate = extractedDate?.Date ?? (state.Fecha != null ? ParseDateFromState(state.Fecha) : null);
+        int? effectivePartySize = extractedPartySize ?? state.Personas;
+        TimeSpan? effectiveTime = extractedTime ?? (state.Hora != null ? ParseTimeFromState(state.Hora) : null);
+
+        // === DATE VALIDATION (when date is mentioned or when party size/time changes for existing date) ===
+        if (effectiveDate.HasValue && effectiveDate.Value > DateTime.Now.Date)
+        {
+            var requestedDate = effectiveDate.Value;
+
+            // 1. Check if day is open (default closed Mon/Tue/Wed + restaurant_days overrides)
             var dayStatus = await _availability.CheckDayStatusAsync(requestedDate, cancellationToken);
             if (!dayStatus.IsOpen)
             {
                 _logger.LogInformation(
-                    "Day {Date} is closed for {Phone}",
+                    "Day {Date} ({Weekday}) is closed for {Phone}",
                     requestedDate.ToString("yyyy-MM-dd"),
+                    dayStatus.Weekday,
                     message.SenderNumber);
 
                 var closedMsg = $"Lo siento, el *{dayStatus.Weekday}* estamos cerrados. ¿Te viene bien otro día?";
@@ -597,25 +604,75 @@ public class WebhookController : ControllerBase
                 return (true, closedMsg, updatedState);
             }
 
-            // Check daily capacity (if party size is also mentioned)
-            var extractedPartySize = TryExtractPartySizeFromMessage(message.MessageText);
-            if (extractedPartySize.HasValue && extractedPartySize.Value > 0)
+            // 2. Check daily capacity (if we have party size from message or state)
+            if (effectivePartySize.HasValue && effectivePartySize.Value > 0)
             {
                 var dailyLimit = await _availability.GetDailyLimitAsync(requestedDate, cancellationToken);
-                if (dailyLimit.FreeBookingSeats < extractedPartySize.Value)
+                if (dailyLimit.FreeBookingSeats < effectivePartySize.Value)
                 {
                     _logger.LogInformation(
-                        "Day {Date} is full for {PartySize} people (free: {Free}) for {Phone}",
+                        "Day {Date} has insufficient capacity for {PartySize} (free: {Free}) for {Phone}",
                         requestedDate.ToString("yyyy-MM-dd"),
-                        extractedPartySize.Value,
+                        effectivePartySize.Value,
                         dailyLimit.FreeBookingSeats,
                         message.SenderNumber);
 
                     var fullMsg = dailyLimit.FreeBookingSeats <= 0
                         ? $"Ese día ya no tenemos disponibilidad. ¿Te viene bien otra fecha?"
-                        : $"Ese día solo nos quedan {dailyLimit.FreeBookingSeats} plazas, no podemos acoger {extractedPartySize.Value} personas. ¿Te viene bien otra fecha?";
+                        : $"Ese día solo nos quedan {dailyLimit.FreeBookingSeats} plazas, no podemos acoger {effectivePartySize.Value} personas. ¿Te viene bien otra fecha?";
                     await _whatsApp.SendTextAsync(message.SenderNumber, fullMsg, cancellationToken);
                     return (true, fullMsg, updatedState);
+                }
+            }
+
+            // 3. Check hour availability (if we have time from message or state)
+            if (effectiveTime.HasValue && effectivePartySize.HasValue && effectivePartySize.Value > 0)
+            {
+                var hourData = await _availability.GetHourDataAsync(requestedDate, cancellationToken);
+                var timeKey = $"{effectiveTime.Value.Hours:D2}:{effectiveTime.Value.Minutes:D2}";
+
+                if (!hourData.HourData.TryGetValue(timeKey, out var slot))
+                {
+                    // Time not in available slots
+                    var availableHours = hourData.ActiveHours.Take(5).ToList();
+                    var hoursMsg = availableHours.Count > 0
+                        ? $"A las {timeKey} no tenemos servicio. Nuestros horarios disponibles son: {string.Join(", ", availableHours)}. ¿Cuál te viene mejor?"
+                        : $"A las {timeKey} no tenemos servicio. ¿A qué hora te gustaría venir?";
+
+                    _logger.LogInformation("Time {Time} not available for {Phone}", timeKey, message.SenderNumber);
+                    await _whatsApp.SendTextAsync(message.SenderNumber, hoursMsg, cancellationToken);
+                    return (true, hoursMsg, updatedState);
+                }
+
+                if (slot.IsClosed)
+                {
+                    var availableHours = hourData.ActiveHours
+                        .Where(h => hourData.HourData.TryGetValue(h, out var s) && !s.IsClosed)
+                        .Take(5).ToList();
+                    var closedHourMsg = availableHours.Count > 0
+                        ? $"A las {timeKey} no tenemos disponibilidad. Tengo hueco a las {string.Join(", ", availableHours)}. ¿Te viene bien alguna?"
+                        : $"A las {timeKey} no tenemos disponibilidad. ¿Te viene bien otra hora?";
+
+                    _logger.LogInformation("Time {Time} is closed for {Phone}", timeKey, message.SenderNumber);
+                    await _whatsApp.SendTextAsync(message.SenderNumber, closedHourMsg, cancellationToken);
+                    return (true, closedHourMsg, updatedState);
+                }
+
+                if (slot.Capacity < effectivePartySize.Value)
+                {
+                    // Not enough capacity at this hour
+                    var availableHours = hourData.ActiveHours
+                        .Where(h => hourData.HourData.TryGetValue(h, out var s) && !s.IsClosed && s.Capacity >= effectivePartySize.Value)
+                        .Take(5).ToList();
+
+                    var capacityMsg = availableHours.Count > 0
+                        ? $"A las {timeKey} ya no tenemos hueco para {effectivePartySize.Value} personas. Tengo disponibilidad a las {string.Join(", ", availableHours)}. ¿Te viene bien alguna?"
+                        : $"A las {timeKey} ya no tenemos hueco para {effectivePartySize.Value} personas. ¿Te viene bien otra hora?";
+
+                    _logger.LogInformation("Time {Time} full for {PartySize} (capacity: {Capacity}) for {Phone}",
+                        timeKey, effectivePartySize.Value, slot.Capacity, message.SenderNumber);
+                    await _whatsApp.SendTextAsync(message.SenderNumber, capacityMsg, cancellationToken);
+                    return (true, capacityMsg, updatedState);
                 }
             }
         }
@@ -1140,6 +1197,74 @@ public class WebhookController : ControllerBase
             }
         }
 
+        return null;
+    }
+
+    /// <summary>
+    /// Extracts time from user message (e.g., "a las 14:00", "14:30", "las dos y media").
+    /// </summary>
+    private static TimeSpan? TryExtractTimeFromMessage(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        var t = text.ToLowerInvariant();
+
+        // Pattern: "14:00", "14:30", "a las 14:00"
+        var timePattern = System.Text.RegularExpressions.Regex.Match(t, @"(\d{1,2})[:\.](\d{2})");
+        if (timePattern.Success)
+        {
+            var hours = int.Parse(timePattern.Groups[1].Value);
+            var mins = int.Parse(timePattern.Groups[2].Value);
+            if (hours >= 0 && hours <= 23 && mins >= 0 && mins <= 59)
+            {
+                return new TimeSpan(hours, mins, 0);
+            }
+        }
+
+        // Pattern: "a las dos", "a las tres y media"
+        var spanishHours = new Dictionary<string, int>
+        {
+            ["una"] = 13, ["dos"] = 14, ["tres"] = 15, ["cuatro"] = 16,
+            ["cinco"] = 17, ["seis"] = 18, ["siete"] = 19, ["ocho"] = 20,
+            ["nueve"] = 21, ["diez"] = 22, ["once"] = 23, ["doce"] = 12
+        };
+
+        foreach (var (word, hour) in spanishHours)
+        {
+            if (t.Contains($"las {word}"))
+            {
+                var mins = t.Contains("y media") ? 30 : 0;
+                return new TimeSpan(hour, mins, 0);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Parses date from state format (dd/MM/yyyy).
+    /// </summary>
+    private static DateTime? ParseDateFromState(string? dateStr)
+    {
+        if (string.IsNullOrWhiteSpace(dateStr)) return null;
+        if (DateTime.TryParseExact(dateStr, "dd/MM/yyyy",
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out var date))
+        {
+            return date;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Parses time from state format (HH:mm).
+    /// </summary>
+    private static TimeSpan? ParseTimeFromState(string? timeStr)
+    {
+        if (string.IsNullOrWhiteSpace(timeStr)) return null;
+        if (TimeSpan.TryParse(timeStr, out var time))
+        {
+            return time;
+        }
         return null;
     }
 

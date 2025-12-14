@@ -27,7 +27,7 @@ public class BookingAvailabilityService : IBookingAvailabilityService
     public async Task<DayStatusResult> CheckDayStatusAsync(DateTime date, CancellationToken cancellationToken = default)
     {
         // Get day of week info for display
-        var dayOfWeekN = ToPhpIsoDay(date.DayOfWeek); // 1..7
+        var dayOfWeekN = ToPhpIsoDay(date.DayOfWeek); // 1..7 (Monday=1, Sunday=7)
 
         var weekdayNames = new Dictionary<int, string>
         {
@@ -42,8 +42,9 @@ public class BookingAvailabilityService : IBookingAvailabilityService
 
         var weekday = weekdayNames[dayOfWeekN];
 
-        // ONLY check restaurant_days table - no hardcoded defaults
-        // If no entry exists, default to OPEN (business manages closures via backoffice)
+        // Check if the day is a default closed day (Monday=1, Tuesday=2, Wednesday=3)
+        var isDefaultClosedDay = dayOfWeekN is 1 or 2 or 3;
+
         await using var connection = new MySqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
@@ -53,15 +54,20 @@ public class BookingAvailabilityService : IBookingAvailabilityService
             new { Date = date.ToString("yyyy-MM-dd") },
             cancellationToken: cancellationToken));
 
-        // Default to OPEN if no database entry exists
-        var isOpen = row?.is_open ?? true;
+        // Default status based on day of week (closed on Mon/Tue/Wed)
+        // If there's an entry in the database, use that value instead
+        var isOpen = row?.is_open ?? !isDefaultClosedDay;
+
+        _logger.LogDebug(
+            "Day status for {Date} ({Weekday}): isOpen={IsOpen}, isDefaultClosedDay={IsDefaultClosed}, hasDbOverride={HasOverride}",
+            date.ToString("yyyy-MM-dd"), weekday, isOpen, isDefaultClosedDay, row != null);
 
         return new DayStatusResult
         {
             Date = date.Date,
             Weekday = weekday,
             IsOpen = isOpen,
-            IsDefaultClosedDay = false // No longer using hardcoded defaults
+            IsDefaultClosedDay = isDefaultClosedDay
         };
     }
 
