@@ -34,8 +34,8 @@ public class MinimaxService : IMinimaxService, IGeminiService
             ?? configuration["GoogleAI:ApiKey"]
             ?? throw new InvalidOperationException("Minimax:ApiKey or GoogleAI:ApiKey must be configured");
 
-        _model = configuration["Minimax:Model"] ?? "MiniMax-M2-1";
-        _baseUrl = configuration["Minimax:BaseUrl"] ?? "https://api.minimaxi.chat/v1";
+        _model = configuration["Minimax:Model"] ?? "M2-her";
+        _baseUrl = configuration["Minimax:BaseUrl"] ?? "https://api.minimax.io/v1";
 
         // Load default generation config
         _defaultConfig = new MinimaxGenerationConfig
@@ -97,7 +97,9 @@ public class MinimaxService : IMinimaxService, IGeminiService
             {
                 Content = JsonContent.Create(requestBody)
             };
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
+            // Minimax uses "Bearer API_key" format (API_key is the actual key value)
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "API_key");
+            request.Headers.Add("Authorization-Key", _apiKey);
 
             var response = await _httpClient.SendAsync(request, cancellationToken);
 
