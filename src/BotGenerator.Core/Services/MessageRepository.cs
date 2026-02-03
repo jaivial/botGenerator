@@ -40,7 +40,7 @@ public class MessageRepository : IMessageRepository
                     timestamp,
                     message_id as MessageId,
                     from_name as FromName
-                FROM conversation_messages
+                FROM bot_conversation_messages
                 WHERE phone_number = @Phone
                 ORDER BY timestamp ASC
                 LIMIT 100";
@@ -86,7 +86,7 @@ public class MessageRepository : IMessageRepository
             var normalizedPhone = NormalizePhone(phoneNumber);
 
             var sql = @"
-                INSERT INTO conversation_messages (
+                INSERT INTO bot_conversation_messages (
                     phone_number,
                     role,
                     content,
@@ -139,7 +139,7 @@ public class MessageRepository : IMessageRepository
 
             var sql = @"
                 SELECT COUNT(*) 
-                FROM conversation_messages 
+                FROM bot_conversation_messages 
                 WHERE phone_number = @Phone";
 
             var count = await connection.ExecuteScalarAsync<int>(sql, new { Phone = normalizedPhone });
@@ -164,7 +164,7 @@ public class MessageRepository : IMessageRepository
 
             var normalizedPhone = NormalizePhone(phoneNumber);
 
-            var sql = @"DELETE FROM conversation_messages WHERE phone_number = @Phone";
+            var sql = @"DELETE FROM bot_conversation_messages WHERE phone_number = @Phone";
 
             await connection.ExecuteAsync(sql, new { Phone = normalizedPhone });
 
