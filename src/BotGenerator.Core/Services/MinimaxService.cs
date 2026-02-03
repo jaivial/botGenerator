@@ -117,6 +117,22 @@ public class MinimaxService : IMinimaxService, IGeminiService
             var result = await response.Content.ReadFromJsonAsync<JsonElement>(
                 cancellationToken: cancellationToken);
 
+            // Check for Minimax error response
+            if (result.TryGetProperty("base_resp", out var baseResp))
+            {
+                if (baseResp.TryGetProperty("status_code", out var statusCode) && statusCode.GetInt32() != 0)
+                {
+                    var errorMsg = baseResp.TryGetProperty("status_msg", out var statusMsg) 
+                        ? statusMsg.GetString() 
+                        : "Unknown error";
+                    _logger.LogError("Minimax API error: {ErrorCode} - {ErrorMessage}", statusCode.GetInt32(), errorMsg);
+                    throw new MinimaxApiException($"Minimax API error: {errorMsg}");
+                }
+            }
+
+            // Log full response for debugging
+            _logger.LogDebug("Minimax raw response: {Response}", result.ToString());
+
             var text = ExtractResponseText(result);
 
             _logger.LogDebug(
@@ -282,6 +298,19 @@ public class MinimaxService : IMinimaxService, IGeminiService
             if (!result.TryGetProperty("choices", out var choices))
             {
                 _logger.LogWarning("Minimax response missing 'choices' property");
+                return "";
+            }
+
+            // Check if choices is null or not an array
+            if (choices.ValueKind == JsonValueKind.Null)
+            {
+                _logger.LogWarning("Minimax response 'choices' is null");
+                return "";
+            }
+
+            if (choices.ValueKind != JsonValueKind.Array)
+            {
+                _logger.LogWarning("Minimax response 'choices' is not an array, got: {ValueKind}", choices.ValueKind);
                 return "";
             }
 
