@@ -96,8 +96,8 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 // ========== HTTP Clients ==========
-// Minimax Service - replaces Gemini for better handling of long prompts
-builder.Services.AddHttpClient<IGeminiService, MinimaxService>(client =>
+// Gemini Service - primary AI service
+builder.Services.AddHttpClient<IGeminiService, GeminiService>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(60);
 });
