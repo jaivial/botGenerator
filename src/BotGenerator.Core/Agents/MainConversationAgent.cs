@@ -259,6 +259,21 @@ public class MainConversationAgent : IAgent
             }
         }
 
+        // ========== CHECK FOR RESERVATION_QUERY ==========
+        else if (unescapedResponse.Contains("RESERVATION_QUERY"))
+        {
+            intent = IntentType.ReservationQuery;
+            cleanResponse = unescapedResponse
+                .Replace("RESERVATION_QUERY", "")
+                .Trim();
+
+            // If response is empty, provide default message while we look up reservations
+            if (string.IsNullOrWhiteSpace(cleanResponse))
+            {
+                cleanResponse = "Voy a comprobar tus reservas...";
+            }
+        }
+
         // ========== CHECK FOR URLs (INTERACTIVE) ==========
         else if (Regex.IsMatch(unescapedResponse, @"https?://[^\s]+"))
         {

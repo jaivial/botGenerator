@@ -45,5 +45,11 @@ public enum IntentType
     /// An error occurred during processing.
     /// Should return a generic error message to user.
     /// </summary>
-    Error
+    Error,
+
+    /// <summary>
+    /// User wants to query their existing reservations.
+    /// AI has generated a RESERVATION_QUERY command.
+    /// </summary>
+    ReservationQuery
 }

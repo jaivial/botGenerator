@@ -251,6 +251,9 @@ public class IntentRouterService : IIntentRouterService
                 IntentType.Modification => await HandleModificationAsync(
                     mainAgentResponse, originalMessage, null, cancellationToken),
 
+                IntentType.ReservationQuery => await HandleReservationQueryAsync(
+                    mainAgentResponse, originalMessage, cancellationToken),
+
                 IntentType.SameDay => HandleSameDay(mainAgentResponse),
 
                 IntentType.Interactive => HandleInteractive(mainAgentResponse),
@@ -672,6 +675,56 @@ public class IntentRouterService : IIntentRouterService
             message,
             currentState,
             cancellationToken);
+    }
+
+    private async Task<AgentResponse> HandleReservationQueryAsync(
+        AgentResponse response,
+        WhatsAppMessage message,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Handling reservation query for {Phone}", message.SenderNumber);
+
+        try
+        {
+            var bookingRepo = _services.GetRequiredService<IBookingRepository>();
+            var bookings = await bookingRepo.FindBookingsByPhoneAsync(message.SenderNumber, cancellationToken);
+
+            string replyMessage;
+            if (bookings.Count == 0)
+            {
+                replyMessage = "No he encontrado ninguna reserva a tu nombre. Si deseas hacer una nueva reserva, dime para qué día y cuántas personas.";
+            }
+            else if (bookings.Count == 1)
+            {
+                var b = bookings[0];
+                var arrozInfo = !string.IsNullOrWhiteSpace(b.ArrozType) 
+                    ? $"\n🍚 Arroz: {b.ArrozType}" + (b.ArrozServings.HasValue ? $" ({b.ArrozServings} raciones)" : "")
+                    : "";
+                replyMessage = $"Tienes una reserva confirmada:\n\n📅 {b.DayName} {b.DateFormatted}\n🕒 {b.TimeFormatted}\n👥 {b.PartySize} personas{arrozInfo}\n\n¿Necesitas modificar algo?";
+            }
+            else
+            {
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine($"Tienes {bookings.Count} reservas confirmadas:\n");
+                for (int i = 0; i < bookings.Count; i++)
+                {
+                    var b = bookings[i];
+                    var arrozInfo = !string.IsNullOrWhiteSpace(b.ArrozType) 
+                        ? $" | 🍚 {b.ArrozType}" + (b.ArrozServings.HasValue ? $" x{b.ArrozServings}" : "")
+                        : "";
+                    sb.AppendLine($"{i + 1}. {b.DayName} {b.DateFormatted} a las {b.TimeFormatted} | 👥 {b.PartySize}{arrozInfo}");
+                }
+                sb.AppendLine("\n¿Cuál quieres modificar o cancelar?");
+                replyMessage = sb.ToString();
+            }
+
+            return response with { AiResponse = replyMessage };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error querying reservations for {Phone}", message.SenderNumber);
+            return response with { AiResponse = "Lo siento, ha habido un problema al consultar tus reservas. Por favor, llámanos al +34 638 857 294." };
+        }
     }
 
     private AgentResponse HandleSameDay(AgentResponse response)
