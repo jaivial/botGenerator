@@ -6,26 +6,33 @@ using System.Text.RegularExpressions;
 namespace BotGenerator.Core.Services;
 
 /// <summary>
-/// In-memory implementation of conversation history service.
-/// In production, use Redis or a database.
+/// Database-backed implementation of conversation history service.
+/// Initializes conversations from external booking API when user first contacts.
 /// </summary>
 public class ConversationHistoryService : IConversationHistoryService
 {
-    private readonly Dictionary<string, List<ChatMessage>> _history = new();
+    private readonly IMessageRepository _messageRepository;
+    private readonly IExternalBookingService _externalBookingService;
     private readonly IContextBuilderService _contextBuilder;
     private readonly IAiStateExtractorService? _aiStateExtractor;
     private readonly ILogger<ConversationHistoryService> _logger;
     private readonly int _maxMessages;
     private readonly TimeSpan _sessionTimeout;
 
+    // In-memory cache for fast access during active conversations
+    private readonly Dictionary<string, List<ChatMessage>> _cache = new();
     private readonly Dictionary<string, DateTime> _lastActivity = new();
 
     public ConversationHistoryService(
+        IMessageRepository messageRepository,
+        IExternalBookingService externalBookingService,
         IContextBuilderService contextBuilder,
         IConfiguration configuration,
         ILogger<ConversationHistoryService> logger,
         IAiStateExtractorService? aiStateExtractor = null)
     {
+        _messageRepository = messageRepository;
+        _externalBookingService = externalBookingService;
         _contextBuilder = contextBuilder;
         _aiStateExtractor = aiStateExtractor;
         _logger = logger;
@@ -34,58 +41,175 @@ public class ConversationHistoryService : IConversationHistoryService
             configuration.GetValue("History:SessionTimeoutMinutes", 30));
     }
 
-    public Task<List<ChatMessage>> GetHistoryAsync(
+    public async Task<List<ChatMessage>> GetHistoryAsync(
         string phoneNumber,
         CancellationToken cancellationToken = default)
     {
-        // Check if session expired
+        // Check cache first
         if (_lastActivity.TryGetValue(phoneNumber, out var lastActivity) &&
             DateTime.UtcNow - lastActivity > _sessionTimeout)
         {
-            _history.Remove(phoneNumber);
+            _cache.Remove(phoneNumber);
             _lastActivity.Remove(phoneNumber);
-            _logger.LogDebug("Session expired for {Phone}", phoneNumber);
+            _logger.LogDebug("Session expired for {Phone}, clearing cache", phoneNumber);
         }
 
-        if (_history.TryGetValue(phoneNumber, out var history))
+        if (_cache.TryGetValue(phoneNumber, out var cachedHistory))
         {
-            return Task.FromResult(history.ToList());
+            _logger.LogDebug("Returning cached history for {Phone} ({Count} messages)", 
+                phoneNumber, cachedHistory.Count);
+            return cachedHistory.ToList();
         }
 
-        return Task.FromResult(new List<ChatMessage>());
+        // Fetch from database
+        var dbHistory = await _messageRepository.GetMessagesAsync(phoneNumber, cancellationToken);
+        
+        // If no history exists, try to initialize from external booking
+        if (dbHistory.Count == 0)
+        {
+            _logger.LogInformation(
+                "No history found for {Phone}, attempting to fetch from external booking API",
+                phoneNumber);
+
+            var externalBooking = await _externalBookingService.GetBookingByPhoneAsync(
+                phoneNumber, cancellationToken);
+
+            if (externalBooking != null)
+            {
+                _logger.LogInformation(
+                    "Found external booking for {Phone}, initializing conversation history",
+                    phoneNumber);
+
+                // Create initial assistant message with the confirmation
+                var initialMessage = ChatMessage.FromAssistant(
+                    externalBooking.OriginalConfirmationMessage);
+
+                // Save to database
+                await _messageRepository.SaveMessageAsync(
+                    phoneNumber, initialMessage, cancellationToken);
+
+                dbHistory.Add(initialMessage);
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "No external booking found for {Phone}",
+                    phoneNumber);
+            }
+        }
+
+        // Cache the result
+        _cache[phoneNumber] = dbHistory.ToList();
+        _lastActivity[phoneNumber] = DateTime.UtcNow;
+
+        _logger.LogDebug(
+            "Retrieved {Count} messages from database for {Phone}",
+            dbHistory.Count, phoneNumber);
+
+        return dbHistory;
     }
 
-    public Task AddMessageAsync(
+    public async Task AddMessageAsync(
         string phoneNumber,
         ChatMessage message,
         CancellationToken cancellationToken = default)
     {
-        if (!_history.ContainsKey(phoneNumber))
+        // Save to database
+        await _messageRepository.SaveMessageAsync(phoneNumber, message, cancellationToken);
+
+        // Update cache
+        if (!_cache.ContainsKey(phoneNumber))
         {
-            _history[phoneNumber] = new List<ChatMessage>();
+            _cache[phoneNumber] = new List<ChatMessage>();
         }
 
-        _history[phoneNumber].Add(message);
+        _cache[phoneNumber].Add(message);
         _lastActivity[phoneNumber] = DateTime.UtcNow;
 
-        // Trim to max messages
-        if (_history[phoneNumber].Count > _maxMessages)
+        // Trim cache if needed
+        if (_cache[phoneNumber].Count > _maxMessages)
         {
-            _history[phoneNumber] = _history[phoneNumber]
+            _cache[phoneNumber] = _cache[phoneNumber]
                 .TakeLast(_maxMessages)
                 .ToList();
         }
 
-        return Task.CompletedTask;
+        _logger.LogDebug(
+            "Added message for {Phone}, role={Role}, total={Count}",
+            phoneNumber, message.Role, _cache[phoneNumber].Count);
     }
 
-    public Task ClearHistoryAsync(
+    public async Task ClearHistoryAsync(
         string phoneNumber,
         CancellationToken cancellationToken = default)
     {
-        _history.Remove(phoneNumber);
+        // Clear database
+        await _messageRepository.ClearMessagesAsync(phoneNumber, cancellationToken);
+
+        // Clear cache
+        _cache.Remove(phoneNumber);
         _lastActivity.Remove(phoneNumber);
-        return Task.CompletedTask;
+
+        _logger.LogInformation("Cleared history for {Phone}", phoneNumber);
+    }
+
+    /// <summary>
+    /// Initializes conversation from an external booking confirmation message.
+    /// This can be called directly if we receive the confirmation message via webhook.
+    /// </summary>
+    public async Task<bool> InitializeFromConfirmationMessageAsync(
+        string phoneNumber,
+        string confirmationMessage,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Check if we already have history
+            var hasMessages = await _messageRepository.HasMessagesAsync(phoneNumber, cancellationToken);
+            if (hasMessages)
+            {
+                _logger.LogDebug(
+                    "History already exists for {Phone}, skipping initialization",
+                    phoneNumber);
+                return false;
+            }
+
+            // Parse the confirmation message
+            if (_externalBookingService is ExternalBookingService externalService)
+            {
+                var bookingInfo = externalService.ParseBookingFromConfirmationMessage(confirmationMessage);
+                
+                if (bookingInfo != null)
+                {
+                    var initialMessage = ChatMessage.FromAssistant(
+                        bookingInfo.OriginalConfirmationMessage);
+
+                    await _messageRepository.SaveMessageAsync(
+                        phoneNumber, initialMessage, cancellationToken);
+
+                    // Update cache
+                    if (!_cache.ContainsKey(phoneNumber))
+                    {
+                        _cache[phoneNumber] = new List<ChatMessage>();
+                    }
+                    _cache[phoneNumber].Add(initialMessage);
+                    _lastActivity[phoneNumber] = DateTime.UtcNow;
+
+                    _logger.LogInformation(
+                        "Initialized conversation for {Phone} from confirmation message",
+                        phoneNumber);
+
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error initializing from confirmation message for {Phone}", phoneNumber);
+            return false;
+        }
     }
 
     public ConversationState ExtractState(List<ChatMessage>? history)
