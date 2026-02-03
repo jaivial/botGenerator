@@ -97,9 +97,8 @@ public class MinimaxService : IMinimaxService, IGeminiService
             {
                 Content = JsonContent.Create(requestBody)
             };
-            // Minimax uses "Bearer API_key" format (API_key is the actual key value)
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "API_key");
-            request.Headers.Add("Authorization-Key", _apiKey);
+            // Minimax uses standard Bearer auth: "Bearer <api_key>"
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
 
             var response = await _httpClient.SendAsync(request, cancellationToken);
 
