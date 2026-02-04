@@ -591,6 +591,40 @@ public static class ResponseVariations
     });
 
     /// <summary>
+    /// User wants to exit modification flow without making changes.
+    /// </summary>
+    public static string ModificationExitConfirmation() => Pick(new[]
+    {
+        "Perfecto, tu reserva queda como está. ¿Necesitas algo más?",
+        "De acuerdo, no hacemos ningún cambio. ¿Te ayudo con algo más?",
+        "Vale, dejamos la reserva tal cual. ¡Nos vemos pronto!",
+        "Entendido, no modificamos nada. ¿Algo más en lo que pueda ayudarte?",
+        "Muy bien, tu reserva sigue igual. ¿Necesitas algo más?",
+        "Perfecto, sin cambios entonces. ¡Te esperamos!",
+        "De acuerdo, mantenemos la reserva como está. ¿Algo más?",
+        "Vale, no tocamos nada. ¿Puedo ayudarte en algo más?",
+        "Entendido, la reserva queda igual. ¡Hasta pronto!",
+        "Perfecto, dejamos todo como está. ¿Necesitas algo más?"
+    });
+
+    /// <summary>
+    /// User declined rice offer for existing reservation.
+    /// </summary>
+    public static string RiceOfferDeclined() => Pick(new[]
+    {
+        "Perfecto, sin arroz entonces. ¡Nos vemos pronto!",
+        "Entendido, sin arroz para vuestra reserva. ¿Algo más?",
+        "Vale, no añadimos arroz. ¡Os esperamos!",
+        "De acuerdo, sin arroz. ¿Necesitáis algo más?",
+        "Perfecto, lo anotamos sin arroz. ¡Hasta pronto!",
+        "Muy bien, sin arroz. ¿Puedo ayudaros en algo más?",
+        "Entendido, dejamos la reserva sin arroz. ¡Os vemos!",
+        "Vale, sin arroz. ¿Algo más en lo que pueda ayudar?",
+        "De acuerdo, sin arroz para tu reserva. ¡Nos vemos!",
+        "Perfecto, anotado sin arroz. ¿Necesitas algo más?"
+    });
+
+    /// <summary>
     /// Confirmation yes/no not understood.
     /// </summary>
     public static string ConfirmationNotUnderstood() => Pick(new[]

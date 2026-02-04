@@ -134,6 +134,16 @@ public class IntentRouterService : IIntentRouterService
                 }
             }
 
+            // ========== CHECK FOR RICE OFFER RESPONSE ==========
+            // If user is responding to a rice offer message for an existing reservation,
+            // handle the response directly without going through AI
+            var riceOfferResponse = await CheckRiceOfferResponseAsync(
+                originalMessage, cancellationToken);
+            if (riceOfferResponse != null)
+            {
+                return riceOfferResponse;
+            }
+
             // ========== CHECK FOR ACTIVE MODIFICATION SESSION ==========
             // If user has an active modification session, route ALL messages to the handler
             // This ensures multi-turn modification flows work correctly
@@ -868,6 +878,69 @@ public class IntentRouterService : IIntentRouterService
             sb.AppendLine($"{i + 1}. {options[i]}");
         }
         return sb.ToString().TrimEnd();
+    }
+
+    #endregion
+
+    #region Rice Offer Response Detection
+
+    /// <summary>
+    /// Checks if the user is responding to a rice offer message for an existing reservation.
+    /// Returns a response if this is a rice offer rejection, null otherwise.
+    /// </summary>
+    private async Task<AgentResponse?> CheckRiceOfferResponseAsync(
+        WhatsAppMessage message,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var historyService = _services.GetRequiredService<IConversationHistoryService>();
+            var history = await historyService.GetHistoryAsync(message.SenderNumber, cancellationToken);
+
+            if (history == null || history.Count == 0)
+                return null;
+
+            // Get the last bot message
+            var lastBotMessage = history
+                .Where(m => m.Role == "assistant")
+                .LastOrDefault()?.Content ?? "";
+
+            // Check if the last bot message was a rice offer
+            var isRiceOfferMessage = 
+                lastBotMessage.Contains("¿Le gustaría reservar arroz") ||
+                lastBotMessage.Contains("¿Queréis añadir arroz") ||
+                lastBotMessage.Contains("¿Os apetece arroz") ||
+                lastBotMessage.Contains("¿queréis arroz") ||
+                (lastBotMessage.Contains("variedad de arroces") && lastBotMessage.Contains("reserva"));
+
+            if (!isRiceOfferMessage)
+                return null;
+
+            // Check if the user is declining the rice offer
+            var userText = message.MessageText.ToLowerInvariant().Trim();
+            var isRejection = System.Text.RegularExpressions.Regex.IsMatch(
+                userText,
+                @"\b(no|nada|sin\s+arroz|otra\s+cosa|no\s+queremos|no\s+gracias|ya\s+tenemos|hemos\s+decidido|pediremos?\s+otra)\b");
+
+            if (isRejection)
+            {
+                _logger.LogInformation(
+                    "User declined rice offer for existing reservation: {Message}",
+                    message.MessageText);
+
+                return new AgentResponse
+                {
+                    Intent = IntentType.Normal,
+                    AiResponse = ResponseVariations.RiceOfferDeclined()
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error checking rice offer response");
+        }
+
+        return null;
     }
 
     #endregion

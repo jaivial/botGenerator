@@ -195,6 +195,19 @@ public class ModificationHandler
         CancellationToken ct)
     {
         var text = message.MessageText.ToLowerInvariant().Trim();
+        
+        // Check for exit/cancel intent FIRST - user wants to leave without modifying
+        if (IsExitIntent(text))
+        {
+            _logger.LogInformation("User wants to exit modification flow without changes");
+            _stateStore.Clear(message.SenderNumber);
+            return new AgentResponse
+            {
+                Intent = IntentType.Normal,
+                AiResponse = ResponseVariations.ModificationExitConfirmation()
+            };
+        }
+        
         string? field = null;
 
         // Parse which field to modify
@@ -966,16 +979,38 @@ public class ModificationHandler
     {
         text = text.ToLowerInvariant();
 
-        // Try day name ("el sábado", "domingo")
+        // Try day name ("el sábado", "domingo") with optional day number ("viernes día 6")
         foreach (var (dayName, dayOfWeek) in SpanishDays)
         {
             if (text.Contains(dayName))
             {
+                // Check if user also mentioned a specific day number ("viernes día 6", "el viernes 6")
+                var dayNumMatch = Regex.Match(text, @"(?:día|dia)?\s*(\d{1,2})");
+                if (dayNumMatch.Success)
+                {
+                    var requestedDayNum = int.Parse(dayNumMatch.Groups[1].Value);
+                    
+                    // Search for a date that matches both the day of week AND day number
+                    // within the next 60 days (covers about 2 months)
+                    var today = DateTime.Today;
+                    for (int i = 0; i <= 60; i++)
+                    {
+                        var candidateDate = today.AddDays(i);
+                        if (candidateDate.DayOfWeek == dayOfWeek && candidateDate.Day == requestedDayNum)
+                        {
+                            return candidateDate;
+                        }
+                    }
+                    
+                    // If no match found with day number constraint, fall through to simple day-of-week logic
+                }
+                
+                // Simple case: just day name without specific day number
                 // Find the next occurrence of this day
-                var today = DateTime.Today;
-                var daysUntil = ((int)dayOfWeek - (int)today.DayOfWeek + 7) % 7;
+                var today2 = DateTime.Today;
+                var daysUntil = ((int)dayOfWeek - (int)today2.DayOfWeek + 7) % 7;
                 if (daysUntil == 0) daysUntil = 7; // Next week if today
-                return today.AddDays(daysUntil);
+                return today2.AddDays(daysUntil);
             }
         }
 
@@ -1063,6 +1098,34 @@ public class ModificationHandler
     {
         var digits = new string(phone.Where(char.IsDigit).ToArray());
         return digits.Length > 9 ? digits[^9..] : digits;
+    }
+
+    /// <summary>
+    /// Checks if the user's message indicates they want to exit the modification flow.
+    /// </summary>
+    private static bool IsExitIntent(string text)
+    {
+        // Exact matches for simple exit words
+        if (Regex.IsMatch(text, @"^(no|nada|ninguno|ninguna|cancelar|salir|dejalo|déjalo|no\s*gracias|todo\s*bien|está\s*bien|esta\s*bien)$"))
+            return true;
+
+        // Phrases indicating no modification wanted
+        if (Regex.IsMatch(text, @"\b(no\s+(quiero|necesito|hay\s+que)\s+(modificar|cambiar)(\s+nada)?)\b"))
+            return true;
+
+        // "nada" or "ninguna" with optional "gracias" or "todo bien"
+        if (Regex.IsMatch(text, @"^(nada|ninguno|ninguna)(\s*,?\s*(gracias|todo\s*bien))?$"))
+            return true;
+
+        // "no cambies nada", "no toques nada", "no modifiques nada"
+        if (Regex.IsMatch(text, @"\b(no\s+(cambies|toques|modifiques)\s+nada)\b"))
+            return true;
+
+        // "todo está bien", "todo bien", "así está bien"
+        if (Regex.IsMatch(text, @"\b(todo\s+(está|esta)\s+bien|así\s+(está|esta)\s+bien)\b"))
+            return true;
+
+        return false;
     }
 
     private AgentResponse BuildSelectBookingResponse(List<BookingRecord> bookings)
