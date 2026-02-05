@@ -30,6 +30,7 @@ public class RiceValidatorAgent : IAgent, IRiceValidatorService
         WhatsAppMessage message,
         ConversationState? state,
         List<ChatMessage>? history,
+        List<BookingRecord>? existingBookings = null,
         CancellationToken cancellationToken = default)
     {
         // This agent is typically called with rice request in message.MessageText

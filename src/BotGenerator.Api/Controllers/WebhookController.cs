@@ -33,6 +33,7 @@ public class WebhookController : ControllerBase
     private readonly IMenuRepository _menuRepository;
     private readonly IRiceValidatorService _riceValidator;
     private readonly IBookingAvailabilityService _availability;
+    private readonly IBookingRepository _bookingRepository;
     private readonly BookingHandler _bookingHandler;
     private readonly IGeminiService _gemini;
     private readonly IConfiguration _configuration;
@@ -50,6 +51,7 @@ public class WebhookController : ControllerBase
         IMenuRepository menuRepository,
         IRiceValidatorService riceValidator,
         IBookingAvailabilityService availability,
+        IBookingRepository bookingRepository,
         BookingHandler bookingHandler,
         IGeminiService gemini,
         IConfiguration configuration,
@@ -66,6 +68,7 @@ public class WebhookController : ControllerBase
         _menuRepository = menuRepository;
         _riceValidator = riceValidator;
         _availability = availability;
+        _bookingRepository = bookingRepository;
         _bookingHandler = bookingHandler;
         _gemini = gemini;
         _configuration = configuration;
@@ -177,6 +180,15 @@ public class WebhookController : ControllerBase
             var history = await _historyService.GetHistoryAsync(
                 message.SenderNumber, cancellationToken);
 
+            // 2a. FETCH EXISTING BOOKINGS for context
+            // This allows the AI to know about user's active reservations
+            var existingBookings = await _bookingRepository.FindBookingsByPhoneAsync(
+                message.SenderNumber, cancellationToken);
+
+            _logger.LogInformation(
+                "Found {Count} existing bookings for {Phone}",
+                existingBookings.Count, message.SenderNumber);
+
             // 2b. EARLY CANCELLATION DETECTION (AI-based)
             // Check for cancellation intent BEFORE state extraction to avoid day-full checks
             var cancellationHandler = HttpContext.RequestServices.GetRequiredService<CancellationHandler>();
@@ -220,6 +232,150 @@ public class WebhookController : ControllerBase
                 return Ok(new { processed = true, cancellationFlow = true });
             }
 
+            // 2d. EARLY RICE MODIFICATION DETECTION
+            // If user wants to add rice to existing booking, route directly to modification
+            var (isRiceModification, extractedRiceType, extractedServings) = DetectRiceModificationIntent(
+                message.MessageText, existingBookings.Count);
+
+            if (isRiceModification && existingBookings.Count > 0)
+            {
+                _logger.LogInformation(
+                    "Rice modification detected for {Phone}, rice type: {Rice}, servings: {Servings}, bookings: {Count}",
+                    message.SenderNumber, extractedRiceType ?? "(to be specified)", extractedServings?.ToString() ?? "N/A", existingBookings.Count);
+
+                var modificationHandler = HttpContext.RequestServices.GetRequiredService<ModificationHandler>();
+
+                AgentResponse modResponse;
+                if (existingBookings.Count == 1)
+                {
+                    // Single booking - start modification with rice field pre-selected
+                    modResponse = await modificationHandler.StartRiceModificationAsync(
+                        message,
+                        existingBookings[0],
+                        extractedRiceType,
+                        extractedServings,
+                        cancellationToken);
+                }
+                else
+                {
+                    // Multiple bookings - start modification flow asking which booking
+                    // Store the pre-extracted rice info for later use
+                    modResponse = await modificationHandler.StartRiceModificationWithSelectionAsync(
+                        message,
+                        existingBookings,
+                        extractedRiceType,
+                        extractedServings,
+                        cancellationToken);
+                }
+
+                // Store in history
+                await _historyService.AddMessageAsync(
+                    message.SenderNumber,
+                    ChatMessage.FromUser(message.MessageText, message.PushName),
+                    cancellationToken);
+
+                if (!string.IsNullOrWhiteSpace(modResponse.AiResponse))
+                {
+                    await _whatsApp.SendTextAsync(
+                        message.SenderNumber,
+                        modResponse.AiResponse,
+                        cancellationToken);
+
+                    await _historyService.AddMessageAsync(
+                        message.SenderNumber,
+                        ChatMessage.FromAssistant(modResponse.AiResponse),
+                        cancellationToken);
+                }
+
+                return Ok(new { processed = true, riceModification = true });
+            }
+
+            // 2e. DETECT FORWARDED CONFIRMATION MESSAGE
+            // When user forwards their confirmation, acknowledge it and offer help
+            if (IsForwardedConfirmation(message.MessageText))
+            {
+                var (parsedDate, parsedTime, parsedPeople) = ParseForwardedConfirmation(message.MessageText);
+                
+                // Try to match to one of the user's existing bookings
+                var matchedBooking = existingBookings.FirstOrDefault(b =>
+                    b.DateFormatted == parsedDate && b.TimeFormatted == parsedTime);
+
+                if (matchedBooking != null)
+                {
+                    _logger.LogInformation(
+                        "Matched forwarded confirmation to booking {BookingId} for {Phone}",
+                        matchedBooking.Id, message.SenderNumber);
+
+                    var riceInfo = string.IsNullOrEmpty(matchedBooking.ArrozType)
+                        ? "sin arroz"
+                        : $"con {matchedBooking.ArrozType} ({matchedBooking.ArrozServings} raciones)";
+
+                    var responseMsg = $"Veo que tienes una reserva confirmada para el *{matchedBooking.DateFormatted}* a las *{matchedBooking.TimeFormatted}* para *{matchedBooking.PartySize} personas*, {riceInfo}.\n\n" +
+                                     "¿En qué puedo ayudarte? ¿Quieres modificar algo de tu reserva?";
+
+                    await _historyService.AddMessageAsync(
+                        message.SenderNumber,
+                        ChatMessage.FromUser(message.MessageText, message.PushName),
+                        cancellationToken);
+
+                    await _whatsApp.SendTextAsync(
+                        message.SenderNumber,
+                        responseMsg,
+                        cancellationToken);
+
+                    await _historyService.AddMessageAsync(
+                        message.SenderNumber,
+                        ChatMessage.FromAssistant(responseMsg),
+                        cancellationToken);
+
+                    return Ok(new { processed = true, forwardedConfirmation = true, matchedBookingId = matchedBooking.Id });
+                }
+                else
+                {
+                    // Forwarded confirmation detected but no matching booking found
+                    // This could happen if the booking was cancelled or the confirmation is old
+                    _logger.LogInformation(
+                        "Forwarded confirmation detected for {Phone} but no matching booking (parsed: {Date} {Time})",
+                        message.SenderNumber, parsedDate, parsedTime);
+
+                    string responseMsg;
+                    if (existingBookings.Count > 0)
+                    {
+                        // User has other bookings
+                        var bookingsSummary = string.Join("\n", existingBookings.Select(b =>
+                            $"• *{b.DateFormatted}* a las *{b.TimeFormatted}* para {b.PartySize} personas"));
+
+                        responseMsg = $"He visto tu mensaje de confirmación, pero no encuentro esa reserva exacta en el sistema.\n\n" +
+                                     $"Estas son tus reservas activas:\n{bookingsSummary}\n\n" +
+                                     "¿En qué puedo ayudarte?";
+                    }
+                    else
+                    {
+                        // User has no bookings at all
+                        responseMsg = "He visto tu mensaje de confirmación, pero no encuentro ninguna reserva activa asociada a tu número.\n\n" +
+                                     "Es posible que la reserva haya sido cancelada o que se hiciera con otro número de teléfono.\n\n" +
+                                     "¿Te gustaría hacer una nueva reserva?";
+                    }
+
+                    await _historyService.AddMessageAsync(
+                        message.SenderNumber,
+                        ChatMessage.FromUser(message.MessageText, message.PushName),
+                        cancellationToken);
+
+                    await _whatsApp.SendTextAsync(
+                        message.SenderNumber,
+                        responseMsg,
+                        cancellationToken);
+
+                    await _historyService.AddMessageAsync(
+                        message.SenderNumber,
+                        ChatMessage.FromAssistant(responseMsg),
+                        cancellationToken);
+
+                    return Ok(new { processed = true, forwardedConfirmation = true, matched = false });
+                }
+            }
+
             // 3. Extract conversation state using AI (more robust than regex)
             // AI understands natural language variations like "nah", "ninguna", "sin tronas", etc.
             var historyForState = history
@@ -229,11 +385,13 @@ public class WebhookController : ControllerBase
             var state = await _aiStateExtractor.ExtractStateAsync(historyForState, cancellationToken);
 
             // 3b. Apply pre-checks (availability + rice constraints) before calling Gemini
+            // Pass existingBookings.Count so pre-checks can detect modification context
             var restaurantId = GetRestaurantId(message.SenderNumber);
             var precheck = await TryHandlePreChecksAsync(
                 restaurantId,
                 message,
                 state,
+                existingBookings.Count,
                 cancellationToken);
 
             // Allow pre-checks to enrich the state (e.g., validated rice name)
@@ -267,13 +425,18 @@ public class WebhookController : ControllerBase
             // If the user is confirming and we already have all required data in the extracted state,
             // create the booking directly (no need for the LLM to emit BOOKING_REQUEST).
             var isConfirming = IsUserConfirming(message.MessageText);
+            var isDeclining = IsUserDeclining(message.MessageText);
             var isReady = IsReadyToBook(state);
+            var pendingBooking = _pendingBookingStore.Get(message.SenderNumber);
+            var summaryWasShown = pendingBooking?.SummaryShown ?? false;
+
             if (isConfirming)
             {
                 _logger.LogInformation(
-                    "Confirm gate: confirming={Confirming} ready={Ready} state(fecha={Fecha}, hora={Hora}, personas={Personas}, arrozType={ArrozType}, arrozServings={ArrozServings}, tronas={Tronas}, carritos={Carritos})",
+                    "Confirm gate: confirming={Confirming} ready={Ready} summaryShown={SummaryShown} state(fecha={Fecha}, hora={Hora}, personas={Personas}, arrozType={ArrozType}, arrozServings={ArrozServings}, tronas={Tronas}, carritos={Carritos})",
                     isConfirming,
                     isReady,
+                    summaryWasShown,
                     state.Fecha,
                     state.Hora,
                     state.Personas,
@@ -283,7 +446,30 @@ public class WebhookController : ControllerBase
                     state.BabyStrollers);
             }
 
-            if (isConfirming && isReady)
+            // Handle decline after seeing summary
+            if (isDeclining && summaryWasShown)
+            {
+                _logger.LogInformation("User declined booking after seeing summary for {Phone}", message.SenderNumber);
+                _pendingBookingStore.Clear(message.SenderNumber);
+
+                await _historyService.AddMessageAsync(
+                    message.SenderNumber,
+                    ChatMessage.FromUser(message.MessageText, message.PushName),
+                    cancellationToken);
+
+                var declineResponse = "Entendido, he cancelado la reserva. ¿Te gustaría empezar de nuevo o necesitas algo más?";
+                await _whatsApp.SendTextAsync(message.SenderNumber, declineResponse, cancellationToken);
+
+                await _historyService.AddMessageAsync(
+                    message.SenderNumber,
+                    ChatMessage.FromAssistant(declineResponse),
+                    cancellationToken);
+
+                return Ok(new { processed = true, bookingDeclined = true });
+            }
+
+            // Only create booking if user confirms AND summary was shown
+            if (isConfirming && isReady && summaryWasShown)
             {
                 var arrozType = string.IsNullOrWhiteSpace(state.ArrozType) ? null : state.ArrozType;
                 var arrozServings = arrozType == null ? null : state.ArrozServings;
@@ -298,7 +484,8 @@ public class WebhookController : ControllerBase
                     ArrozType = arrozType,
                     ArrozServings = arrozServings,
                     HighChairs = Math.Clamp(state.HighChairs ?? 0, 0, 3),
-                    BabyStrollers = Math.Clamp(state.BabyStrollers ?? 0, 0, 3)
+                    BabyStrollers = Math.Clamp(state.BabyStrollers ?? 0, 0, 3),
+                    SummaryShown = true
                 };
 
                 var createdResponse = await _bookingHandler.CreateBookingAsync(
@@ -379,8 +566,9 @@ public class WebhookController : ControllerBase
             }
 
             // 4. Process with main agent
+            // Pass existing bookings context so AI knows about user's reservations
             var agentResponse = await _mainAgent.ProcessAsync(
-                message, state, history, cancellationToken) ?? AgentResponse.Error("Main agent returned null");
+                message, state, history, existingBookings, cancellationToken) ?? AgentResponse.Error("Main agent returned null");
 
             // 5. Route based on intent
             var finalResponse = await _intentRouter.RouteAsync(
@@ -614,9 +802,21 @@ public class WebhookController : ControllerBase
         string restaurantId,
         WhatsAppMessage message,
         ConversationState state,
+        int existingBookingsCount,
         CancellationToken cancellationToken)
     {
         var updatedState = state;
+
+        // === MODIFICATION CONTEXT DETECTION ===
+        // If user has existing bookings and is talking about their reservation,
+        // skip the pre-checks and let the AI route to modification flow
+        if (IsModificationContext(message.MessageText, existingBookingsCount))
+        {
+            _logger.LogInformation(
+                "Modification context detected for {Phone} (has {Count} bookings), skipping pre-checks",
+                message.SenderNumber, existingBookingsCount);
+            return (false, "", updatedState);
+        }
 
         // === Event booking detection (weddings, birthdays, communions, etc.) ===
         if (IsEventBookingRequest(message.MessageText))
@@ -949,27 +1149,45 @@ public class WebhookController : ControllerBase
 
             // Deterministic short-circuit: if the rice is valid, continue the booking flow in code
             // to prevent the LLM from hallucinating that a DB-valid rice "is not in the menu".
-            // We only guide to the next missing piece of info; other turns can proceed normally.
+            // Use smart batching to ask for multiple missing fields at once.
             if (!string.IsNullOrWhiteSpace(updatedState.ArrozType))
             {
-                // Ask missing basics first
-                if (string.IsNullOrWhiteSpace(updatedState.Fecha))
+                // Collect all missing basic fields
+                var missingBasics = new List<string>();
+                if (string.IsNullOrWhiteSpace(updatedState.Fecha)) missingBasics.Add("fecha");
+                if (string.IsNullOrWhiteSpace(updatedState.Hora)) missingBasics.Add("hora");
+                if (!updatedState.Personas.HasValue || updatedState.Personas.Value <= 0) missingBasics.Add("personas");
+
+                // Smart batching: ask for multiple missing basic fields at once
+                if (missingBasics.Count >= 2)
                 {
-                    var msg = $"✅ {updatedState.ArrozType} disponible. ¿Para qué *día* sería la reserva?";
+                    var questionParts = missingBasics.Select(f => f switch
+                    {
+                        "fecha" => "qué *día*",
+                        "hora" => "a qué *hora*",
+                        "personas" => "*cuántas personas*",
+                        _ => f
+                    }).ToList();
+
+                    var question = missingBasics.Count == 3
+                        ? $"¿Para {questionParts[0]}, {questionParts[1]} y {questionParts[2]}?"
+                        : $"¿Para {questionParts[0]} y {questionParts[1]}?";
+
+                    var msg = $"✅ {updatedState.ArrozType} disponible. {question}";
                     await _whatsApp.SendTextAsync(message.SenderNumber, msg, cancellationToken);
                     return (true, msg, updatedState);
                 }
 
-                if (!updatedState.Personas.HasValue || updatedState.Personas.Value <= 0)
+                // Single missing basic field
+                if (missingBasics.Count == 1)
                 {
-                    var msg = $"✅ {updatedState.ArrozType} disponible. ¿Para cuántas *personas* sería?";
-                    await _whatsApp.SendTextAsync(message.SenderNumber, msg, cancellationToken);
-                    return (true, msg, updatedState);
-                }
-
-                if (string.IsNullOrWhiteSpace(updatedState.Hora))
-                {
-                    var msg = $"✅ {updatedState.ArrozType} disponible. ¿A qué *hora* os viene bien?";
+                    var msg = missingBasics[0] switch
+                    {
+                        "fecha" => $"✅ {updatedState.ArrozType} disponible. ¿Para qué *día* sería la reserva?",
+                        "hora" => $"✅ {updatedState.ArrozType} disponible. ¿A qué *hora* os viene bien?",
+                        "personas" => $"✅ {updatedState.ArrozType} disponible. ¿Para cuántas *personas* sería?",
+                        _ => $"✅ {updatedState.ArrozType} disponible."
+                    };
                     await _whatsApp.SendTextAsync(message.SenderNumber, msg, cancellationToken);
                     return (true, msg, updatedState);
                 }
@@ -1111,6 +1329,194 @@ public class WebhookController : ControllerBase
                t.Contains("no queremos arroz") ||
                t.Contains("no, sin arroz") ||
                t == "no";
+    }
+
+    /// <summary>
+    /// Detects if the user's message is about modifying an existing booking.
+    /// Returns true if modification keywords are present AND user has existing bookings.
+    /// </summary>
+    private static bool IsModificationContext(string messageText, int existingBookingsCount)
+    {
+        if (existingBookingsCount == 0) return false;
+
+        var text = messageText.ToLowerInvariant();
+
+        // Patterns that indicate modification of existing booking
+        // "añadir arroz a mi reserva", "incluir arroz en la reserva", etc.
+        if (System.Text.RegularExpressions.Regex.IsMatch(text,
+            @"(añadir|incluir|agregar|poner).*(mi\s+)?reserva"))
+            return true;
+
+        // "mi reserva", "la reserva", "esta reserva" (referencing existing booking)
+        if (System.Text.RegularExpressions.Regex.IsMatch(text,
+            @"(mi|la|esta)\s+reserva"))
+            return true;
+
+        // "modificar la reserva", "cambiar la hora", etc.
+        if (System.Text.RegularExpressions.Regex.IsMatch(text,
+            @"(modificar|cambiar).*(reserva|arroz|fecha|hora|personas)"))
+            return true;
+
+        // "para mi reserva", "a mi reserva", "en mi reserva"
+        if (System.Text.RegularExpressions.Regex.IsMatch(text,
+            @"(para|a|en)\s+(mi|la)\s+reserva"))
+            return true;
+
+        // "de los 6" pattern from the example: "arroz a banda para 4 de los 6"
+        // This indicates user knows how many people are in their existing booking
+        if (System.Text.RegularExpressions.Regex.IsMatch(text,
+            @"para\s+\d+\s+de\s+(los|las)\s+\d+"))
+            return true;
+
+        return false;
+    }
+
+    /// <summary>
+    /// Detects if user wants to add/modify rice on their existing booking.
+    /// Returns extracted rice type if found.
+    /// Note: The extracted rice type is a rough extraction - it will be validated/normalized
+    /// by RiceValidatorAgent in the ModificationHandler.
+    /// </summary>
+    private static (bool IsRiceModification, string? RiceType, int? Servings) DetectRiceModificationIntent(
+        string messageText,
+        int existingBookingsCount)
+    {
+        if (existingBookingsCount == 0) return (false, null, null);
+
+        var text = messageText.ToLowerInvariant();
+
+        // Check for rice + reservation context combination
+        var hasRiceKeyword = System.Text.RegularExpressions.Regex.IsMatch(text,
+            @"\b(arroz|paella|fideu[aá]?|meloso|caldoso|banda|señoret|señorito|bogavante|negro|albufera|chorizo|mariscos?)\b");
+
+        // Broader reservation context patterns
+        var hasReservationContext = System.Text.RegularExpressions.Regex.IsMatch(text,
+            @"(añadir|incluir|agregar|poner|quiero).*(reserva|para\s+\d+\s+de)|" +
+            @"(mi|la|esta)\s+reserva|" +
+            @"(en|a|para)\s+(mi|la)\s+reserva|" +
+            @"para\s+\d+\s+de\s+(los|las)\s+\d+|" +
+            @"(podría|podria|puedo).*(incluir|añadir)");
+
+        if (hasRiceKeyword && hasReservationContext)
+        {
+            // Try to extract the rice type with improved patterns
+            string? riceType = null;
+
+            // Pattern 1: "arroz a banda", "arroz del señoret", "arroz meloso con..."
+            var riceMatch = System.Text.RegularExpressions.Regex.Match(text,
+                @"(arroz\s+(?:a\s+la\s+|del?\s+|al?\s+)?[a-záéíóúñ]+(?:\s+(?:con|de)\s+[a-záéíóúñ]+)?)",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+            if (riceMatch.Success)
+            {
+                riceType = riceMatch.Value.Trim();
+            }
+            else
+            {
+                // Pattern 2: "paella valenciana", "paella de marisco"
+                riceMatch = System.Text.RegularExpressions.Regex.Match(text,
+                    @"(paella\s+(?:de\s+)?[a-záéíóúñ]+)",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (riceMatch.Success)
+                {
+                    riceType = riceMatch.Value.Trim();
+                }
+                else
+                {
+                    // Pattern 3: "fideuá", "fideuà de marisco"
+                    riceMatch = System.Text.RegularExpressions.Regex.Match(text,
+                        @"(fideu[aá]\s*(?:de\s+)?[a-záéíóúñ]*)",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (riceMatch.Success)
+                    {
+                        riceType = riceMatch.Value.Trim();
+                    }
+                }
+            }
+
+            // Clean up extracted rice type (remove extra spaces, normalize)
+            if (riceType != null)
+            {
+                riceType = System.Text.RegularExpressions.Regex.Replace(riceType, @"\s+", " ").Trim();
+                // Remove trailing prepositions if they got captured
+                riceType = System.Text.RegularExpressions.Regex.Replace(riceType, @"\s+(para|en|a)$", "").Trim();
+            }
+
+            // Try to extract servings if mentioned
+            int? servings = null;
+            
+            // Pattern: "para 4 de los 6", "para 4 personas", "4 raciones"
+            var servingsMatch = System.Text.RegularExpressions.Regex.Match(text,
+                @"(?:para\s+)?(\d+)\s+(?:de\s+(?:los|las)\s+\d+|personas?|raciones?)");
+            if (servingsMatch.Success && int.TryParse(servingsMatch.Groups[1].Value, out var s))
+            {
+                servings = s;
+            }
+            else
+            {
+                // Also try just a number at the end: "arroz a banda para 4"
+                var simpleServings = System.Text.RegularExpressions.Regex.Match(text,
+                    @"para\s+(\d+)(?:\s|$)");
+                if (simpleServings.Success && int.TryParse(simpleServings.Groups[1].Value, out var s2))
+                {
+                    servings = s2;
+                }
+            }
+
+            return (true, riceType, servings);
+        }
+
+        return (false, null, null);
+    }
+
+    /// <summary>
+    /// Detects if the message is a forwarded booking confirmation.
+    /// Returns true if the message contains confirmation markers.
+    /// </summary>
+    private static bool IsForwardedConfirmation(string messageText)
+    {
+        // Check for confirmation message markers (with or without emojis)
+        return (messageText.Contains("Confirmación de Reserva") ||
+                messageText.Contains("Confirmacion de Reserva")) &&
+               (messageText.Contains("Alquería Villa Carmen") ||
+                messageText.Contains("Alqueria Villa Carmen"));
+    }
+
+    /// <summary>
+    /// Parses booking details from a forwarded confirmation message.
+    /// Returns parsed date/time if successful.
+    /// </summary>
+    private static (string? Date, string? Time, int? People) ParseForwardedConfirmation(string messageText)
+    {
+        string? date = null;
+        string? time = null;
+        int? people = null;
+
+        // Extract date (pattern: "Fecha: 07/02/2026" with or without emoji)
+        var dateMatch = System.Text.RegularExpressions.Regex.Match(
+            messageText, @"Fecha:\s*(\d{2}/\d{2}/\d{4})");
+        if (dateMatch.Success)
+        {
+            date = dateMatch.Groups[1].Value;
+        }
+
+        // Extract time (pattern: "Hora: 15:00" with or without emoji)
+        var timeMatch = System.Text.RegularExpressions.Regex.Match(
+            messageText, @"Hora:\s*(\d{2}:\d{2})");
+        if (timeMatch.Success)
+        {
+            time = timeMatch.Groups[1].Value;
+        }
+
+        // Extract people count (pattern: "Personas: 6" with or without emoji)
+        var peopleMatch = System.Text.RegularExpressions.Regex.Match(
+            messageText, @"Personas:\s*(\d+)");
+        if (peopleMatch.Success && int.TryParse(peopleMatch.Groups[1].Value, out var p))
+        {
+            people = p;
+        }
+
+        return (date, time, people);
     }
 
     private static bool IsEventBookingRequest(string text)
@@ -1540,8 +1946,16 @@ public class WebhookController : ControllerBase
     {
         var t = (text ?? "").Trim().ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(t)) return false;
-        if (t == "si" || t == "sí" || t == "ok" || t == "vale") return true;
-        return t.Contains("confirmo") || t.Contains("confirmar") || t.Contains("sí, confirmo") || t.Contains("si, confirmo");
+        if (t == "si" || t == "sí" || t == "ok" || t == "vale" || t == "perfecto" || t == "adelante") return true;
+        return t.Contains("confirmo") || t.Contains("confirmar") || t.Contains("sí, confirmo") || t.Contains("si, confirmo") || t.Contains("de acuerdo");
+    }
+
+    private static bool IsUserDeclining(string text)
+    {
+        var t = (text ?? "").Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(t)) return false;
+        if (t == "no" || t == "cancelar" || t == "anular" || t == "dejalo" || t == "déjalo") return true;
+        return t.Contains("no confirmo") || t.Contains("no quiero") || t.Contains("cancela");
     }
 
     private static bool IsReadyToBook(ConversationState state)

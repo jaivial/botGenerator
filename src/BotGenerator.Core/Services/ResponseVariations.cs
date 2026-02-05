@@ -1157,6 +1157,131 @@ public static class ResponseVariations
         "Vale. ¿Me indicas *fecha*, *hora* y *personas* para la reserva?"
     });
 
+    /// <summary>
+    /// Builds a booking confirmation summary for user to review before final confirmation.
+    /// </summary>
+    public static string BuildBookingSummary(
+        string fecha,
+        string hora,
+        int personas,
+        string? arrozType,
+        int? arrozServings,
+        int tronas,
+        int carritos)
+    {
+        var intro = Pick(new[]
+        {
+            "Perfecto, aquí tienes el resumen de tu reserva:",
+            "¡Genial! Te resumo los datos de tu reserva:",
+            "De acuerdo. Este es el resumen de tu reserva:",
+            "Vale, te confirmo los datos de la reserva:",
+            "Muy bien. Resumen de tu reserva:"
+        });
+
+        var riceText = string.IsNullOrEmpty(arrozType)
+            ? "Sin arroz"
+            : $"{arrozType} ({arrozServings} raciones)";
+
+        var extrasText = new System.Text.StringBuilder();
+        if (tronas > 0)
+            extrasText.Append($"{tronas} trona{(tronas > 1 ? "s" : "")}");
+        if (carritos > 0)
+        {
+            if (extrasText.Length > 0) extrasText.Append(", ");
+            extrasText.Append($"{carritos} carrito{(carritos > 1 ? "s" : "")}");
+        }
+        if (extrasText.Length == 0)
+            extrasText.Append("Ninguno");
+
+        var summary = $@"{intro}
+
+📅 *Fecha:* {fecha}
+🕐 *Hora:* {hora}
+👥 *Personas:* {personas}
+🍚 *Arroz:* {riceText}
+👶 *Extras:* {extrasText}
+
+*¿Confirmo la reserva?* (Sí/No)";
+
+        return summary;
+    }
+
+    /// <summary>
+    /// Smart prompt for collecting multiple missing fields at once.
+    /// </summary>
+    public static string AskMissingFields(List<string> missingFields)
+    {
+        if (missingFields.Count == 0)
+            return "¡Todo listo para confirmar!";
+
+        if (missingFields.Count == 1)
+        {
+            return missingFields[0] switch
+            {
+                "fecha" => AskDate(),
+                "hora" => AskTime(),
+                "personas" => AskPeople(),
+                "arroz" => AskRice(),
+                "raciones" => AskRicePortions(),
+                "tronas" => AskTronas(),
+                "carritos" => AskCarritos(),
+                _ => $"¿Me dices {missingFields[0]}?"
+            };
+        }
+
+        // Multiple missing fields - batch them naturally
+        var fieldNames = missingFields.Select(f => f switch
+        {
+            "fecha" => "qué *día*",
+            "hora" => "a qué *hora*",
+            "personas" => "para *cuántas personas*",
+            "arroz" => "si queréis *arroz*",
+            "raciones" => "*cuántas raciones*",
+            "tronas" => "si necesitáis *tronas*",
+            "carritos" => "si traéis *carrito*",
+            _ => f
+        }).ToList();
+
+        if (fieldNames.Count == 2)
+        {
+            return Pick(new[]
+            {
+                $"Solo me falta saber {fieldNames[0]} y {fieldNames[1]}.",
+                $"¿Me dices {fieldNames[0]} y {fieldNames[1]}?",
+                $"Necesito saber {fieldNames[0]} y {fieldNames[1]}.",
+                $"Para completar la reserva, dime {fieldNames[0]} y {fieldNames[1]}."
+            });
+        }
+
+        // 3+ fields
+        var lastField = fieldNames.Last();
+        var otherFields = string.Join(", ", fieldNames.Take(fieldNames.Count - 1));
+        return Pick(new[]
+        {
+            $"Me falta saber {otherFields} y {lastField}.",
+            $"¿Me dices {otherFields} y {lastField}?",
+            $"Necesito que me confirmes {otherFields} y {lastField}.",
+            $"Para la reserva necesito: {otherFields} y {lastField}."
+        });
+    }
+
+    /// <summary>
+    /// Asking for party size.
+    /// </summary>
+    public static string AskPeople() => Pick(new[]
+    {
+        "¿Para cuántas personas?",
+        "¿Cuántos seréis?",
+        "¿Para cuántas personas sería?",
+        "¿Cuántos comensales?",
+        "¿Para cuántas personas os reservo?",
+        "¿Cuántos vais a ser?",
+        "¿Para cuántas personas es la reserva?",
+        "¿Cuántas personas vendréis?",
+        "¿Para cuántos?",
+        "¿Cuántos seréis en total?"
+    });
+
     private static string Pick(string[] options) =>
         options[_random.Next(options.Length)];
 }

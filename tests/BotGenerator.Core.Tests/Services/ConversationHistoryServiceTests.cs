@@ -13,6 +13,8 @@ namespace BotGenerator.Core.Tests.Services;
 /// </summary>
 public class ConversationHistoryServiceTests
 {
+    private readonly Mock<IMessageRepository> _messageRepositoryMock;
+    private readonly Mock<IExternalBookingService> _externalBookingServiceMock;
     private readonly Mock<IContextBuilderService> _contextBuilderMock;
     private readonly Mock<ILogger<ConversationHistoryService>> _loggerMock;
     private readonly IConfiguration _configuration;
@@ -20,6 +22,8 @@ public class ConversationHistoryServiceTests
 
     public ConversationHistoryServiceTests()
     {
+        _messageRepositoryMock = new Mock<IMessageRepository>();
+        _externalBookingServiceMock = new Mock<IExternalBookingService>();
         _contextBuilderMock = new Mock<IContextBuilderService>();
         _loggerMock = new Mock<ILogger<ConversationHistoryService>>();
 
@@ -33,7 +37,14 @@ public class ConversationHistoryServiceTests
             .AddInMemoryCollection(configDict!)
             .Build();
 
+        // Default mock behavior - return empty message list
+        _messageRepositoryMock
+            .Setup(x => x.GetMessagesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ChatMessage>());
+
         _service = new ConversationHistoryService(
+            _messageRepositoryMock.Object,
+            _externalBookingServiceMock.Object,
             _contextBuilderMock.Object,
             _configuration,
             _loggerMock.Object);
@@ -180,6 +191,8 @@ public class ConversationHistoryServiceTests
             .Build();
 
         var testService = new TestableConversationHistoryService(
+            _messageRepositoryMock.Object,
+            _externalBookingServiceMock.Object,
             _contextBuilderMock.Object,
             testConfig,
             _loggerMock.Object);
@@ -222,10 +235,12 @@ public class ConversationHistoryServiceTests
         private readonly Dictionary<string, DateTime> _lastActivity = new();
 
         public TestableConversationHistoryService(
+            IMessageRepository messageRepository,
+            IExternalBookingService externalBookingService,
             IContextBuilderService contextBuilder,
             IConfiguration configuration,
             ILogger<ConversationHistoryService> logger)
-            : base(contextBuilder, configuration, logger)
+            : base(messageRepository, externalBookingService, contextBuilder, configuration, logger)
         {
         }
 

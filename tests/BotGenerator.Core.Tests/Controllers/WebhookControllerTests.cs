@@ -22,7 +22,9 @@ public class WebhookControllerTests
     private readonly Mock<IMenuRepository> _menuRepositoryMock;
     private readonly Mock<IRiceValidatorService> _riceValidatorMock;
     private readonly Mock<IBookingAvailabilityService> _availabilityMock;
+    private readonly Mock<IBookingRepository> _bookingRepositoryMock;
     private readonly Mock<BookingHandler> _bookingHandlerMock;
+    private readonly Mock<IGeminiService> _geminiServiceMock;
     private readonly IConfiguration _configuration;
     private readonly Mock<IHostEnvironment> _environmentMock;
     private readonly Mock<ILogger<WebhookController>> _loggerMock;
@@ -39,9 +41,16 @@ public class WebhookControllerTests
         _menuRepositoryMock = new Mock<IMenuRepository>();
         _riceValidatorMock = new Mock<IRiceValidatorService>();
         _availabilityMock = new Mock<IBookingAvailabilityService>();
-        _bookingHandlerMock = new Mock<BookingHandler>(MockBehavior.Loose, null!, null!, null!, null!);
+        _bookingRepositoryMock = new Mock<IBookingRepository>();
+        _bookingHandlerMock = new Mock<BookingHandler>(MockBehavior.Loose, null!, null!, null!);
+        _geminiServiceMock = new Mock<IGeminiService>();
         _environmentMock = new Mock<IHostEnvironment>();
         _loggerMock = new Mock<ILogger<WebhookController>>();
+
+        // Default booking repository behavior - return empty list
+        _bookingRepositoryMock
+            .Setup(x => x.FindBookingsByPhoneAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<BotGenerator.Core.Models.BookingRecord>());
 
         _configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -90,7 +99,9 @@ public class WebhookControllerTests
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
             _availabilityMock.Object,
+            _bookingRepositoryMock.Object,
             _bookingHandlerMock.Object,
+            _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
             _loggerMock.Object);
@@ -198,7 +209,9 @@ public class WebhookControllerTests
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
             _availabilityMock.Object,
+            _bookingRepositoryMock.Object,
             _bookingHandlerMock.Object,
+            _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
             _loggerMock.Object);
@@ -236,7 +249,8 @@ public class WebhookControllerTests
                 It.IsAny<BotGenerator.Core.Models.WhatsAppMessage>(),
                 It.IsAny<BotGenerator.Core.Models.ConversationState?>(),
                 It.IsAny<List<BotGenerator.Core.Models.ChatMessage>>(),
-                It.IsAny<BotGenerator.Core.Models.RestaurantConfig>()))
+                It.IsAny<List<BotGenerator.Core.Models.BookingRecord>?>(),
+                It.IsAny<BotGenerator.Core.Models.RestaurantConfig?>()))
             .Returns(new Dictionary<string, object>());
 
         geminiMock.Setup(x => x.GenerateAsync(
@@ -318,7 +332,9 @@ public class WebhookControllerTests
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
             _availabilityMock.Object,
+            _bookingRepositoryMock.Object,
             _bookingHandlerMock.Object,
+            _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
             _loggerMock.Object);
@@ -376,7 +392,9 @@ public class WebhookControllerTests
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
             _availabilityMock.Object,
+            _bookingRepositoryMock.Object,
             _bookingHandlerMock.Object,
+            _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
             _loggerMock.Object);
@@ -439,7 +457,9 @@ public class WebhookControllerTests
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
             _availabilityMock.Object,
+            _bookingRepositoryMock.Object,
             _bookingHandlerMock.Object,
+            _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
             _loggerMock.Object);
@@ -520,7 +540,9 @@ public class WebhookControllerTests
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
             _availabilityMock.Object,
+            _bookingRepositoryMock.Object,
             _bookingHandlerMock.Object,
+            _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
             _loggerMock.Object);
@@ -601,7 +623,9 @@ public class WebhookControllerTests
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
             _availabilityMock.Object,
+            _bookingRepositoryMock.Object,
             _bookingHandlerMock.Object,
+            _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
             _loggerMock.Object);
@@ -681,7 +705,9 @@ public class WebhookControllerTests
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
             _availabilityMock.Object,
+            _bookingRepositoryMock.Object,
             _bookingHandlerMock.Object,
+            _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
             _loggerMock.Object);
@@ -719,7 +745,8 @@ public class WebhookControllerTests
                 It.IsAny<BotGenerator.Core.Models.WhatsAppMessage>(),
                 It.IsAny<BotGenerator.Core.Models.ConversationState?>(),
                 It.IsAny<List<BotGenerator.Core.Models.ChatMessage>>(),
-                It.IsAny<BotGenerator.Core.Models.RestaurantConfig>()))
+                It.IsAny<List<BotGenerator.Core.Models.BookingRecord>?>(),
+                It.IsAny<BotGenerator.Core.Models.RestaurantConfig?>()))
             .Returns(new Dictionary<string, object>());
 
         geminiMock.Setup(x => x.GenerateAsync(
@@ -797,7 +824,9 @@ public class WebhookControllerTests
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
             _availabilityMock.Object,
+            _bookingRepositoryMock.Object,
             _bookingHandlerMock.Object,
+            _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
             _loggerMock.Object);
@@ -835,7 +864,8 @@ public class WebhookControllerTests
                 It.IsAny<BotGenerator.Core.Models.WhatsAppMessage>(),
                 It.IsAny<BotGenerator.Core.Models.ConversationState?>(),
                 It.IsAny<List<BotGenerator.Core.Models.ChatMessage>>(),
-                It.IsAny<BotGenerator.Core.Models.RestaurantConfig>()))
+                It.IsAny<List<BotGenerator.Core.Models.BookingRecord>?>(),
+                It.IsAny<BotGenerator.Core.Models.RestaurantConfig?>()))
             .Returns(new Dictionary<string, object>());
 
         BotGenerator.Core.Models.WhatsAppMessage? capturedMessage = null;
@@ -908,7 +938,9 @@ public class WebhookControllerTests
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
             _availabilityMock.Object,
+            _bookingRepositoryMock.Object,
             _bookingHandlerMock.Object,
+            _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
             _loggerMock.Object);
@@ -947,7 +979,8 @@ public class WebhookControllerTests
                 It.IsAny<BotGenerator.Core.Models.WhatsAppMessage>(),
                 It.IsAny<BotGenerator.Core.Models.ConversationState?>(),
                 It.IsAny<List<BotGenerator.Core.Models.ChatMessage>>(),
-                It.IsAny<BotGenerator.Core.Models.RestaurantConfig>()))
+                It.IsAny<List<BotGenerator.Core.Models.BookingRecord>?>(),
+                It.IsAny<BotGenerator.Core.Models.RestaurantConfig?>()))
             .Returns(new Dictionary<string, object>());
 
         BotGenerator.Core.Models.WhatsAppMessage? capturedMessage = null;
@@ -1021,7 +1054,9 @@ public class WebhookControllerTests
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
             _availabilityMock.Object,
+            _bookingRepositoryMock.Object,
             _bookingHandlerMock.Object,
+            _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
             _loggerMock.Object);
@@ -1064,7 +1099,8 @@ public class WebhookControllerTests
                 It.IsAny<BotGenerator.Core.Models.WhatsAppMessage>(),
                 It.IsAny<BotGenerator.Core.Models.ConversationState?>(),
                 It.IsAny<List<BotGenerator.Core.Models.ChatMessage>>(),
-                It.IsAny<BotGenerator.Core.Models.RestaurantConfig>()))
+                It.IsAny<List<BotGenerator.Core.Models.BookingRecord>?>(),
+                It.IsAny<BotGenerator.Core.Models.RestaurantConfig?>()))
             .Returns(new Dictionary<string, object>());
 
         BotGenerator.Core.Models.WhatsAppMessage? capturedMessage = null;
@@ -1138,7 +1174,9 @@ public class WebhookControllerTests
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
             _availabilityMock.Object,
+            _bookingRepositoryMock.Object,
             _bookingHandlerMock.Object,
+            _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
             _loggerMock.Object);
@@ -1176,7 +1214,8 @@ public class WebhookControllerTests
                 It.IsAny<BotGenerator.Core.Models.WhatsAppMessage>(),
                 It.IsAny<BotGenerator.Core.Models.ConversationState?>(),
                 It.IsAny<List<BotGenerator.Core.Models.ChatMessage>>(),
-                It.IsAny<BotGenerator.Core.Models.RestaurantConfig>()))
+                It.IsAny<List<BotGenerator.Core.Models.BookingRecord>?>(),
+                It.IsAny<BotGenerator.Core.Models.RestaurantConfig?>()))
             .Returns(new Dictionary<string, object>());
 
         BotGenerator.Core.Models.WhatsAppMessage? capturedMessage = null;
@@ -1249,7 +1288,9 @@ public class WebhookControllerTests
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
             _availabilityMock.Object,
+            _bookingRepositoryMock.Object,
             _bookingHandlerMock.Object,
+            _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
             _loggerMock.Object);
@@ -1288,7 +1329,8 @@ public class WebhookControllerTests
                 It.IsAny<BotGenerator.Core.Models.WhatsAppMessage>(),
                 It.IsAny<BotGenerator.Core.Models.ConversationState?>(),
                 It.IsAny<List<BotGenerator.Core.Models.ChatMessage>>(),
-                It.IsAny<BotGenerator.Core.Models.RestaurantConfig>()))
+                It.IsAny<List<BotGenerator.Core.Models.BookingRecord>?>(),
+                It.IsAny<BotGenerator.Core.Models.RestaurantConfig?>()))
             .Returns(new Dictionary<string, object>());
 
         BotGenerator.Core.Models.WhatsAppMessage? capturedMessage = null;
@@ -1365,7 +1407,9 @@ public class WebhookControllerTests
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
             _availabilityMock.Object,
+            _bookingRepositoryMock.Object,
             _bookingHandlerMock.Object,
+            _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
             _loggerMock.Object);
@@ -1404,7 +1448,8 @@ public class WebhookControllerTests
                 It.IsAny<BotGenerator.Core.Models.WhatsAppMessage>(),
                 It.IsAny<BotGenerator.Core.Models.ConversationState?>(),
                 It.IsAny<List<BotGenerator.Core.Models.ChatMessage>>(),
-                It.IsAny<BotGenerator.Core.Models.RestaurantConfig>()))
+                It.IsAny<List<BotGenerator.Core.Models.BookingRecord>?>(),
+                It.IsAny<BotGenerator.Core.Models.RestaurantConfig?>()))
             .Returns(new Dictionary<string, object>());
 
         BotGenerator.Core.Models.WhatsAppMessage? capturedMessage = null;
@@ -1478,7 +1523,9 @@ public class WebhookControllerTests
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
             _availabilityMock.Object,
+            _bookingRepositoryMock.Object,
             _bookingHandlerMock.Object,
+            _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
             _loggerMock.Object);
@@ -1521,7 +1568,8 @@ public class WebhookControllerTests
                 It.IsAny<BotGenerator.Core.Models.WhatsAppMessage>(),
                 It.IsAny<BotGenerator.Core.Models.ConversationState?>(),
                 It.IsAny<List<BotGenerator.Core.Models.ChatMessage>>(),
-                It.IsAny<BotGenerator.Core.Models.RestaurantConfig>()))
+                It.IsAny<List<BotGenerator.Core.Models.BookingRecord>?>(),
+                It.IsAny<BotGenerator.Core.Models.RestaurantConfig?>()))
             .Returns(new Dictionary<string, object>());
 
         BotGenerator.Core.Models.WhatsAppMessage? capturedMessage = null;
@@ -1595,7 +1643,9 @@ public class WebhookControllerTests
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
             _availabilityMock.Object,
+            _bookingRepositoryMock.Object,
             _bookingHandlerMock.Object,
+            _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
             _loggerMock.Object);
@@ -1635,7 +1685,8 @@ public class WebhookControllerTests
                 It.IsAny<BotGenerator.Core.Models.WhatsAppMessage>(),
                 It.IsAny<BotGenerator.Core.Models.ConversationState?>(),
                 It.IsAny<List<BotGenerator.Core.Models.ChatMessage>>(),
-                It.IsAny<BotGenerator.Core.Models.RestaurantConfig>()))
+                It.IsAny<List<BotGenerator.Core.Models.BookingRecord>?>(),
+                It.IsAny<BotGenerator.Core.Models.RestaurantConfig?>()))
             .Returns(new Dictionary<string, object>());
 
         BotGenerator.Core.Models.WhatsAppMessage? capturedMessage = null;
@@ -1716,7 +1767,9 @@ public class WebhookControllerTests
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
             _availabilityMock.Object,
+            _bookingRepositoryMock.Object,
             _bookingHandlerMock.Object,
+            _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
             _loggerMock.Object);
@@ -1760,7 +1813,8 @@ public class WebhookControllerTests
                 It.IsAny<BotGenerator.Core.Models.WhatsAppMessage>(),
                 It.IsAny<BotGenerator.Core.Models.ConversationState?>(),
                 It.IsAny<List<BotGenerator.Core.Models.ChatMessage>>(),
-                null))
+                It.IsAny<List<BotGenerator.Core.Models.BookingRecord>?>(),
+                It.IsAny<BotGenerator.Core.Models.RestaurantConfig?>()))
             .Returns(new Dictionary<string, object>());
 
         geminiMock.Setup(x => x.GenerateAsync(
@@ -1846,7 +1900,9 @@ public class WebhookControllerTests
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
             _availabilityMock.Object,
+            _bookingRepositoryMock.Object,
             _bookingHandlerMock.Object,
+            _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
             _loggerMock.Object);
@@ -1890,7 +1946,8 @@ public class WebhookControllerTests
                 It.IsAny<BotGenerator.Core.Models.WhatsAppMessage>(),
                 It.IsAny<BotGenerator.Core.Models.ConversationState?>(),
                 It.IsAny<List<BotGenerator.Core.Models.ChatMessage>>(),
-                null))
+                It.IsAny<List<BotGenerator.Core.Models.BookingRecord>?>(),
+                It.IsAny<BotGenerator.Core.Models.RestaurantConfig?>()))
             .Returns(new Dictionary<string, object>());
 
         geminiMock.Setup(x => x.GenerateAsync(
@@ -1982,7 +2039,9 @@ public class WebhookControllerTests
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
             _availabilityMock.Object,
+            _bookingRepositoryMock.Object,
             _bookingHandlerMock.Object,
+            _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
             _loggerMock.Object);
@@ -2020,7 +2079,8 @@ public class WebhookControllerTests
                 It.IsAny<BotGenerator.Core.Models.WhatsAppMessage>(),
                 It.IsAny<BotGenerator.Core.Models.ConversationState?>(),
                 It.IsAny<List<BotGenerator.Core.Models.ChatMessage>>(),
-                null))
+                It.IsAny<List<BotGenerator.Core.Models.BookingRecord>?>(),
+                It.IsAny<BotGenerator.Core.Models.RestaurantConfig?>()))
             .Returns(new Dictionary<string, object>());
 
         geminiMock.Setup(x => x.GenerateAsync(
@@ -2099,7 +2159,9 @@ public class WebhookControllerTests
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
             _availabilityMock.Object,
+            _bookingRepositoryMock.Object,
             _bookingHandlerMock.Object,
+            _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
             _loggerMock.Object);
@@ -2137,7 +2199,8 @@ public class WebhookControllerTests
                 It.IsAny<BotGenerator.Core.Models.WhatsAppMessage>(),
                 It.IsAny<BotGenerator.Core.Models.ConversationState?>(),
                 It.IsAny<List<BotGenerator.Core.Models.ChatMessage>>(),
-                null))
+                It.IsAny<List<BotGenerator.Core.Models.BookingRecord>?>(),
+                It.IsAny<BotGenerator.Core.Models.RestaurantConfig?>()))
             .Returns(new Dictionary<string, object>());
 
         geminiMock.Setup(x => x.GenerateAsync(
@@ -2222,7 +2285,9 @@ public class WebhookControllerTests
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
             _availabilityMock.Object,
+            _bookingRepositoryMock.Object,
             _bookingHandlerMock.Object,
+            _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
             _loggerMock.Object);
@@ -2260,7 +2325,8 @@ public class WebhookControllerTests
                 It.IsAny<BotGenerator.Core.Models.WhatsAppMessage>(),
                 It.IsAny<BotGenerator.Core.Models.ConversationState?>(),
                 It.IsAny<List<BotGenerator.Core.Models.ChatMessage>>(),
-                null))
+                It.IsAny<List<BotGenerator.Core.Models.BookingRecord>?>(),
+                It.IsAny<BotGenerator.Core.Models.RestaurantConfig?>()))
             .Returns(new Dictionary<string, object>());
 
         // GeminiService throws an exception
@@ -2329,7 +2395,9 @@ public class WebhookControllerTests
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
             _availabilityMock.Object,
+            _bookingRepositoryMock.Object,
             _bookingHandlerMock.Object,
+            _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
             _loggerMock.Object);
@@ -2367,7 +2435,8 @@ public class WebhookControllerTests
                 It.IsAny<BotGenerator.Core.Models.WhatsAppMessage>(),
                 It.IsAny<BotGenerator.Core.Models.ConversationState?>(),
                 It.IsAny<List<BotGenerator.Core.Models.ChatMessage>>(),
-                null))
+                It.IsAny<List<BotGenerator.Core.Models.BookingRecord>?>(),
+                It.IsAny<BotGenerator.Core.Models.RestaurantConfig?>()))
             .Returns(new Dictionary<string, object>());
 
         // GeminiService throws an exception
@@ -2437,7 +2506,9 @@ public class WebhookControllerTests
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
             _availabilityMock.Object,
+            _bookingRepositoryMock.Object,
             _bookingHandlerMock.Object,
+            _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
             _loggerMock.Object);

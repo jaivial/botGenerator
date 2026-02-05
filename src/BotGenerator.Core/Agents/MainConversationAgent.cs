@@ -41,6 +41,7 @@ public class MainConversationAgent : IAgent
         WhatsAppMessage message,
         ConversationState? state,
         List<ChatMessage>? history,
+        List<BookingRecord>? existingBookings = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -81,8 +82,8 @@ public class MainConversationAgent : IAgent
                 };
             }
 
-            // 4. Build context with all dynamic values
-            var context = _contextBuilder.BuildContext(message, state, history);
+            // 4. Build context with all dynamic values (including existing bookings)
+            var context = _contextBuilder.BuildContext(message, state, history, existingBookings);
 
             // Add rice validation result to context if valid
             if (riceValidation.HasRiceRequest && riceValidation.IsValid)

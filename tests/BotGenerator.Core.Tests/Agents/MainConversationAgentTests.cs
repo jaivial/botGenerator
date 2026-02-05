@@ -664,7 +664,8 @@ public class MainConversationAgentTests
                 It.IsAny<WhatsAppMessage>(),
                 It.IsAny<ConversationState?>(),
                 It.IsAny<List<ChatMessage>?>(),
-                null))
+                It.IsAny<List<BookingRecord>?>(),
+                It.IsAny<RestaurantConfig?>()))
             .Returns(new Dictionary<string, object>
             {
                 ["currentDate"] = DateTime.UtcNow.ToString("dd/MM/yyyy"),

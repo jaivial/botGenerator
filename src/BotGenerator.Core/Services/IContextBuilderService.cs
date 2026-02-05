@@ -13,12 +13,14 @@ public interface IContextBuilderService
     /// <param name="message">The incoming WhatsApp message.</param>
     /// <param name="state">Current conversation state (booking data collected).</param>
     /// <param name="history">Conversation history.</param>
+    /// <param name="existingBookings">User's existing active bookings from database.</param>
     /// <param name="restaurantConfig">Restaurant-specific configuration.</param>
     /// <returns>Dictionary of context values.</returns>
     Dictionary<string, object> BuildContext(
         WhatsAppMessage message,
         ConversationState? state,
         List<ChatMessage>? history,
+        List<BookingRecord>? existingBookings = null,
         RestaurantConfig? restaurantConfig = null);
 
     /// <summary>
@@ -49,6 +51,7 @@ public interface IContextBuilderService
         ConversationState? state,
         List<ChatMessage>? history,
         DateTime targetDate,
+        List<BookingRecord>? existingBookings = null,
         RestaurantConfig? restaurantConfig = null,
         CancellationToken ct = default);
 }

@@ -552,7 +552,8 @@ public class IntentRouterService : IIntentRouterService
             var babyStrollersFinal = Math.Clamp(state.BabyStrollers.GetValueOrDefault(0), 0, 3);
 
             // Use validated rice name from arrozType (already resolved above to prefer ExtractedData)
-            var booking = response.ExtractedData with
+            // Note: ExtractedData is guaranteed non-null here due to IsValid check at line 412
+            var booking = response.ExtractedData! with
             {
                 Name = message.PushName,
                 Phone = message.SenderNumber,
@@ -612,6 +613,40 @@ public class IntentRouterService : IIntentRouterService
                 }
             }
 
+            // 5) CONFIRMATION SUMMARY - Show summary and require explicit confirmation
+            // Only proceed to booking creation if user has seen the summary
+            if (!booking.SummaryShown)
+            {
+                _logger.LogInformation(
+                    "All data collected for {Phone}, showing confirmation summary",
+                    message.SenderNumber);
+
+                // Store booking with SummaryShown flag
+                var bookingWithSummary = booking with { SummaryShown = true };
+                _pendingBookingStore.Set(message.SenderNumber, bookingWithSummary);
+
+                // Build and return the summary
+                var summary = ResponseVariations.BuildBookingSummary(
+                    booking.Date,
+                    booking.Time,
+                    booking.People,
+                    arrozType,
+                    arrozServings,
+                    highChairsFinal,
+                    babyStrollersFinal);
+
+                return new AgentResponse
+                {
+                    Intent = IntentType.Normal,
+                    AiResponse = summary,
+                    Metadata = new Dictionary<string, object>
+                    {
+                        ["awaitingConfirmation"] = true
+                    }
+                };
+            }
+
+            // 6) User has seen summary and confirmed - create the booking
             var bookingHandler = _services.GetRequiredService<BookingHandler>();
             var created = await bookingHandler.CreateBookingAsync(
                 booking,

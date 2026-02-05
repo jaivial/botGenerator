@@ -54,9 +54,9 @@ public class ConversationSimulator
         // Get conversation state
         var state = _historyService.ExtractState(_history);
 
-        // Process with main agent
+        // Process with main agent (no existing bookings in test context)
         var agentResponse = await _mainAgent.ProcessAsync(
-            incoming, state, _history, CancellationToken.None);
+            incoming, state, _history, existingBookings: null, CancellationToken.None);
 
         // Route based on intent
         var finalResponse = await _intentRouter.RouteAsync(

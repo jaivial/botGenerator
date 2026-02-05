@@ -175,6 +175,33 @@ public class ModificationHandler
             };
         }
 
+        // Check if field was pre-selected (e.g., rice modification shortcut)
+        if (!string.IsNullOrEmpty(state.FieldToModify))
+        {
+            _logger.LogInformation(
+                "Booking selected with pre-selected field: {Field}",
+                state.FieldToModify);
+
+            // Update state with selected booking, move to CollectingNewValue
+            var newStateWithField = state with
+            {
+                Stage = ModificationStage.CollectingNewValue,
+                SelectedBooking = selected
+            };
+            _stateStore.Set(message.SenderNumber, newStateWithField);
+
+            // If we have pre-extracted rice info, try to use it
+            if (state.FieldToModify == "rice" && state.PendingChanges?.ArrozType != null)
+            {
+                // Call HandleRiceChangeAsync with a synthetic message containing the rice type
+                var syntheticMessage = message with { MessageText = state.PendingChanges.ArrozType };
+                return await HandleRiceChangeAsync(syntheticMessage, newStateWithField, ct);
+            }
+
+            // Ask for the new value
+            return BuildAskNewValueResponse(state.FieldToModify, selected);
+        }
+
         // Update state with selected booking
         var newState = state with
         {
@@ -189,7 +216,7 @@ public class ModificationHandler
     /// <summary>
     /// Step 3: Handle field selection (what to modify).
     /// </summary>
-    private async Task<AgentResponse> HandleFieldSelectionAsync(
+    private Task<AgentResponse> HandleFieldSelectionAsync(
         WhatsAppMessage message,
         ModificationState state,
         CancellationToken ct)
@@ -201,11 +228,11 @@ public class ModificationHandler
         {
             _logger.LogInformation("User wants to exit modification flow without changes");
             _stateStore.Clear(message.SenderNumber);
-            return new AgentResponse
+            return Task.FromResult(new AgentResponse
             {
                 Intent = IntentType.Normal,
                 AiResponse = ResponseVariations.ModificationExitConfirmation()
-            };
+            });
         }
         
         string? field = null;
@@ -231,11 +258,11 @@ public class ModificationHandler
         if (field == null)
         {
             // Couldn't understand, ask again
-            return new AgentResponse
+            return Task.FromResult(new AgentResponse
             {
                 Intent = IntentType.Modification,
                 AiResponse = ResponseVariations.FieldSelectionNotUnderstood()
-            };
+            });
         }
 
         // Update state
@@ -247,7 +274,7 @@ public class ModificationHandler
         _stateStore.Set(message.SenderNumber, newState);
 
         // Ask for the new value
-        return BuildAskNewValueResponse(field, state.SelectedBooking!);
+        return Task.FromResult(BuildAskNewValueResponse(field, state.SelectedBooking!));
     }
 
     /// <summary>
@@ -795,7 +822,7 @@ public class ModificationHandler
         };
     }
 
-    private async Task<AgentResponse> HandleTronasChangeAsync(
+    private Task<AgentResponse> HandleTronasChangeAsync(
         WhatsAppMessage message,
         ModificationState state,
         CancellationToken ct)
@@ -805,20 +832,20 @@ public class ModificationHandler
 
         if (!match.Success || !int.TryParse(match.Groups[1].Value, out var newCount))
         {
-            return new AgentResponse
+            return Task.FromResult(new AgentResponse
             {
                 Intent = IntentType.Modification,
                 AiResponse = ResponseVariations.TronasNotUnderstood()
-            };
+            });
         }
 
         if (newCount > 3)
         {
-            return new AgentResponse
+            return Task.FromResult(new AgentResponse
             {
                 Intent = IntentType.Modification,
                 AiResponse = ResponseVariations.MaxTronas()
-            };
+            });
         }
 
         var pendingChanges = new BookingUpdateData { HighChairs = newCount };
@@ -830,14 +857,14 @@ public class ModificationHandler
         };
         _stateStore.Set(message.SenderNumber, newState);
 
-        return new AgentResponse
+        return Task.FromResult(new AgentResponse
         {
             Intent = IntentType.Modification,
             AiResponse = $"Vas a {newState.ChangeDescription}. ¿Confirmas? (Sí/No)"
-        };
+        });
     }
 
-    private async Task<AgentResponse> HandleCarritosChangeAsync(
+    private Task<AgentResponse> HandleCarritosChangeAsync(
         WhatsAppMessage message,
         ModificationState state,
         CancellationToken ct)
@@ -847,20 +874,20 @@ public class ModificationHandler
 
         if (!match.Success || !int.TryParse(match.Groups[1].Value, out var newCount))
         {
-            return new AgentResponse
+            return Task.FromResult(new AgentResponse
             {
                 Intent = IntentType.Modification,
                 AiResponse = ResponseVariations.CarritosNotUnderstood()
-            };
+            });
         }
 
         if (newCount > 3)
         {
-            return new AgentResponse
+            return Task.FromResult(new AgentResponse
             {
                 Intent = IntentType.Modification,
                 AiResponse = ResponseVariations.MaxCarritos()
-            };
+            });
         }
 
         var pendingChanges = new BookingUpdateData { BabyStrollers = newCount };
@@ -872,11 +899,11 @@ public class ModificationHandler
         };
         _stateStore.Set(message.SenderNumber, newState);
 
-        return new AgentResponse
+        return Task.FromResult(new AgentResponse
         {
             Intent = IntentType.Modification,
             AiResponse = $"Vas a {newState.ChangeDescription}. ¿Confirmas? (Sí/No)"
-        };
+        });
     }
 
     #endregion
@@ -1342,6 +1369,210 @@ public class ModificationHandler
         };
 
         return await ProcessModificationAsync(message, null, cancellationToken);
+    }
+
+    #endregion
+
+    #region Rice Modification Shortcut
+
+    /// <summary>
+    /// Starts a modification flow pre-configured for rice changes.
+    /// Skips the "what do you want to modify?" step.
+    /// </summary>
+    public async Task<AgentResponse> StartRiceModificationAsync(
+        WhatsAppMessage message,
+        BookingRecord booking,
+        string? preExtractedRiceType,
+        int? preExtractedServings,
+        CancellationToken ct = default)
+    {
+        _logger.LogInformation(
+            "Starting rice modification for booking {BookingId}, pre-extracted rice: {Rice}, servings: {Servings}",
+            booking.Id, preExtractedRiceType ?? "(none)", preExtractedServings?.ToString() ?? "N/A");
+
+        // If rice type was extracted, validate it first
+        if (!string.IsNullOrWhiteSpace(preExtractedRiceType))
+        {
+            var validation = await _riceValidator.ValidateAsync(
+                preExtractedRiceType, "villacarmen", ct);
+
+            if (validation.IsValid && !string.IsNullOrEmpty(validation.RiceName))
+            {
+                // Valid rice - check if we also have servings
+                if (preExtractedServings.HasValue && preExtractedServings.Value >= 2)
+                {
+                    // We have both rice and valid servings - go straight to confirmation
+                    var pendingChanges = new BookingUpdateData
+                    {
+                        ArrozType = validation.RiceName,
+                        ArrozServings = preExtractedServings.Value
+                    };
+
+                    var state = new ModificationState
+                    {
+                        PhoneNumber = message.SenderNumber,
+                        Stage = ModificationStage.AwaitingConfirmation,
+                        FoundBookings = new List<BookingRecord> { booking },
+                        SelectedBooking = booking,
+                        FieldToModify = "rice",
+                        PendingChanges = pendingChanges,
+                        ChangeDescription = $"añadir {validation.RiceName} ({preExtractedServings.Value} raciones)"
+                    };
+                    _stateStore.Set(message.SenderNumber, state);
+
+                    var currentRice = string.IsNullOrEmpty(booking.ArrozType)
+                        ? "sin arroz"
+                        : $"{booking.ArrozType} ({booking.ArrozServings} raciones)";
+
+                    return new AgentResponse
+                    {
+                        Intent = IntentType.Modification,
+                        AiResponse = $"Vas a {state.ChangeDescription} a tu reserva del {booking.DateFormatted} (actualmente {currentRice}). ¿Confirmas? (Sí/No)"
+                    };
+                }
+
+                // Valid rice but need servings
+                var stateNeedServings = new ModificationState
+                {
+                    PhoneNumber = message.SenderNumber,
+                    Stage = ModificationStage.CollectingNewValue,
+                    FoundBookings = new List<BookingRecord> { booking },
+                    SelectedBooking = booking,
+                    FieldToModify = "rice",
+                    PendingChanges = new BookingUpdateData { ArrozType = validation.RiceName }
+                };
+                _stateStore.Set(message.SenderNumber, stateNeedServings);
+
+                var currentRiceInfo = string.IsNullOrEmpty(booking.ArrozType)
+                    ? "sin arroz"
+                    : $"{booking.ArrozType} ({booking.ArrozServings} raciones)";
+
+                return new AgentResponse
+                {
+                    Intent = IntentType.Modification,
+                    AiResponse = $"Perfecto, {validation.RiceName} disponible.\n\n" +
+                                $"Tu reserva del {booking.DateFormatted}: actualmente {currentRiceInfo}.\n\n" +
+                                $"¿Cuántas raciones queréis? (mínimo 2, máximo {booking.PartySize})"
+                };
+            }
+
+            if (validation.Status == "multiple" && validation.Options?.Count > 0)
+            {
+                // Multiple matches - ask user to choose
+                var state = new ModificationState
+                {
+                    PhoneNumber = message.SenderNumber,
+                    Stage = ModificationStage.CollectingNewValue,
+                    FoundBookings = new List<BookingRecord> { booking },
+                    SelectedBooking = booking,
+                    FieldToModify = "rice"
+                };
+                _stateStore.Set(message.SenderNumber, state);
+
+                var options = string.Join("\n", validation.Options.Select((r, i) => $"{i + 1}. {r}"));
+                return new AgentResponse
+                {
+                    Intent = IntentType.Modification,
+                    AiResponse = $"He encontrado varias opciones de arroz. ¿Cuál prefieres?\n\n{options}"
+                };
+            }
+
+            // Invalid rice
+            var invalidState = new ModificationState
+            {
+                PhoneNumber = message.SenderNumber,
+                Stage = ModificationStage.CollectingNewValue,
+                FoundBookings = new List<BookingRecord> { booking },
+                SelectedBooking = booking,
+                FieldToModify = "rice"
+            };
+            _stateStore.Set(message.SenderNumber, invalidState);
+
+            return new AgentResponse
+            {
+                Intent = IntentType.Modification,
+                AiResponse = validation.Message ??
+                    "No tenemos ese arroz. Puedes ver la carta en: https://alqueriavillacarmen.com/menufindesemana.php\n\n¿Qué arroz te gustaría añadir?"
+            };
+        }
+
+        // No rice type extracted - set up for rice modification and ask
+        var modState = new ModificationState
+        {
+            PhoneNumber = message.SenderNumber,
+            Stage = ModificationStage.CollectingNewValue,
+            FoundBookings = new List<BookingRecord> { booking },
+            SelectedBooking = booking,
+            FieldToModify = "rice"
+        };
+        _stateStore.Set(message.SenderNumber, modState);
+
+        var currentRiceInfoGeneric = string.IsNullOrEmpty(booking.ArrozType)
+            ? "Actualmente no tienes arroz en la reserva."
+            : $"Actualmente tienes {booking.ArrozType} ({booking.ArrozServings} raciones).";
+
+        return new AgentResponse
+        {
+            Intent = IntentType.Modification,
+            AiResponse = $"{currentRiceInfoGeneric}\n\n¿Qué arroz te gustaría? Puedes ver la carta en: https://alqueriavillacarmen.com/menufindesemana.php"
+        };
+    }
+
+    /// <summary>
+    /// Starts a rice modification flow when user has multiple bookings.
+    /// Asks which booking to modify first, storing the pre-extracted rice info.
+    /// </summary>
+    public Task<AgentResponse> StartRiceModificationWithSelectionAsync(
+        WhatsAppMessage message,
+        List<BookingRecord> bookings,
+        string? preExtractedRiceType,
+        int? preExtractedServings,
+        CancellationToken ct = default)
+    {
+        _logger.LogInformation(
+            "Starting rice modification with selection for {Phone}, {Count} bookings, pre-extracted rice: {Rice}",
+            message.SenderNumber, bookings.Count, preExtractedRiceType ?? "(none)");
+
+        // Store state with pre-extracted rice info for later use
+        var state = new ModificationState
+        {
+            PhoneNumber = message.SenderNumber,
+            Stage = ModificationStage.SelectingBooking,
+            FoundBookings = bookings,
+            FieldToModify = "rice", // Pre-select rice field
+            // Store extracted rice info in PendingChanges for later
+            PendingChanges = preExtractedRiceType != null
+                ? new BookingUpdateData 
+                { 
+                    ArrozType = preExtractedRiceType,
+                    ArrozServings = preExtractedServings
+                }
+                : null
+        };
+        _stateStore.Set(message.SenderNumber, state);
+
+        // Build booking selection response
+        var sb = new StringBuilder();
+        sb.AppendLine("Tienes varias reservas activas. ¿A cuál quieres añadir arroz?");
+        sb.AppendLine();
+
+        for (int i = 0; i < bookings.Count; i++)
+        {
+            var b = bookings[i];
+            var riceInfo = string.IsNullOrEmpty(b.ArrozType)
+                ? "sin arroz"
+                : $"{b.ArrozType} ({b.ArrozServings} raciones)";
+            sb.AppendLine($"{i + 1}. *{b.DateFormatted}* a las *{b.TimeFormatted}* ({b.PartySize} personas, {riceInfo})");
+        }
+
+        sb.AppendLine();
+        sb.Append("Responde con el número o di algo como \"la del sábado\"");
+
+        return Task.FromResult(new AgentResponse
+        {
+            Intent = IntentType.Modification,
+            AiResponse = sb.ToString()
+        });
     }
 
     #endregion

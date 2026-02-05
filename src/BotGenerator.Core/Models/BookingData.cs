@@ -57,6 +57,12 @@ public record BookingData
     public string? Commentary { get; init; }
 
     /// <summary>
+    /// True if the booking summary has been shown to the user.
+    /// We require a summary review before creating the booking.
+    /// </summary>
+    public bool SummaryShown { get; init; }
+
+    /// <summary>
     /// Validates that all required fields are present.
     /// </summary>
     public bool IsValid =>

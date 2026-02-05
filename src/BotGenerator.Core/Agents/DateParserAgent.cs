@@ -46,6 +46,7 @@ public class DateParserAgent : IAgent
         WhatsAppMessage message,
         ConversationState? state,
         List<ChatMessage>? history,
+        List<BookingRecord>? existingBookings = null,
         CancellationToken cancellationToken = default)
     {
         var result = ParseDate(message.MessageText);
