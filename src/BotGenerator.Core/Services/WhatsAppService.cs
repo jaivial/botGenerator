@@ -11,6 +11,7 @@ public class WhatsAppService : IWhatsAppService
 {
     private readonly HttpClient _httpClient;
     private readonly string _token;
+    private readonly string _rejectCallPath;
     private readonly ILogger<WhatsAppService> _logger;
 
     public WhatsAppService(
@@ -23,6 +24,8 @@ public class WhatsAppService : IWhatsAppService
 
         _token = configuration["WhatsApp:Token"]
             ?? throw new InvalidOperationException("WhatsApp:Token not configured");
+
+        _rejectCallPath = configuration["WhatsApp:RejectCallPath"] ?? "/call/reject";
     }
 
     public async Task<bool> SendTextAsync(
@@ -372,6 +375,57 @@ public class WhatsAppService : IWhatsAppService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error sending contact card to {Phone}", phoneNumber);
+            return false;
+        }
+    }
+
+    public async Task<bool> RejectCallAsync(
+        string phoneNumber,
+        string? callId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedNumber = NormalizeRecipientNumber(phoneNumber);
+
+        _logger.LogInformation(
+            "Rejecting call from {Phone} (callId={CallId})",
+            normalizedNumber,
+            string.IsNullOrWhiteSpace(callId) ? "(none)" : callId);
+
+        var path = string.IsNullOrWhiteSpace(_rejectCallPath) ? "/call/reject" : _rejectCallPath;
+        if (!path.StartsWith('/'))
+            path = "/" + path;
+
+        var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{path}?token={Uri.EscapeDataString(_token)}");
+
+        request.Headers.Add("token", _token);
+
+        object payload = string.IsNullOrWhiteSpace(callId)
+            ? new { number = normalizedNumber }
+            : new { number = normalizedNumber, callId = callId };
+
+        request.Content = JsonContent.Create(payload);
+
+        try
+        {
+            var response = await _httpClient.SendAsync(request, cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogWarning(
+                    "Failed to reject call for {Phone}. Status: {Status}, Error: {Error}",
+                    normalizedNumber, (int)response.StatusCode, error);
+                return false;
+            }
+
+            _logger.LogDebug("Call rejected successfully for {Phone}", normalizedNumber);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error rejecting call for {Phone}", normalizedNumber);
             return false;
         }
     }

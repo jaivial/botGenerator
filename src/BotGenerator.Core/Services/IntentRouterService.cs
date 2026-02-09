@@ -941,21 +941,13 @@ public class IntentRouterService : IIntentRouterService
                 .LastOrDefault()?.Content ?? "";
 
             // Check if the last bot message was a rice offer
-            var isRiceOfferMessage = 
-                lastBotMessage.Contains("¿Le gustaría reservar arroz") ||
-                lastBotMessage.Contains("¿Queréis añadir arroz") ||
-                lastBotMessage.Contains("¿Os apetece arroz") ||
-                lastBotMessage.Contains("¿queréis arroz") ||
-                (lastBotMessage.Contains("variedad de arroces") && lastBotMessage.Contains("reserva"));
+            var isRiceOfferMessage = TurnAnalysis.TurnClassifier.IsRiceOfferMessage(lastBotMessage);
 
             if (!isRiceOfferMessage)
                 return null;
 
             // Check if the user is declining the rice offer
-            var userText = message.MessageText.ToLowerInvariant().Trim();
-            var isRejection = System.Text.RegularExpressions.Regex.IsMatch(
-                userText,
-                @"\b(no|nada|sin\s+arroz|otra\s+cosa|no\s+queremos|no\s+gracias|ya\s+tenemos|hemos\s+decidido|pediremos?\s+otra)\b");
+            var isRejection = TurnAnalysis.TurnClassifier.IsRiceOfferDecline(message.MessageText);
 
             if (isRejection)
             {

@@ -132,6 +132,7 @@ builder.Services.AddSingleton<IPendingBookingStore, PendingBookingStore>();
 builder.Services.AddSingleton<IModificationStateStore, ModificationStateStore>();
 builder.Services.AddSingleton<ICancellationStateStore, CancellationStateStore>();
 builder.Services.AddSingleton<IPendingRiceStore, PendingRiceStore>();
+builder.Services.AddSingleton<ICallAutoReplyStore, CallAutoReplyStore>();
 
 // ========== Scoped Services ==========
 builder.Services.AddScoped<IIntentRouterService, IntentRouterService>();

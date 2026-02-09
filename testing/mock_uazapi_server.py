@@ -5,6 +5,7 @@ This server mimics the UAZAPI endpoints that the BotGenerator uses:
 - POST /send/text     - Send text messages
 - POST /send/menu     - Send buttons/menus
 - POST /message/find  - Get message history
+- POST /call/reject   - Reject incoming calls (provider-specific)
 
 It captures all outgoing messages so they can be inspected by tests.
 """
@@ -197,6 +198,35 @@ async def send_contact(request: Request, token: Optional[str] = Header(None)):
         "success": True,
         "messageId": message_id,
         "status": "sent"
+    }
+
+@app.post("/call/reject")
+async def reject_call(request: Request, token: Optional[str] = Header(None)):
+    """Mock endpoint for rejecting incoming calls (matches BotGenerator WhatsApp:RejectCallPath)"""
+    body = await request.json()
+
+    call_id = body.get("callId") or body.get("id") or str(uuid.uuid4())
+    timestamp = datetime.now()
+
+    captured = {
+        "id": call_id,
+        "type": "call_reject",
+        "timestamp": timestamp.isoformat(),
+        "timestamp_unix": int(timestamp.timestamp()),
+        "phone": body.get("number"),
+        "raw_payload": body,
+        "token_present": token is not None
+    }
+
+    captured_messages.append(captured)
+
+    phone = body.get("number", "")
+    print(f"[CAPTURED CALL REJECT] From: {phone} | CallId: {call_id}")
+
+    return {
+        "success": True,
+        "callId": call_id,
+        "status": "rejected"
     }
 
 

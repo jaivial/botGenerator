@@ -3,6 +3,7 @@ using BotGenerator.Core.Agents;
 using BotGenerator.Core.Handlers;
 using BotGenerator.Core.Models;
 using BotGenerator.Core.Services;
+using BotGenerator.Core.Services.TurnAnalysis;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -29,6 +30,7 @@ public class WebhookController : ControllerBase
     private readonly IAiStateExtractorService _aiStateExtractor;
     private readonly IPendingBookingStore _pendingBookingStore;
     private readonly IPendingRiceStore _pendingRiceStore;
+    private readonly ICallAutoReplyStore _callAutoReplyStore;
     private readonly IWhatsAppService _whatsApp;
     private readonly IMenuRepository _menuRepository;
     private readonly IRiceValidatorService _riceValidator;
@@ -47,6 +49,7 @@ public class WebhookController : ControllerBase
         IAiStateExtractorService aiStateExtractor,
         IPendingBookingStore pendingBookingStore,
         IPendingRiceStore pendingRiceStore,
+        ICallAutoReplyStore callAutoReplyStore,
         IWhatsAppService whatsApp,
         IMenuRepository menuRepository,
         IRiceValidatorService riceValidator,
@@ -64,6 +67,7 @@ public class WebhookController : ControllerBase
         _aiStateExtractor = aiStateExtractor;
         _pendingBookingStore = pendingBookingStore;
         _pendingRiceStore = pendingRiceStore;
+        _callAutoReplyStore = callAutoReplyStore;
         _whatsApp = whatsApp;
         _menuRepository = menuRepository;
         _riceValidator = riceValidator;
@@ -127,15 +131,26 @@ public class WebhookController : ControllerBase
             // Log raw payload for debugging
             _logger.LogDebug("Received webhook: {Body}", body.ToString());
 
-            // Check event type - only process actual messages
+            // Check event type - process messages and calls (ignore everything else)
             if (body.TryGetProperty("EventType", out var eventTypeProp))
             {
                 var eventType = eventTypeProp.GetString();
-                if (eventType != "messages")
+                if (!string.IsNullOrWhiteSpace(eventType) && eventType != "messages")
                 {
+                    if (IsCallEventType(eventType))
+                    {
+                        return await HandleCallWebhookAsync(body, cancellationToken);
+                    }
+
                     _logger.LogDebug("Ignoring non-message event: {EventType}", eventType);
                     return Ok();
                 }
+            }
+
+            // Some providers may omit EventType; handle call-shaped payloads too.
+            if (!body.TryGetProperty("message", out _) && body.TryGetProperty("call", out _))
+            {
+                return await HandleCallWebhookAsync(body, cancellationToken);
             }
 
             // Also check for "message" property existence before trying to extract
@@ -188,6 +203,50 @@ public class WebhookController : ControllerBase
             _logger.LogInformation(
                 "Found {Count} existing bookings for {Phone}",
                 existingBookings.Count, message.SenderNumber);
+
+            // 2b. RICE OFFER RESPONSE (history-aware, deterministic)
+            // Handle decline/deferral before AI calls and before same-day guardrails.
+            var lastBotMsg = history.Where(m => m.Role == "assistant").LastOrDefault()?.Content ?? "";
+            if (TurnClassifier.IsRiceOfferMessage(lastBotMsg))
+            {
+                if (TurnClassifier.IsRiceDecisionDeferral(message.MessageText))
+                {
+                    var reply = TurnClassifier.BuildRiceDeferralReply();
+
+                    await _historyService.AddMessageAsync(
+                        message.SenderNumber,
+                        ChatMessage.FromUser(message.MessageText, message.PushName),
+                        cancellationToken);
+
+                    await _whatsApp.SendTextAsync(message.SenderNumber, reply, cancellationToken);
+
+                    await _historyService.AddMessageAsync(
+                        message.SenderNumber,
+                        ChatMessage.FromAssistant(reply),
+                        cancellationToken);
+
+                    return Ok(new { processed = true, riceOfferDeferred = true });
+                }
+
+                if (TurnClassifier.IsRiceOfferDecline(message.MessageText))
+                {
+                    var reply = ResponseVariations.RiceOfferDeclined();
+
+                    await _historyService.AddMessageAsync(
+                        message.SenderNumber,
+                        ChatMessage.FromUser(message.MessageText, message.PushName),
+                        cancellationToken);
+
+                    await _whatsApp.SendTextAsync(message.SenderNumber, reply, cancellationToken);
+
+                    await _historyService.AddMessageAsync(
+                        message.SenderNumber,
+                        ChatMessage.FromAssistant(reply),
+                        cancellationToken);
+
+                    return Ok(new { processed = true, riceOfferDeclined = true });
+                }
+            }
 
             // 2b. EARLY CANCELLATION DETECTION (AI-based)
             // Check for cancellation intent BEFORE state extraction to avoid day-full checks
@@ -1543,63 +1602,88 @@ public class WebhookController : ControllerBase
 
     private static bool IsSameDayBookingRequest(string text)
     {
-        var t = text.ToLowerInvariant();
+        return SameDayDetector.IsSameDayBookingRequest(text);
+    }
 
-        // Direct "today" keywords
-        var sameDayKeywords = new[]
-        {
-            "para hoy",
-            "reservar hoy",
-            "reserva hoy",
-            "mesa hoy",
-            "hoy para",
-            "el día de hoy",
-            "dia de hoy",
-            "esta tarde",
-            "esta noche",
-            "ahora mismo",
-            "hoy mismo"
-        };
+    private static bool IsCallEventType(string eventType)
+        => eventType.Contains("call", StringComparison.OrdinalIgnoreCase);
 
-        if (sameDayKeywords.Any(keyword => t.Contains(keyword)))
+    private async Task<IActionResult> HandleCallWebhookAsync(
+        JsonElement body,
+        CancellationToken cancellationToken)
+    {
+        var (phone, callId) = ExtractCallInfo(body);
+        if (string.IsNullOrWhiteSpace(phone))
         {
-            return true;
+            _logger.LogDebug("Call event received but could not extract phone, ignoring");
+            return Ok();
         }
 
-        // Check for standalone "hoy" with booking context
-        if (System.Text.RegularExpressions.Regex.IsMatch(t, @"\bhoy\b"))
-        {
-            // Check if it's in a booking context (reservar, mesa, comer, etc.)
-            var bookingContextWords = new[] { "reserv", "mesa", "comer", "personas", "gente", "sitio", "hueco" };
-            if (bookingContextWords.Any(ctx => t.Contains(ctx)))
-            {
-                return true;
-            }
+        // Always attempt to reject the call.
+        await _whatsApp.RejectCallAsync(phone, callId, cancellationToken);
 
-            // Also catch simple "hoy" responses when likely answering date question
-            // (short messages that just say "hoy" or "hoy a las X")
-            if (t.Trim() == "hoy" || System.Text.RegularExpressions.Regex.IsMatch(t.Trim(), @"^hoy\s*(a\s*las)?\s*\d"))
-            {
-                return true;
-            }
+        var cooldownMinutes = _configuration.GetValue("WhatsApp:CallAutoReplyCooldownMinutes", 15);
+        var shouldReply = _callAutoReplyStore.TryMarkReplied(
+            phone,
+            TimeSpan.FromMinutes(Math.Max(1, cooldownMinutes)),
+            DateTime.UtcNow);
+
+        if (!shouldReply)
+        {
+            _logger.LogInformation("Skipping call auto-reply due to cooldown for {Phone}", phone);
+            return Ok(new { processed = true, call = true, replied = false });
         }
 
-        // Check for today's date in dd/MM or dd/MM/yyyy format
-        var today = DateTime.Now;
-        var todayPatterns = new[]
-        {
-            $"{today.Day}/{today.Month}",
-            $"{today.Day:D2}/{today.Month:D2}",
-            $"{today.Day}/{today.Month}/{today.Year}",
-            $"{today.Day:D2}/{today.Month:D2}/{today.Year}"
-        };
+        var text = _configuration["WhatsApp:CallAutoReplyText"]
+                   ?? "Hola. Soy el asistente automático de reservas por WhatsApp. Para hablar con el restaurante, por favor llama al +34 638 857 294.";
 
-        if (todayPatterns.Any(pattern => t.Contains(pattern)))
+        await _whatsApp.SendTextAsync(phone, text, cancellationToken);
+
+        // Global contact card (per current desired behavior). Keep digits compact for provider compatibility.
+        await _whatsApp.SendContactCardAsync(
+            phone,
+            fullName: "Gestión Reservas",
+            contactPhoneNumber: "+34638857294",
+            organization: "Alquería Villa Carmen",
+            cancellationToken: cancellationToken);
+
+        return Ok(new { processed = true, call = true, replied = true });
+    }
+
+    private static (string Phone, string? CallId) ExtractCallInfo(JsonElement body)
+    {
+        string? chatId = null;
+        string? callId = null;
+
+        if (body.TryGetProperty("call", out var callProp) && callProp.ValueKind == JsonValueKind.Object)
         {
-            return true;
+            if (callProp.TryGetProperty("chatid", out var c1) && c1.ValueKind == JsonValueKind.String)
+                chatId = c1.GetString();
+            if (callProp.TryGetProperty("chatId", out var c2) && c2.ValueKind == JsonValueKind.String)
+                chatId ??= c2.GetString();
+
+            if (callProp.TryGetProperty("id", out var id1) && id1.ValueKind == JsonValueKind.String)
+                callId = id1.GetString();
+            if (callProp.TryGetProperty("callId", out var id2) && id2.ValueKind == JsonValueKind.String)
+                callId ??= id2.GetString();
         }
 
-        return false;
+        if (chatId == null && body.TryGetProperty("chatid", out var topChat) && topChat.ValueKind == JsonValueKind.String)
+            chatId = topChat.GetString();
+
+        if (chatId == null &&
+            body.TryGetProperty("message", out var msgProp) &&
+            msgProp.ValueKind == JsonValueKind.Object &&
+            msgProp.TryGetProperty("chatid", out var msgChat) &&
+            msgChat.ValueKind == JsonValueKind.String)
+        {
+            chatId = msgChat.GetString();
+        }
+
+        var phone = (chatId ?? "").Replace("@s.whatsapp.net", "", StringComparison.OrdinalIgnoreCase);
+        phone = new string(phone.Where(char.IsDigit).ToArray());
+
+        return (phone, callId);
     }
 
     /// <summary>

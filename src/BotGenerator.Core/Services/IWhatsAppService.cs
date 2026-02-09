@@ -61,6 +61,15 @@ public interface IWhatsAppService
         string? organization = null,
         string? email = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Rejects an incoming WhatsApp call (provider-specific).
+    /// For UAZAPI this maps to a call rejection endpoint (configured via WhatsApp:RejectCallPath).
+    /// </summary>
+    Task<bool> RejectCallAsync(
+        string phoneNumber,
+        string? callId = null,
+        CancellationToken cancellationToken = default);
 }
 
 public record ButtonOption(string Id, string Text, string? Description = null);

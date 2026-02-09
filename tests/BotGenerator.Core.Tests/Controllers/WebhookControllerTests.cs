@@ -18,6 +18,7 @@ public class WebhookControllerTests
     private readonly Mock<IAiStateExtractorService> _aiStateExtractorMock;
     private readonly Mock<IPendingBookingStore> _pendingBookingStoreMock;
     private readonly Mock<IPendingRiceStore> _pendingRiceStoreMock;
+    private readonly Mock<ICallAutoReplyStore> _callAutoReplyStoreMock;
     private readonly Mock<IWhatsAppService> _whatsAppMock;
     private readonly Mock<IMenuRepository> _menuRepositoryMock;
     private readonly Mock<IRiceValidatorService> _riceValidatorMock;
@@ -37,6 +38,7 @@ public class WebhookControllerTests
         _aiStateExtractorMock = new Mock<IAiStateExtractorService>();
         _pendingBookingStoreMock = new Mock<IPendingBookingStore>();
         _pendingRiceStoreMock = new Mock<IPendingRiceStore>();
+        _callAutoReplyStoreMock = new Mock<ICallAutoReplyStore>();
         _whatsAppMock = new Mock<IWhatsAppService>();
         _menuRepositoryMock = new Mock<IMenuRepository>();
         _riceValidatorMock = new Mock<IRiceValidatorService>();
@@ -95,6 +97,7 @@ public class WebhookControllerTests
             _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
+            _callAutoReplyStoreMock.Object,
             _whatsAppMock.Object,
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
@@ -205,6 +208,7 @@ public class WebhookControllerTests
             _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
+            _callAutoReplyStoreMock.Object,
             _whatsAppMock.Object,
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
@@ -328,6 +332,7 @@ public class WebhookControllerTests
             _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
+            _callAutoReplyStoreMock.Object,
             _whatsAppMock.Object,
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
@@ -388,6 +393,7 @@ public class WebhookControllerTests
             _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
+            _callAutoReplyStoreMock.Object,
             _whatsAppMock.Object,
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
@@ -453,6 +459,7 @@ public class WebhookControllerTests
             _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
+            _callAutoReplyStoreMock.Object,
             _whatsAppMock.Object,
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
@@ -536,6 +543,7 @@ public class WebhookControllerTests
             _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
+            _callAutoReplyStoreMock.Object,
             _whatsAppMock.Object,
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
@@ -619,6 +627,7 @@ public class WebhookControllerTests
             _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
+            _callAutoReplyStoreMock.Object,
             _whatsAppMock.Object,
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
@@ -701,6 +710,7 @@ public class WebhookControllerTests
             _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
+            _callAutoReplyStoreMock.Object,
             _whatsAppMock.Object,
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
@@ -820,6 +830,7 @@ public class WebhookControllerTests
             _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
+            _callAutoReplyStoreMock.Object,
             _whatsAppMock.Object,
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
@@ -934,6 +945,7 @@ public class WebhookControllerTests
             _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
+            _callAutoReplyStoreMock.Object,
             _whatsAppMock.Object,
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
@@ -1050,6 +1062,7 @@ public class WebhookControllerTests
             _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
+            _callAutoReplyStoreMock.Object,
             _whatsAppMock.Object,
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
@@ -1170,6 +1183,7 @@ public class WebhookControllerTests
             _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
+            _callAutoReplyStoreMock.Object,
             _whatsAppMock.Object,
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
@@ -1284,6 +1298,7 @@ public class WebhookControllerTests
             _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
+            _callAutoReplyStoreMock.Object,
             _whatsAppMock.Object,
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
@@ -1403,6 +1418,7 @@ public class WebhookControllerTests
             _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
+            _callAutoReplyStoreMock.Object,
             _whatsAppMock.Object,
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
@@ -1519,6 +1535,7 @@ public class WebhookControllerTests
             _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
+            _callAutoReplyStoreMock.Object,
             _whatsAppMock.Object,
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
@@ -1639,6 +1656,7 @@ public class WebhookControllerTests
             _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
+            _callAutoReplyStoreMock.Object,
             _whatsAppMock.Object,
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
@@ -1763,6 +1781,7 @@ public class WebhookControllerTests
             _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
+            _callAutoReplyStoreMock.Object,
             _whatsAppMock.Object,
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
@@ -1896,6 +1915,7 @@ public class WebhookControllerTests
             _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
+            _callAutoReplyStoreMock.Object,
             _whatsAppMock.Object,
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
@@ -2035,6 +2055,7 @@ public class WebhookControllerTests
             _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
+            _callAutoReplyStoreMock.Object,
             _whatsAppMock.Object,
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
@@ -2155,6 +2176,7 @@ public class WebhookControllerTests
             _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
+            _callAutoReplyStoreMock.Object,
             _whatsAppMock.Object,
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
@@ -2281,6 +2303,7 @@ public class WebhookControllerTests
             _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
+            _callAutoReplyStoreMock.Object,
             _whatsAppMock.Object,
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
@@ -2391,6 +2414,7 @@ public class WebhookControllerTests
             _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
+            _callAutoReplyStoreMock.Object,
             _whatsAppMock.Object,
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
@@ -2502,6 +2526,7 @@ public class WebhookControllerTests
             _aiStateExtractorMock.Object,
             _pendingBookingStoreMock.Object,
             _pendingRiceStoreMock.Object,
+            _callAutoReplyStoreMock.Object,
             _whatsAppMock.Object,
             _menuRepositoryMock.Object,
             _riceValidatorMock.Object,
@@ -2558,5 +2583,136 @@ public class WebhookControllerTests
         _historyServiceMock.Verify(x => x.GetHistoryAsync(
             It.IsAny<string>(),
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task WebhookController_RiceOfferDeferral_DoesNotTriggerSameDay()
+    {
+        // Arrange: last bot message was a rice offer.
+        _historyServiceMock.Setup(x => x.GetHistoryAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<BotGenerator.Core.Models.ChatMessage>
+            {
+                BotGenerator.Core.Models.ChatMessage.FromAssistant("¿Quieres que añadamos arroz?")
+            });
+
+        _whatsAppMock.Setup(x => x.SendTextAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var payload = """
+        {
+          "message": {
+            "chatid": "34600000000@s.whatsapp.net",
+            "text": "Déjeme que pregunte a mi marido y hoy mismo le confirmo, si??",
+            "fromMe": false,
+            "messageType": "text",
+            "messageTimestamp": 1700000000
+          },
+          "chat": {
+            "name": "TestUser"
+          }
+        }
+        """;
+
+        var jsonElement = System.Text.Json.JsonDocument.Parse(payload).RootElement;
+
+        // Act
+        var result = await _controller.HandleWhatsAppWebhook(jsonElement, CancellationToken.None);
+
+        // Assert: short-circuits with riceOfferDeferred and does not send contact card.
+        result.Should().BeOfType<OkObjectResult>();
+        var ok = (OkObjectResult)result;
+
+        var value = ok.Value;
+        var deferredProp = value?.GetType().GetProperty("riceOfferDeferred");
+        deferredProp.Should().NotBeNull();
+        deferredProp!.GetValue(value).Should().Be(true);
+
+        _whatsAppMock.Verify(x => x.SendContactCardAsync(
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<string?>(),
+            It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+
+        _aiStateExtractorMock.Verify(x => x.ExtractStateAsync(
+            It.IsAny<List<BotGenerator.Core.Models.ChatMessage>>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task WebhookController_CallEvent_RejectsAndAutoReplies()
+    {
+        // Arrange
+        _whatsAppMock.Setup(x => x.RejectCallAsync(
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        _callAutoReplyStoreMock.Setup(x => x.TryMarkReplied(
+                It.IsAny<string>(),
+                It.IsAny<TimeSpan>(),
+                It.IsAny<DateTime>()))
+            .Returns(true);
+
+        _whatsAppMock.Setup(x => x.SendTextAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        _whatsAppMock.Setup(x => x.SendContactCardAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var payload = """
+        {
+          "EventType": "call",
+          "call": {
+            "chatid": "34600000000@s.whatsapp.net",
+            "id": "call-123"
+          }
+        }
+        """;
+
+        var jsonElement = System.Text.Json.JsonDocument.Parse(payload).RootElement;
+
+        // Act
+        var result = await _controller.HandleWhatsAppWebhook(jsonElement, CancellationToken.None);
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+
+        _whatsAppMock.Verify(x => x.RejectCallAsync(
+            "34600000000",
+            "call-123",
+            It.IsAny<CancellationToken>()), Times.Once);
+
+        _whatsAppMock.Verify(x => x.SendTextAsync(
+            "34600000000",
+            It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+
+        _whatsAppMock.Verify(x => x.SendContactCardAsync(
+            "34600000000",
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<string?>(),
+            It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+
+        // Should not fetch message history for call events.
+        _historyServiceMock.Verify(x => x.GetHistoryAsync(
+            It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 }
