@@ -19,6 +19,7 @@ public class CancellationHandler
     private readonly ICancellationStateStore _stateStore;
     private readonly IWhatsAppService _whatsAppService;
     private readonly IGeminiService _gemini;
+    private readonly IExternalReservationService _externalReservationService;
 
     // Spanish day names for lazy response parsing
     private static readonly Dictionary<string, DayOfWeek> SpanishDays = new(StringComparer.OrdinalIgnoreCase)
@@ -59,13 +60,15 @@ public class CancellationHandler
         IBookingRepository bookingRepository,
         ICancellationStateStore stateStore,
         IWhatsAppService whatsAppService,
-        IGeminiService gemini)
+        IGeminiService gemini,
+        IExternalReservationService externalReservationService)
     {
         _logger = logger;
         _gemini = gemini;
         _bookingRepository = bookingRepository;
         _stateStore = stateStore;
         _whatsAppService = whatsAppService;
+        _externalReservationService = externalReservationService;
     }
 
     /// <summary>
@@ -251,6 +254,9 @@ public class CancellationHandler
             {
                 // Send notification to restaurant
                 await SendCancellationNotificationAsync(booking, ct);
+
+                // Sync cancellation to external PHP system
+                await _externalReservationService.CancelReservationAsync(booking.Id, ct);
 
                 return new AgentResponse
                 {

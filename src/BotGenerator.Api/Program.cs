@@ -108,6 +108,12 @@ builder.Services.AddHttpClient<IExternalBookingService, ExternalBookingService>(
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
+// External Reservation Service (for PHP endpoint calls)
+builder.Services.AddHttpClient<IExternalReservationService, ExternalReservationService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
 builder.Services.AddHttpClient<IWhatsAppService, WhatsAppService>((serviceProvider, client) =>
 {
     var config = serviceProvider.GetRequiredService<IConfiguration>();

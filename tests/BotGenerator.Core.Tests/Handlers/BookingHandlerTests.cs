@@ -17,6 +17,7 @@ public class BookingHandlerTests
     private readonly Mock<ILogger<BookingHandler>> _loggerMock;
     private readonly Mock<IConfiguration> _configurationMock;
     private readonly Mock<IBookingRepository> _bookingRepositoryMock;
+    private readonly Mock<IExternalReservationService> _externalReservationServiceMock;
     private readonly BookingHandler _handler;
 
     public BookingHandlerTests()
@@ -24,16 +25,33 @@ public class BookingHandlerTests
         _loggerMock = new Mock<ILogger<BookingHandler>>();
         _configurationMock = new Mock<IConfiguration>();
         _bookingRepositoryMock = new Mock<IBookingRepository>();
+        _externalReservationServiceMock = new Mock<IExternalReservationService>();
 
         // Setup mock to return a booking ID (simulating successful DB insert)
         _bookingRepositoryMock
             .Setup(x => x.CreateBookingAsync(It.IsAny<BookingData>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(1L);
 
+        // Setup external service mock
+        _externalReservationServiceMock
+            .Setup(x => x.CreateReservationAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<int?>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((true, (string?)null));
+
         _handler = new BookingHandler(
             _loggerMock.Object,
             _configurationMock.Object,
-            _bookingRepositoryMock.Object);
+            _bookingRepositoryMock.Object,
+            _externalReservationServiceMock.Object);
     }
 
     /// <summary>

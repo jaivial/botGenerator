@@ -21,6 +21,7 @@ public class ModificationHandlerTests
     private readonly Mock<IRiceValidatorService> _riceValidatorMock;
     private readonly Mock<IWhatsAppService> _whatsAppMock;
     private readonly Mock<IContextBuilderService> _contextBuilderMock;
+    private readonly Mock<IExternalReservationService> _externalReservationServiceMock;
     private readonly ModificationHandler _handler;
 
     public ModificationHandlerTests()
@@ -38,6 +39,7 @@ public class ModificationHandlerTests
 
         _whatsAppMock = new Mock<IWhatsAppService>();
         _contextBuilderMock = new Mock<IContextBuilderService>();
+        _externalReservationServiceMock = new Mock<IExternalReservationService>();
 
         // Create a real RiceValidatorAgent with mocked dependencies
         var riceValidatorAgent = CreateMockRiceValidatorAgent();
@@ -49,7 +51,8 @@ public class ModificationHandlerTests
             _availabilityMock.Object,
             riceValidatorAgent,
             _whatsAppMock.Object,
-            _contextBuilderMock.Object);
+            _contextBuilderMock.Object,
+            _externalReservationServiceMock.Object);
     }
 
     private RiceValidatorAgent CreateMockRiceValidatorAgent()

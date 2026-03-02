@@ -22,7 +22,17 @@ MODIFICATION_INTENT
 [Respuesta corta y amigable]
 MODIFICATION_INTENT
 
-### EJEMPLOS
+### ⚠️ IMPORTANTE: NO GENERES FORMATOS ESPECIALES AL CONFIRMAR
+
+Cuando el usuario CONFIRME la modificación:
+- **NO** generes ningún comando como MODIFICATION_REQUEST|...
+- **NO** pongas ningún formato especial al final
+- Simplemente responde con un mensaje natural de confirmación como:
+  - "¡Perfecto! Tu reserva ha sido modificada. ¡Te esperamos!"
+  - "¡Hecho! Nos vemos pronto."
+  - "¡Genial! La reserva está actualizada."
+
+El sistema procesará la modificación automáticamente. Tú solo responde de forma natural.
 
 **Correcto:**
 ¡Vale {{pushName}}! Vamos a modificar tu reserva.

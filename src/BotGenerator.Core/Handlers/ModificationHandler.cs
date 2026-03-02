@@ -20,6 +20,7 @@ public class ModificationHandler
     private readonly RiceValidatorAgent _riceValidator;
     private readonly IWhatsAppService _whatsAppService;
     private readonly IContextBuilderService _contextBuilder;
+    private readonly IExternalReservationService _externalReservationService;
 
     // Spanish day names for lazy response parsing
     private static readonly Dictionary<string, DayOfWeek> SpanishDays = new(StringComparer.OrdinalIgnoreCase)
@@ -52,7 +53,8 @@ public class ModificationHandler
         IBookingAvailabilityService availabilityService,
         RiceValidatorAgent riceValidator,
         IWhatsAppService whatsAppService,
-        IContextBuilderService contextBuilder)
+        IContextBuilderService contextBuilder,
+        IExternalReservationService externalReservationService)
     {
         _logger = logger;
         _bookingRepository = bookingRepository;
@@ -61,6 +63,7 @@ public class ModificationHandler
         _riceValidator = riceValidator;
         _whatsAppService = whatsAppService;
         _contextBuilder = contextBuilder;
+        _externalReservationService = externalReservationService;
     }
 
     /// <summary>
@@ -340,6 +343,9 @@ public class ModificationHandler
                     pendingChanges,
                     state.ChangeDescription ?? "Modificación",
                     ct);
+
+                // Call external PHP endpoint to sync modification
+                await SyncModificationToExternalSystemAsync(originalBooking.Id, pendingChanges, ct);
 
                 return new AgentResponse
                 {
@@ -1346,6 +1352,99 @@ public class ModificationHandler
             _logger.LogError(ex,
                 "Failed to send modification notification for booking {BookingId}",
                 updatedBooking.Id);
+        }
+    }
+
+    /// <summary>
+    /// Syncs booking modifications to the external PHP system via HTTP API.
+    /// This ensures the external restaurant system is updated with changes made through the bot.
+    /// </summary>
+    private async Task SyncModificationToExternalSystemAsync(
+        int bookingId,
+        BookingUpdateData changes,
+        CancellationToken ct)
+    {
+        try
+        {
+            // Map BookingUpdateData fields to external API calls
+            var tasks = new List<Task<bool>>();
+
+            if (changes.ReservationDate != null)
+            {
+                tasks.Add(_externalReservationService.UpdateReservationFieldAsync(
+                    bookingId, "reservation_date", changes.ReservationDate, ct));
+            }
+
+            if (changes.ReservationTime != null)
+            {
+                // Format time as HH:MM:SS
+                var timeValue = changes.ReservationTime;
+                if (!timeValue.Contains(":"))
+                {
+                    timeValue = timeValue + ":00";
+                }
+                tasks.Add(_externalReservationService.UpdateReservationFieldAsync(
+                    bookingId, "reservation_time", timeValue, ct));
+            }
+
+            if (changes.PartySize.HasValue)
+            {
+                tasks.Add(_externalReservationService.UpdateReservationFieldAsync(
+                    bookingId, "party_size", changes.PartySize.Value.ToString(), ct));
+            }
+
+            if (changes.ClearRice)
+            {
+                tasks.Add(_externalReservationService.UpdateReservationFieldAsync(
+                    bookingId, "rice_type", "", ct));
+            }
+            else if (changes.ArrozType != null)
+            {
+                tasks.Add(_externalReservationService.UpdateReservationFieldAsync(
+                    bookingId, "rice_type", changes.ArrozType, ct));
+            }
+
+            if (changes.ArrozServings.HasValue)
+            {
+                tasks.Add(_externalReservationService.UpdateReservationFieldAsync(
+                    bookingId, "arroz_servings", changes.ArrozServings.Value.ToString(), ct));
+            }
+
+            if (changes.HighChairs.HasValue)
+            {
+                tasks.Add(_externalReservationService.UpdateReservationFieldAsync(
+                    bookingId, "high_chairs", changes.HighChairs.Value.ToString(), ct));
+            }
+
+            if (changes.BabyStrollers.HasValue)
+            {
+                tasks.Add(_externalReservationService.UpdateReservationFieldAsync(
+                    bookingId, "baby_strollers", changes.BabyStrollers.Value.ToString(), ct));
+            }
+
+            // Execute all updates in parallel
+            if (tasks.Count > 0)
+            {
+                var results = await Task.WhenAll(tasks);
+                var successCount = results.Count(r => r);
+                
+                _logger.LogInformation(
+                    "External sync for booking {BookingId}: {Success}/{Total} fields updated",
+                    bookingId, successCount, tasks.Count);
+            }
+            else
+            {
+                _logger.LogDebug(
+                    "No fields to sync to external system for booking {BookingId}",
+                    bookingId);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Log but don't fail - local DB update already succeeded
+            _logger.LogWarning(ex,
+                "Failed to sync some fields to external system for booking {BookingId}",
+                bookingId);
         }
     }
 

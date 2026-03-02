@@ -111,6 +111,17 @@ public static class ResponseVariations
     });
 
     /// <summary>
+    /// Asking about both highchairs and strollers together (for more fluid conversation).
+    /// </summary>
+    public static string AskTronasAndCarritos() => Pick(new[]
+    {
+        "¿Tronas o carritos de bebé?",
+        "¿Necesitáis tronas o traéis carrito?",
+        "¿Tenéis niños? ¿Tronas o carrito?",
+        "¿Vais con niños? ¿Tronas o carrito de bebé?"
+    });
+
+    /// <summary>
     /// Asking about rice.
     /// </summary>
     public static string AskRice() => Pick(new[]
@@ -1102,11 +1113,10 @@ public static class ResponseVariations
     /// </summary>
     public static string MultipleRiceOptionsSelection(string formattedOptions) => Pick(new[]
     {
-        $"Tenemos varias opciones de ese tipo. Por favor, dime cuál prefieres:\n\n{formattedOptions}\n\nPuedes responder con el número (1, 2...) o el nombre.",
-        $"Hay varias paellas/arroces de ese tipo. ¿Cuál te gustaría?\n\n{formattedOptions}\n\nDime el número o el nombre.",
-        $"Tenemos estas opciones disponibles:\n\n{formattedOptions}\n\n¿Cuál prefieres? Puedes decir el número o el nombre.",
-        $"Veo que tenemos varias opciones:\n\n{formattedOptions}\n\n¿Cuál eliges? Dime el número o el nombre.",
-        $"Disponemos de varias opciones:\n\n{formattedOptions}\n\nDime cuál prefieres (número o nombre)."
+        $"Tenemos estos. ¿Cuál quieres?\n\n{formattedOptions}\n\nDime el número o el nombre.",
+        $"Hay varios de ese tipo. ¿Cuál prefieres?\n\n{formattedOptions}",
+        $"Tenemos varias opciones:\n\n{formattedOptions}\n\n¿Cuál eliges?",
+        $"Echa un vistazo:\n\n{formattedOptions}\n\n¿Cuál te gusta?"
     });
 
     /// <summary>

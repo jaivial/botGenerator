@@ -14,15 +14,18 @@ public class BookingHandler
     private readonly ILogger<BookingHandler> _logger;
     private readonly IConfiguration _configuration;
     private readonly IBookingRepository _bookingRepository;
+    private readonly IExternalReservationService _externalReservationService;
 
     public BookingHandler(
         ILogger<BookingHandler> logger,
         IConfiguration configuration,
-        IBookingRepository bookingRepository)
+        IBookingRepository bookingRepository,
+        IExternalReservationService externalReservationService)
     {
         _logger = logger;
         _configuration = configuration;
         _bookingRepository = bookingRepository;
+        _externalReservationService = externalReservationService;
     }
 
     public async Task<AgentResponse> CreateBookingAsync(
@@ -40,6 +43,32 @@ public class BookingHandler
 
             if (success && bookingId.HasValue)
             {
+                // Sync to external PHP system
+                var (externalSuccess, externalMessage) = await _externalReservationService.CreateReservationAsync(
+                    booking.Name,
+                    booking.Phone,
+                    booking.Date,
+                    booking.People,
+                    booking.Time,
+                    booking.ArrozType,
+                    booking.ArrozServings,
+                    booking.HighChairs,
+                    booking.BabyStrollers,
+                    cancellationToken);
+
+                if (!externalSuccess)
+                {
+                    _logger.LogWarning(
+                        "Failed to sync booking {BookingId} to external system: {Message}",
+                        bookingId.Value, externalMessage);
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        "Successfully synced booking {BookingId} to external system",
+                        bookingId.Value);
+                }
+
                 var confirmationMessage = BuildConfirmationMessage(booking);
 
                 return new AgentResponse

@@ -445,6 +445,16 @@ public class IntentRouterService : IIntentRouterService
             }
 
             // 1) Enforce mandatory "extras" collection (must be asked & answered)
+            // Use combined question for more fluid conversation
+            if (state.HighChairs is null && state.BabyStrollers is null)
+            {
+                return response with
+                {
+                    Intent = IntentType.Normal,
+                    AiResponse = ResponseVariations.AskTronasAndCarritos()
+                };
+            }
+
             if (state.HighChairs is null)
             {
                 return response with
