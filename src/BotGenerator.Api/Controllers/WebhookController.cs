@@ -908,6 +908,16 @@ public class WebhookController : ControllerBase
             return (false, "", updatedState);
         }
 
+        // Generic rice-modification requests (without concrete rice type) should route naturally
+        // to modification flow instead of being rejected by menu rice validation pre-checks.
+        if (IsGenericRiceModificationRequest(message.MessageText))
+        {
+            _logger.LogInformation(
+                "Generic rice modification request detected for {Phone}, skipping rice pre-check validation",
+                message.SenderNumber);
+            return (false, "", updatedState);
+        }
+
         // === Event booking detection (weddings, birthdays, communions, etc.) ===
         if (IsEventBookingRequest(message.MessageText))
         {
@@ -1468,6 +1478,43 @@ public class WebhookController : ControllerBase
         return false;
     }
 
+    private static bool IsGenericRiceModificationRequest(string messageText)
+    {
+        var text = messageText.ToLowerInvariant();
+        var hasModificationVerb = Regex.IsMatch(text, @"\b(modificar|cambiar|añadir|anadir|agregar|incluir|poner)\b");
+        return hasModificationVerb && IsGenericRiceReference(text);
+    }
+
+    private static bool IsGenericRiceReference(string text)
+    {
+        var normalized = Regex.Replace(text.ToLowerInvariant(), @"\s+", " ").Trim();
+
+        if (!Regex.IsMatch(normalized, @"\b(arroz|paella|fideu[aá]?)\b"))
+            return false;
+
+        if (Regex.IsMatch(normalized, @"\b\d+\s*raciones?\b"))
+            return false;
+
+        return !ContainsSpecificRiceDescriptor(normalized);
+    }
+
+    private static bool ContainsSpecificRiceDescriptor(string text)
+    {
+        var hasNamedRice = Regex.IsMatch(
+            text,
+            @"\b(arroz|paella|fideu[aá]?)\s+(a\s+la|al|del?|de|con)?\s*[a-záéíóúñ]{3,}\b");
+
+        var isReservationReference = Regex.IsMatch(
+            text,
+            @"\b(arroz|paella|fideu[aá]?)\s+(de\s+)?(mi|la|esta)\s+reserva\b");
+
+        var hasKnownStyleKeyword = Regex.IsMatch(
+            text,
+            @"\b(a\s*banda|señoret|señorito|negro|valencian[oa]?|bogavante|marisco|mixto|meloso|caldoso|abanda)\b");
+
+        return (hasNamedRice && !isReservationReference) || hasKnownStyleKeyword;
+    }
+
     private static bool IsLikelyModificationContinuation(
         string messageText,
         List<ChatMessage> history,
@@ -1540,7 +1587,8 @@ public class WebhookController : ControllerBase
             @"(mi|la|esta)\s+reserva|" +
             @"(en|a|para)\s+(mi|la)\s+reserva|" +
             @"para\s+\d+\s+de\s+(los|las)\s+\d+|" +
-            @"(podría|podria|puedo).*(incluir|añadir)");
+            @"(podría|podria|puedo).*(incluir|añadir)|" +
+            @"(modificar|cambiar).*(arroz|paella|fideu[aá]?)");
 
         if (hasRiceKeyword && hasReservationContext)
         {
@@ -1585,6 +1633,11 @@ public class WebhookController : ControllerBase
                 riceType = System.Text.RegularExpressions.Regex.Replace(riceType, @"\s+", " ").Trim();
                 // Remove trailing prepositions if they got captured
                 riceType = System.Text.RegularExpressions.Regex.Replace(riceType, @"\s+(para|en|a)$", "").Trim();
+
+                if (IsGenericRiceReference(riceType))
+                {
+                    riceType = null;
+                }
             }
 
             // Try to extract servings if mentioned

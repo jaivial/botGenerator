@@ -470,6 +470,73 @@ public class ModificationHandlerTests
         _stateStoreMock.Verify(x => x.Clear(It.IsAny<string>()), Times.Once);
     }
 
+    [Fact]
+    public async Task StartRiceModification_GenericRiceReference_AsksForSpecificRiceType()
+    {
+        // Arrange
+        var phone = "34612345678";
+        var message = CreateTextMessage(phone, "quiero modificar el arroz");
+
+        var booking = new BookingRecord
+        {
+            Id = 1,
+            ReservationDate = DateTime.Today.AddDays(7),
+            ReservationTime = TimeSpan.FromHours(14),
+            PartySize = 6,
+            ContactPhone = "612345678",
+            ArrozType = "Arroz del señoret",
+            ArrozServings = 4
+        };
+
+        // Act
+        var result = await _handler.StartRiceModificationAsync(
+            message,
+            booking,
+            preExtractedRiceType: "arroz",
+            preExtractedServings: null,
+            ct: default);
+
+        // Assert
+        result.Intent.Should().Be(IntentType.Modification);
+        result.AiResponse.Should().Contain("¿Qué arroz te gustaría");
+        result.AiResponse.Should().NotContain("No tenemos ese arroz");
+    }
+
+    [Fact]
+    public async Task HandleRiceChange_GenericMessage_AsksForSpecificRiceType()
+    {
+        // Arrange
+        var phone = "34612345678";
+        var message = CreateTextMessage(phone, "quiero modificar el arroz");
+
+        var selectedBooking = new BookingRecord
+        {
+            Id = 10,
+            ReservationDate = DateTime.Today.AddDays(5),
+            ReservationTime = TimeSpan.FromHours(15),
+            PartySize = 5,
+            ContactPhone = "612345678",
+            ArrozType = "Arroz a banda",
+            ArrozServings = 3
+        };
+
+        var currentState = new ModificationState
+        {
+            PhoneNumber = phone,
+            Stage = ModificationStage.CollectingNewValue,
+            SelectedBooking = selectedBooking,
+            FieldToModify = "rice"
+        };
+
+        // Act
+        var result = await _handler.ProcessModificationAsync(message, currentState);
+
+        // Assert
+        result.Intent.Should().Be(IntentType.Modification);
+        result.AiResponse.Should().Contain("¿Qué arroz quieres poner?");
+        result.AiResponse.Should().NotContain("No tenemos ese tipo de arroz");
+    }
+
     private static WhatsAppMessage CreateTextMessage(string phone, string text)
     {
         return new WhatsAppMessage

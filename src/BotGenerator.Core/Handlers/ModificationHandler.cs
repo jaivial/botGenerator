@@ -783,6 +783,27 @@ public class ModificationHandler
             };
         }
 
+        if (IsGenericRiceReference(text))
+        {
+            var stateAskRiceType = state with
+            {
+                Stage = ModificationStage.CollectingNewValue,
+                FieldToModify = "rice",
+                PendingChanges = null
+            };
+            _stateStore.Set(message.SenderNumber, stateAskRiceType);
+
+            var currentRice = string.IsNullOrWhiteSpace(booking.ArrozType)
+                ? "Actualmente no tienes arroz en la reserva."
+                : $"Actualmente tienes {booking.ArrozType} ({booking.ArrozServings} raciones).";
+
+            return new AgentResponse
+            {
+                Intent = IntentType.Modification,
+                AiResponse = $"{currentRice}\n\nPerfecto, te ayudo a cambiarlo. ¿Qué arroz quieres poner? Puedes verlo aquí: https://alqueriavillacarmen.com/menufindesemana.php"
+            };
+        }
+
         // Changing rice type - validate it
         var validation = await _riceValidator.ValidateAsync(text, "villacarmen", ct);
 
@@ -1185,6 +1206,36 @@ public class ModificationHandler
         return false;
     }
 
+    private static bool IsGenericRiceReference(string text)
+    {
+        var normalized = Regex.Replace(text.ToLowerInvariant(), @"\s+", " ").Trim();
+
+        if (!Regex.IsMatch(normalized, @"\b(arroz|paella|fideu[aá]?)\b"))
+            return false;
+
+        if (Regex.IsMatch(normalized, @"\b\d+\s*raciones?\b"))
+            return false;
+
+        return !ContainsSpecificRiceDescriptor(normalized);
+    }
+
+    private static bool ContainsSpecificRiceDescriptor(string text)
+    {
+        var hasNamedRice = Regex.IsMatch(
+            text,
+            @"\b(arroz|paella|fideu[aá]?)\s+(a\s+la|al|del?|de|con)?\s*[a-záéíóúñ]{3,}\b");
+
+        var isReservationReference = Regex.IsMatch(
+            text,
+            @"\b(arroz|paella|fideu[aá]?)\s+(de\s+)?(mi|la|esta)\s+reserva\b");
+
+        var hasKnownStyleKeyword = Regex.IsMatch(
+            text,
+            @"\b(a\s*banda|señoret|señorito|negro|valencian[oa]?|bogavante|marisco|mixto|meloso|caldoso|abanda)\b");
+
+        return (hasNamedRice && !isReservationReference) || hasKnownStyleKeyword;
+    }
+
     private AgentResponse BuildSelectBookingResponse(List<BookingRecord> bookings)
     {
         var sb = new StringBuilder();
@@ -1509,6 +1560,11 @@ public class ModificationHandler
         int? preExtractedServings,
         CancellationToken ct = default)
     {
+        if (!string.IsNullOrWhiteSpace(preExtractedRiceType) && IsGenericRiceReference(preExtractedRiceType))
+        {
+            preExtractedRiceType = null;
+        }
+
         _logger.LogInformation(
             "Starting rice modification for booking {BookingId}, pre-extracted rice: {Rice}, servings: {Servings}",
             booking.Id, preExtractedRiceType ?? "(none)", preExtractedServings?.ToString() ?? "N/A");
@@ -1652,6 +1708,12 @@ public class ModificationHandler
         int? preExtractedServings,
         CancellationToken ct = default)
     {
+        if (!string.IsNullOrWhiteSpace(preExtractedRiceType) && IsGenericRiceReference(preExtractedRiceType))
+        {
+            preExtractedRiceType = null;
+            preExtractedServings = null;
+        }
+
         _logger.LogInformation(
             "Starting rice modification with selection for {Phone}, {Count} bookings, pre-extracted rice: {Rice}",
             message.SenderNumber, bookings.Count, preExtractedRiceType ?? "(none)");
