@@ -18,17 +18,25 @@ public abstract class ConversationFlowTestBase : IAsyncLifetime
     protected ConversationSimulator Simulator { get; private set; } = null!;
     protected Mock<IGeminiService> AiServiceMock { get; private set; } = null!;
     protected Mock<IWhatsAppService> WhatsAppMock { get; private set; } = null!;
+    protected Mock<IMessageRepository> MessageRepositoryMock { get; private set; } = null!;
+    protected Mock<IExternalBookingService> ExternalBookingServiceMock { get; private set; } = null!;
     protected Mock<IMenuRepository> MenuRepositoryMock { get; private set; } = null!;
     protected IServiceProvider ServiceProvider { get; private set; } = null!;
+
+    private readonly Dictionary<string, List<ChatMessage>> _historyStore = new();
 
     public virtual async Task InitializeAsync()
     {
         AiServiceMock = new Mock<IGeminiService>();
         WhatsAppMock = new Mock<IWhatsAppService>();
+        MessageRepositoryMock = new Mock<IMessageRepository>();
+        ExternalBookingServiceMock = new Mock<IExternalBookingService>();
         MenuRepositoryMock = new Mock<IMenuRepository>();
 
         ConfigureDefaultAiBehavior();
         ConfigureWhatsAppMock();
+        ConfigureMessageRepositoryMock();
+        ConfigureExternalBookingServiceMock();
         ConfigureMenuRepositoryMock();
 
         var services = new ServiceCollection();
@@ -68,6 +76,142 @@ public abstract class ConversationFlowTestBase : IAsyncLifetime
                 It.IsAny<string>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
+
+        WhatsAppMock
+            .Setup(x => x.SendContactCardAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        WhatsAppMock
+            .Setup(x => x.SendLinkButtonsAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<List<LinkButtonOption>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        WhatsAppMock
+            .Setup(x => x.GetHistoryAsync(
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<WhatsAppHistoryMessage>());
+
+        WhatsAppMock
+            .Setup(x => x.GetHistoryPageAsync(
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new WhatsAppHistoryPage
+            {
+                Messages = new List<WhatsAppHistoryMessage>(),
+                HasMore = false,
+                Limit = 100,
+                Offset = 0,
+                NextOffset = 0
+            });
+
+        WhatsAppMock
+            .Setup(x => x.GetFullHistoryAsync(
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<WhatsAppHistoryMessage>());
+    }
+
+    protected virtual void ConfigureMessageRepositoryMock()
+    {
+        MessageRepositoryMock
+            .Setup(x => x.GetMessagesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string phone, CancellationToken _) =>
+            {
+                var key = NormalizePhone(phone);
+                return _historyStore.TryGetValue(key, out var existing)
+                    ? existing.ToList()
+                    : new List<ChatMessage>();
+            });
+
+        MessageRepositoryMock
+            .Setup(x => x.SaveMessageAsync(It.IsAny<string>(), It.IsAny<ChatMessage>(), It.IsAny<CancellationToken>()))
+            .Returns((string phone, ChatMessage message, CancellationToken _) =>
+            {
+                var key = NormalizePhone(phone);
+                if (!_historyStore.ContainsKey(key))
+                    _historyStore[key] = new List<ChatMessage>();
+
+                _historyStore[key].Add(message);
+                return Task.CompletedTask;
+            });
+
+        MessageRepositoryMock
+            .Setup(x => x.SaveMessagesDeduplicatedAsync(It.IsAny<string>(), It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<CancellationToken>()))
+            .Returns((string phone, IEnumerable<ChatMessage> messages, CancellationToken _) =>
+            {
+                var key = NormalizePhone(phone);
+                if (!_historyStore.ContainsKey(key))
+                    _historyStore[key] = new List<ChatMessage>();
+
+                var inserted = 0;
+                foreach (var message in messages)
+                {
+                    if (!string.IsNullOrWhiteSpace(message.MessageId) &&
+                        _historyStore[key].Any(x => x.MessageId == message.MessageId))
+                    {
+                        continue;
+                    }
+
+                    _historyStore[key].Add(message);
+                    inserted++;
+                }
+
+                return Task.FromResult(inserted);
+            });
+
+        MessageRepositoryMock
+            .Setup(x => x.GetRecentMessageIdsAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string phone, int limit, CancellationToken _) =>
+            {
+                var key = NormalizePhone(phone);
+                if (!_historyStore.TryGetValue(key, out var existing))
+                    return new List<string>();
+
+                return existing
+                    .Where(m => !string.IsNullOrWhiteSpace(m.MessageId))
+                    .Select(m => m.MessageId!)
+                    .Distinct()
+                    .Take(Math.Max(1, limit))
+                    .ToList();
+            });
+
+        MessageRepositoryMock
+            .Setup(x => x.HasMessagesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string phone, CancellationToken _) =>
+            {
+                var key = NormalizePhone(phone);
+                return _historyStore.TryGetValue(key, out var existing) && existing.Count > 0;
+            });
+
+        MessageRepositoryMock
+            .Setup(x => x.ClearMessagesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns((string phone, CancellationToken _) =>
+            {
+                _historyStore.Remove(NormalizePhone(phone));
+                return Task.CompletedTask;
+            });
+    }
+
+    protected virtual void ConfigureExternalBookingServiceMock()
+    {
+        ExternalBookingServiceMock
+            .Setup(x => x.GetBookingByPhoneAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ExternalBookingInfo?)null);
     }
 
     protected virtual void ConfigureMenuRepositoryMock()
@@ -99,6 +243,8 @@ public abstract class ConversationFlowTestBase : IAsyncLifetime
         // Mocked services
         services.AddSingleton(AiServiceMock.Object);
         services.AddSingleton(WhatsAppMock.Object);
+        services.AddSingleton(MessageRepositoryMock.Object);
+        services.AddSingleton(ExternalBookingServiceMock.Object);
         services.AddSingleton(MenuRepositoryMock.Object);
 
         // Real services for testing
@@ -139,6 +285,9 @@ public abstract class ConversationFlowTestBase : IAsyncLifetime
         var basePath = AppContext.BaseDirectory;
         return Path.Combine(basePath, "prompts");
     }
+
+    private static string NormalizePhone(string input)
+        => new(input.Where(char.IsDigit).ToArray());
 
     /// <summary>
     /// Generates contextual AI responses based on conversation state.

@@ -3,7 +3,6 @@ using Dapper;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using MySqlConnector;
-using System.Text.Json;
 
 namespace BotGenerator.Core.Services;
 
@@ -78,12 +77,69 @@ public class MessageRepository : IMessageRepository
         ChatMessage message,
         CancellationToken cancellationToken = default)
     {
+        await SaveMessagesDeduplicatedAsync(phoneNumber, new[] { message }, cancellationToken);
+    }
+
+    public async Task<int> SaveMessagesDeduplicatedAsync(
+        string phoneNumber,
+        IEnumerable<ChatMessage> messages,
+        CancellationToken cancellationToken = default)
+    {
         try
         {
             await using var connection = new MySqlConnection(_connectionString);
             await connection.OpenAsync(cancellationToken);
 
             var normalizedPhone = NormalizePhone(phoneNumber);
+
+            var input = messages
+                .Where(m => !string.IsNullOrWhiteSpace(m.Content))
+                .ToList();
+
+            if (input.Count == 0)
+                return 0;
+
+            var candidateIds = input
+                .Select(m => m.MessageId)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Select(id => id!)
+                .Distinct()
+                .ToList();
+
+            HashSet<string> existingIds = new(StringComparer.Ordinal);
+            if (candidateIds.Count > 0)
+            {
+                var existing = await connection.QueryAsync<string>(@"
+                    SELECT message_id
+                    FROM bot_conversation_messages
+                    WHERE phone_number = @Phone
+                      AND message_id IN @Ids",
+                    new
+                    {
+                        Phone = normalizedPhone,
+                        Ids = candidateIds
+                    });
+
+                existingIds = existing
+                    .Where(id => !string.IsNullOrWhiteSpace(id))
+                    .ToHashSet(StringComparer.Ordinal);
+            }
+
+            var toInsert = input
+                .Where(m => string.IsNullOrWhiteSpace(m.MessageId) || !existingIds.Contains(m.MessageId))
+                .Select(m => new
+                {
+                    Phone = normalizedPhone,
+                    Role = m.Role,
+                    Content = m.Content,
+                    Timestamp = ParseTimestampOrNow(m.Timestamp),
+                    MessageId = m.MessageId,
+                    FromName = m.FromName
+                })
+                .ToList();
+
+            if (toInsert.Count == 0)
+                return 0;
 
             var sql = @"
                 INSERT INTO bot_conversation_messages (
@@ -102,27 +158,58 @@ public class MessageRepository : IMessageRepository
                     @FromName
                 )";
 
-            var parameters = new
-            {
-                Phone = normalizedPhone,
-                Role = message.Role,
-                Content = message.Content,
-                Timestamp = message.Timestamp != null 
-                    ? DateTime.Parse(message.Timestamp) 
-                    : DateTime.UtcNow,
-                MessageId = message.MessageId,
-                FromName = message.FromName
-            };
-
-            await connection.ExecuteAsync(sql, parameters);
+            var inserted = await connection.ExecuteAsync(sql, toInsert);
 
             _logger.LogDebug(
-                "Saved message for phone {Phone}, role {Role}",
-                normalizedPhone, message.Role);
+                "Saved {Count} messages for phone {Phone} (deduplicated)",
+                inserted,
+                normalizedPhone);
+
+            return inserted;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error saving message for phone {Phone}", phoneNumber);
+            _logger.LogError(ex, "Error saving messages for phone {Phone}", phoneNumber);
+            return 0;
+        }
+    }
+
+    public async Task<List<string>> GetRecentMessageIdsAsync(
+        string phoneNumber,
+        int limit = 300,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await using var connection = new MySqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            var normalizedPhone = NormalizePhone(phoneNumber);
+            var safeLimit = Math.Clamp(limit, 1, 1000);
+
+            var ids = await connection.QueryAsync<string>(@"
+                SELECT message_id
+                FROM bot_conversation_messages
+                WHERE phone_number = @Phone
+                  AND message_id IS NOT NULL
+                  AND message_id <> ''
+                ORDER BY timestamp DESC
+                LIMIT @Limit",
+                new
+                {
+                    Phone = normalizedPhone,
+                    Limit = safeLimit
+                });
+
+            return ids
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct()
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error loading recent message IDs for phone {Phone}", phoneNumber);
+            return new List<string>();
         }
     }
 
@@ -188,5 +275,15 @@ public class MessageRepository : IMessageRepository
         // Store with country code if available, otherwise as-is
         // This ensures consistency with how phone numbers are stored elsewhere
         return digits;
+    }
+
+    private static DateTime ParseTimestampOrNow(string? timestamp)
+    {
+        if (string.IsNullOrWhiteSpace(timestamp))
+            return DateTime.UtcNow;
+
+        return DateTime.TryParse(timestamp, out var parsed)
+            ? parsed
+            : DateTime.UtcNow;
     }
 }

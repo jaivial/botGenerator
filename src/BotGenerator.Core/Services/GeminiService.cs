@@ -28,7 +28,7 @@ public class GeminiService : IGeminiService
         _apiKey = configuration["GoogleAI:ApiKey"]
             ?? throw new InvalidOperationException("GoogleAI:ApiKey is not configured");
 
-        _model = configuration["GoogleAI:Model"] ?? "gemini-2.5-flash-preview-05-20";
+        _model = configuration["GoogleAI:Model"] ?? "gemini-3.1-flash-lite-preview";
 
         // Load default generation config
         _defaultConfig = new GeminiGenerationConfig

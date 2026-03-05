@@ -16,6 +16,7 @@ public class MainConversationAgent : IAgent
     private readonly IContextBuilderService _contextBuilder;
     private readonly IConversationHistoryService _historyService;
     private readonly IMenuRepository _menuRepository;
+    private readonly IConversationVectorStore? _vectorStore;
     private readonly IConfiguration _configuration;
     private readonly ILogger<MainConversationAgent> _logger;
 
@@ -27,12 +28,34 @@ public class MainConversationAgent : IAgent
         IMenuRepository menuRepository,
         IConfiguration configuration,
         ILogger<MainConversationAgent> logger)
+        : this(
+            gemini,
+            promptLoader,
+            contextBuilder,
+            historyService,
+            menuRepository,
+            null,
+            configuration,
+            logger)
+    {
+    }
+
+    public MainConversationAgent(
+        IGeminiService gemini,
+        IPromptLoaderService promptLoader,
+        IContextBuilderService contextBuilder,
+        IConversationHistoryService historyService,
+        IMenuRepository menuRepository,
+        IConversationVectorStore? vectorStore,
+        IConfiguration configuration,
+        ILogger<MainConversationAgent> logger)
     {
         _gemini = gemini ?? throw new ArgumentNullException(nameof(gemini));
         _promptLoader = promptLoader ?? throw new ArgumentNullException(nameof(promptLoader));
         _contextBuilder = contextBuilder ?? throw new ArgumentNullException(nameof(contextBuilder));
         _historyService = historyService ?? throw new ArgumentNullException(nameof(historyService));
         _menuRepository = menuRepository ?? throw new ArgumentNullException(nameof(menuRepository));
+        _vectorStore = vectorStore;
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -84,6 +107,42 @@ public class MainConversationAgent : IAgent
 
             // 4. Build context with all dynamic values (including existing bookings)
             var context = _contextBuilder.BuildContext(message, state, history, existingBookings);
+
+            // 4b. Retrieve long-term semantic memory from vector store (isolated by phone)
+            if (_vectorStore != null)
+            {
+                try
+                {
+                    var topK = Math.Max(1, _configuration.GetValue("Chroma:TopK", 6));
+                    var semanticMemory = await _vectorStore.QueryRelevantAsync(
+                        message.SenderNumber,
+                        message.MessageText,
+                        topK,
+                        cancellationToken);
+
+                    if (semanticMemory.Count > 0)
+                    {
+                        context["hasSemanticContext"] = true;
+                        context["semanticContext"] = _contextBuilder.FormatHistory(semanticMemory, topK);
+                    }
+                    else
+                    {
+                        context["hasSemanticContext"] = false;
+                        context["semanticContext"] = "";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to retrieve semantic context from vector store");
+                    context["hasSemanticContext"] = false;
+                    context["semanticContext"] = "";
+                }
+            }
+            else
+            {
+                context["hasSemanticContext"] = false;
+                context["semanticContext"] = "";
+            }
 
             // Add rice validation result to context if valid
             if (riceValidation.HasRiceRequest && riceValidation.IsValid)

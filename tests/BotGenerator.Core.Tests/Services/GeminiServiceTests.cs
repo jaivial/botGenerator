@@ -23,7 +23,7 @@ public class GeminiServiceTests
         var configValues = new Dictionary<string, string?>
         {
             { "GoogleAI:ApiKey", "test-api-key" },
-            { "GoogleAI:Model", "gemini-2.5-flash-preview-05-20" }
+            { "GoogleAI:Model", "gemini-3.1-flash-lite-preview" }
         };
 
         _configuration = new ConfigurationBuilder()
@@ -216,7 +216,7 @@ public class GeminiServiceTests
 
         // Verify URL contains API key
         Assert.Contains("key=test-api-key", capturedUrl);
-        Assert.Contains("gemini-2.5-flash-preview-05-20:generateContent", capturedUrl);
+        Assert.Contains("gemini-3.1-flash-lite-preview:generateContent", capturedUrl);
 
         // Parse the captured request body
         var requestJson = JsonDocument.Parse(capturedRequestBody);

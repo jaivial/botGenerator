@@ -23,6 +23,23 @@ public interface IMessageRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Saves multiple messages to the database, skipping duplicates by message_id when present.
+    /// Returns number of inserted rows.
+    /// </summary>
+    Task<int> SaveMessagesDeduplicatedAsync(
+        string phoneNumber,
+        IEnumerable<ChatMessage> messages,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets recent external message IDs for deduplication.
+    /// </summary>
+    Task<List<string>> GetRecentMessageIdsAsync(
+        string phoneNumber,
+        int limit = 300,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Checks if a phone number has any messages in the database.
     /// </summary>
     Task<bool> HasMessagesAsync(

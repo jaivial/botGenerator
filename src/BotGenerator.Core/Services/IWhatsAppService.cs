@@ -52,6 +52,24 @@ public interface IWhatsAppService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gets one paginated history page from WhatsApp.
+    /// </summary>
+    Task<WhatsAppHistoryPage> GetHistoryPageAsync(
+        string phoneNumber,
+        int limit = 100,
+        int offset = 0,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets full conversation history from WhatsApp by paging through all results.
+    /// </summary>
+    Task<List<WhatsAppHistoryMessage>> GetFullHistoryAsync(
+        string phoneNumber,
+        int pageSize = 100,
+        int maxPages = 50,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Sends a contact card (vCard) to a phone number.
     /// </summary>
     Task<bool> SendContactCardAsync(
@@ -87,4 +105,13 @@ public record WhatsAppHistoryMessage
     public long Timestamp { get; init; }
     public string? SenderName { get; init; }
     public string? MessageId { get; init; }
+}
+
+public record WhatsAppHistoryPage
+{
+    public List<WhatsAppHistoryMessage> Messages { get; init; } = new();
+    public int Limit { get; init; }
+    public int Offset { get; init; }
+    public int NextOffset { get; init; }
+    public bool HasMore { get; init; }
 }

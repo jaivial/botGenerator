@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using BotGenerator.Core.Agents;
 using BotGenerator.Core.Handlers;
 using BotGenerator.Core.Models;
@@ -215,7 +216,7 @@ public class WebhookController : ControllerBase
 
                     await _historyService.AddMessageAsync(
                         message.SenderNumber,
-                        ChatMessage.FromUser(message.MessageText, message.PushName),
+                        ChatMessage.FromUser(message.MessageText, message.PushName, message.MessageId, message.Timestamp),
                         cancellationToken);
 
                     await _whatsApp.SendTextAsync(message.SenderNumber, reply, cancellationToken);
@@ -234,7 +235,7 @@ public class WebhookController : ControllerBase
 
                     await _historyService.AddMessageAsync(
                         message.SenderNumber,
-                        ChatMessage.FromUser(message.MessageText, message.PushName),
+                        ChatMessage.FromUser(message.MessageText, message.PushName, message.MessageId, message.Timestamp),
                         cancellationToken);
 
                     await _whatsApp.SendTextAsync(message.SenderNumber, reply, cancellationToken);
@@ -271,7 +272,7 @@ public class WebhookController : ControllerBase
                 // Store in history
                 await _historyService.AddMessageAsync(
                     message.SenderNumber,
-                    ChatMessage.FromUser(message.MessageText, message.PushName),
+                    ChatMessage.FromUser(message.MessageText, message.PushName, message.MessageId, message.Timestamp),
                     cancellationToken);
 
                 if (!string.IsNullOrWhiteSpace(cancellationResponse.AiResponse))
@@ -330,7 +331,7 @@ public class WebhookController : ControllerBase
                 // Store in history
                 await _historyService.AddMessageAsync(
                     message.SenderNumber,
-                    ChatMessage.FromUser(message.MessageText, message.PushName),
+                    ChatMessage.FromUser(message.MessageText, message.PushName, message.MessageId, message.Timestamp),
                     cancellationToken);
 
                 if (!string.IsNullOrWhiteSpace(modResponse.AiResponse))
@@ -374,7 +375,7 @@ public class WebhookController : ControllerBase
 
                     await _historyService.AddMessageAsync(
                         message.SenderNumber,
-                        ChatMessage.FromUser(message.MessageText, message.PushName),
+                        ChatMessage.FromUser(message.MessageText, message.PushName, message.MessageId, message.Timestamp),
                         cancellationToken);
 
                     await _whatsApp.SendTextAsync(
@@ -418,7 +419,7 @@ public class WebhookController : ControllerBase
 
                     await _historyService.AddMessageAsync(
                         message.SenderNumber,
-                        ChatMessage.FromUser(message.MessageText, message.PushName),
+                        ChatMessage.FromUser(message.MessageText, message.PushName, message.MessageId, message.Timestamp),
                         cancellationToken);
 
                     await _whatsApp.SendTextAsync(
@@ -438,7 +439,7 @@ public class WebhookController : ControllerBase
             // 3. Extract conversation state using AI (more robust than regex)
             // AI understands natural language variations like "nah", "ninguna", "sin tronas", etc.
             var historyForState = history
-                .Append(ChatMessage.FromUser(message.MessageText, message.PushName))
+                .Append(ChatMessage.FromUser(message.MessageText, message.PushName, message.MessageId, message.Timestamp))
                 .ToList();
 
             var state = await _aiStateExtractor.ExtractStateAsync(historyForState, cancellationToken);
@@ -451,6 +452,7 @@ public class WebhookController : ControllerBase
                 message,
                 state,
                 existingBookings.Count,
+                history,
                 cancellationToken);
 
             // Allow pre-checks to enrich the state (e.g., validated rice name)
@@ -469,7 +471,7 @@ public class WebhookController : ControllerBase
                 // Persist to conversation history so the bot keeps context
                 await _historyService.AddMessageAsync(
                     message.SenderNumber,
-                    ChatMessage.FromUser(message.MessageText, message.PushName),
+                    ChatMessage.FromUser(message.MessageText, message.PushName, message.MessageId, message.Timestamp),
                     cancellationToken);
 
                 await _historyService.AddMessageAsync(
@@ -513,7 +515,7 @@ public class WebhookController : ControllerBase
 
                 await _historyService.AddMessageAsync(
                     message.SenderNumber,
-                    ChatMessage.FromUser(message.MessageText, message.PushName),
+                    ChatMessage.FromUser(message.MessageText, message.PushName, message.MessageId, message.Timestamp),
                     cancellationToken);
 
                 var declineResponse = "Entendido, he cancelado la reserva. ¿Te gustaría empezar de nuevo o necesitas algo más?";
@@ -598,7 +600,7 @@ public class WebhookController : ControllerBase
                     // Store history for deterministic booking
                     await _historyService.AddMessageAsync(
                         message.SenderNumber,
-                        ChatMessage.FromUser(message.MessageText, message.PushName),
+                        ChatMessage.FromUser(message.MessageText, message.PushName, message.MessageId, message.Timestamp),
                         cancellationToken);
                     await _historyService.AddMessageAsync(
                         message.SenderNumber,
@@ -614,7 +616,7 @@ public class WebhookController : ControllerBase
                 // Store history for deterministic fallback
                 await _historyService.AddMessageAsync(
                     message.SenderNumber,
-                    ChatMessage.FromUser(message.MessageText, message.PushName),
+                    ChatMessage.FromUser(message.MessageText, message.PushName, message.MessageId, message.Timestamp),
                     cancellationToken);
                 await _historyService.AddMessageAsync(
                     message.SenderNumber,
@@ -638,7 +640,7 @@ public class WebhookController : ControllerBase
             // replaces the AI response with hardcoded questions.
             await _historyService.AddMessageAsync(
                 message.SenderNumber,
-                ChatMessage.FromUser(message.MessageText, message.PushName),
+                ChatMessage.FromUser(message.MessageText, message.PushName, message.MessageId, message.Timestamp),
                 cancellationToken);
 
             // 6. Send response
@@ -816,7 +818,29 @@ public class WebhookController : ControllerBase
         long timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         if (messageBody.TryGetProperty("messageTimestamp", out var tsProp))
         {
-            timestamp = tsProp.GetInt64();
+            if (tsProp.ValueKind == JsonValueKind.Number && tsProp.TryGetInt64(out var tsNumeric))
+            {
+                timestamp = tsNumeric;
+            }
+            else if (tsProp.ValueKind == JsonValueKind.String && long.TryParse(tsProp.GetString(), out var tsString))
+            {
+                timestamp = tsString;
+            }
+        }
+
+        // Get external message ID for deduplication
+        string? messageId = null;
+        if (messageBody.TryGetProperty("messageid", out var messageIdProp) && messageIdProp.ValueKind == JsonValueKind.String)
+        {
+            messageId = messageIdProp.GetString();
+        }
+        else if (messageBody.TryGetProperty("messageId", out var messageIdCamelProp) && messageIdCamelProp.ValueKind == JsonValueKind.String)
+        {
+            messageId = messageIdCamelProp.GetString();
+        }
+        else if (messageBody.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.String)
+        {
+            messageId = idProp.GetString();
         }
 
         // Get button ID if present
@@ -834,6 +858,7 @@ public class WebhookController : ControllerBase
             PushName = pushName,
             FromMe = fromMe,
             Timestamp = timestamp,
+            MessageId = messageId,
             IsButtonResponse = isButtonResponse,
             ButtonId = buttonId,
             ButtonText = isButtonResponse ? messageText : null,
@@ -862,14 +887,20 @@ public class WebhookController : ControllerBase
         WhatsAppMessage message,
         ConversationState state,
         int existingBookingsCount,
+        List<ChatMessage> history,
         CancellationToken cancellationToken)
     {
         var updatedState = state;
 
+        var isModificationContinuation = IsLikelyModificationContinuation(
+            message.MessageText,
+            history,
+            existingBookingsCount);
+
         // === MODIFICATION CONTEXT DETECTION ===
         // If user has existing bookings and is talking about their reservation,
         // skip the pre-checks and let the AI route to modification flow
-        if (IsModificationContext(message.MessageText, existingBookingsCount))
+        if (IsModificationContext(message.MessageText, existingBookingsCount) || isModificationContinuation)
         {
             _logger.LogInformation(
                 "Modification context detected for {Phone} (has {Count} bookings), skipping pre-checks",
@@ -949,6 +980,13 @@ public class WebhookController : ControllerBase
         // Extract values from current message
         var extractedPartySize = TryExtractPartySizeFromMessage(message.MessageText);
         var extractedTime = TryExtractTimeFromMessage(message.MessageText);
+
+        // In active modification flow, short numeric replies ("1", "4") are often menu/servings inputs,
+        // not new party-size declarations.
+        if (isModificationContinuation && Regex.IsMatch(message.MessageText.Trim(), @"^\d{1,2}$"))
+        {
+            extractedPartySize = null;
+        }
 
         // Determine effective values (from message or state)
         DateTime? effectiveDate = extractedDate?.Date ?? (state.Fecha != null ? ParseDateFromState(state.Fecha) : null);
@@ -1428,6 +1466,54 @@ public class WebhookController : ControllerBase
             return true;
 
         return false;
+    }
+
+    private static bool IsLikelyModificationContinuation(
+        string messageText,
+        List<ChatMessage> history,
+        int existingBookingsCount)
+    {
+        if (existingBookingsCount == 0 || history.Count == 0)
+            return false;
+
+        var text = messageText.Trim().ToLowerInvariant();
+        var isShortNumericReply = Regex.IsMatch(text, @"^\d{1,2}$");
+        var isTimeReply = Regex.IsMatch(text, @"\b\d{1,2}:\d{2}\b") || text.StartsWith("a las ");
+        var mentionsRiceOrServings = Regex.IsMatch(text, @"\b(arroz|paella|fideu[aá]?|raci[oó]n|raciones)\b");
+
+        if (!isShortNumericReply && !isTimeReply && !mentionsRiceOrServings)
+            return false;
+
+        var lastAssistant = history
+            .Where(m => m.Role == "assistant")
+            .Select(m => m.Content.ToLowerInvariant())
+            .LastOrDefault() ?? string.Empty;
+
+        var assistantLooksLikeModificationFlow =
+            lastAssistant.Contains("qué quieres modificar") ||
+            lastAssistant.Contains("que quieres modificar") ||
+            lastAssistant.Contains("qué necesitas cambiar") ||
+            lastAssistant.Contains("que necesitas cambiar") ||
+            lastAssistant.Contains("reserva actual") ||
+            lastAssistant.Contains("cuántas raciones") ||
+            lastAssistant.Contains("cuantas raciones") ||
+            lastAssistant.Contains("tipo de arroz") ||
+            lastAssistant.Contains("modificación") ||
+            lastAssistant.Contains("modificar");
+
+        if (assistantLooksLikeModificationFlow)
+            return true;
+
+        var recentWindow = history
+            .TakeLast(4)
+            .Select(m => m.Content.ToLowerInvariant())
+            .ToList();
+
+        return recentWindow.Any(c =>
+            c.Contains("modificar") ||
+            c.Contains("cambiar la reserva") ||
+            c.Contains("añadir arroz") ||
+            c.Contains("anadir arroz"));
     }
 
     /// <summary>

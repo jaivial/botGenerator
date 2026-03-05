@@ -24,6 +24,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Override configuration with environment variables
 var googleApiKey = Environment.GetEnvironmentVariable("GOOGLE_AI_API_KEY");
+if (string.IsNullOrWhiteSpace(googleApiKey))
+{
+    googleApiKey = Environment.GetEnvironmentVariable("GOOGLE_API_KEY");
+}
 var minimaxApiKey = Environment.GetEnvironmentVariable("MINIMAX_API_KEY");
 var whatsappApiUrl = Environment.GetEnvironmentVariable("WHATSAPP_API_URL");
 var whatsappToken = Environment.GetEnvironmentVariable("WHATSAPP_TOKEN");
@@ -33,6 +37,9 @@ var redisConnectionString = Environment.GetEnvironmentVariable("REDIS_CONNECTION
 var mysqlConnectionString = Environment.GetEnvironmentVariable("MYSQL_CONNECTION_STRING");
 var externalBookingApiUrl = Environment.GetEnvironmentVariable("EXTERNAL_BOOKING_API_URL");
 var externalBookingApiKey = Environment.GetEnvironmentVariable("EXTERNAL_BOOKING_API_KEY");
+var chromaApiUrl = Environment.GetEnvironmentVariable("CHROMA_API_URL");
+var chromaEnabled = Environment.GetEnvironmentVariable("CHROMA_ENABLED");
+var chromaCollectionName = Environment.GetEnvironmentVariable("CHROMA_COLLECTION_NAME");
 
 Console.WriteLine($"[ENV] GOOGLE_AI_API_KEY: {(string.IsNullOrEmpty(googleApiKey) ? "NOT SET" : "SET (" + googleApiKey?.Length + " chars)")}");
 Console.WriteLine($"[ENV] MINIMAX_API_KEY: {(string.IsNullOrEmpty(minimaxApiKey) ? "NOT SET" : "SET (" + minimaxApiKey?.Length + " chars)")}");
@@ -42,6 +49,7 @@ Console.WriteLine($"[ENV] UAZAPI_URL: {(string.IsNullOrEmpty(uazapiUrl) ? "NOT S
 Console.WriteLine($"[ENV] UAZAPI_TOKEN: {(string.IsNullOrEmpty(uazapiToken) ? "NOT SET" : "SET (" + uazapiToken?.Length + " chars)")}");
 Console.WriteLine($"[ENV] MYSQL_CONNECTION_STRING: {(string.IsNullOrEmpty(mysqlConnectionString) ? "NOT SET (using default)" : "SET")}");
 Console.WriteLine($"[ENV] EXTERNAL_BOOKING_API_URL: {(string.IsNullOrEmpty(externalBookingApiUrl) ? "NOT SET" : externalBookingApiUrl)}");
+Console.WriteLine($"[ENV] CHROMA_API_URL: {(string.IsNullOrEmpty(chromaApiUrl) ? "NOT SET" : chromaApiUrl)}");
 
 if (!string.IsNullOrEmpty(googleApiKey))
     builder.Configuration["GoogleAI:ApiKey"] = googleApiKey;
@@ -64,6 +72,12 @@ if (!string.IsNullOrEmpty(externalBookingApiUrl))
     builder.Configuration["ExternalBooking:ApiUrl"] = externalBookingApiUrl;
 if (!string.IsNullOrEmpty(externalBookingApiKey))
     builder.Configuration["ExternalBooking:ApiKey"] = externalBookingApiKey;
+if (!string.IsNullOrEmpty(chromaApiUrl))
+    builder.Configuration["Chroma:ApiUrl"] = chromaApiUrl;
+if (!string.IsNullOrEmpty(chromaEnabled))
+    builder.Configuration["Chroma:Enabled"] = chromaEnabled;
+if (!string.IsNullOrEmpty(chromaCollectionName))
+    builder.Configuration["Chroma:CollectionName"] = chromaCollectionName;
 
 // Build MySQL connection string from .env variables if not explicitly provided
 if (string.IsNullOrWhiteSpace(builder.Configuration["MySQL:ConnectionString"]))
@@ -125,6 +139,17 @@ builder.Services.AddHttpClient<IWhatsAppService, WhatsAppService>((serviceProvid
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
+builder.Services.AddHttpClient("Chroma", (serviceProvider, client) =>
+{
+    var config = serviceProvider.GetRequiredService<IConfiguration>();
+    var apiUrl = config["Chroma:ApiUrl"];
+    if (!string.IsNullOrWhiteSpace(apiUrl))
+    {
+        client.BaseAddress = new Uri(apiUrl);
+    }
+    client.Timeout = TimeSpan.FromSeconds(20);
+});
+
 // ========== Singleton Services ==========
 builder.Services.AddSingleton<IPromptLoaderService, PromptLoaderService>();
 builder.Services.AddSingleton<IOpeningHoursService, OpeningHoursService>();
@@ -134,6 +159,7 @@ builder.Services.AddSingleton<IConversationHistoryService, ConversationHistorySe
 builder.Services.AddSingleton<IMenuRepository, MenuRepository>();
 builder.Services.AddSingleton<IBookingRepository, BookingRepository>();
 builder.Services.AddSingleton<IBookingAvailabilityService, BookingAvailabilityService>();
+builder.Services.AddSingleton<IConversationVectorStore, ChromaConversationVectorStore>();
 builder.Services.AddSingleton<IPendingBookingStore, PendingBookingStore>();
 builder.Services.AddSingleton<IModificationStateStore, ModificationStateStore>();
 builder.Services.AddSingleton<ICancellationStateStore, CancellationStateStore>();

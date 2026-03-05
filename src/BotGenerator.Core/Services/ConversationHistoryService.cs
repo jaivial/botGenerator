@@ -15,9 +15,14 @@ public class ConversationHistoryService : IConversationHistoryService
     private readonly IExternalBookingService _externalBookingService;
     private readonly IContextBuilderService _contextBuilder;
     private readonly IAiStateExtractorService? _aiStateExtractor;
+    private readonly IWhatsAppService? _whatsAppService;
+    private readonly IConversationVectorStore? _vectorStore;
     private readonly ILogger<ConversationHistoryService> _logger;
     private readonly int _maxMessages;
     private readonly TimeSpan _sessionTimeout;
+    private readonly int _historySyncPageSize;
+    private readonly int _historySyncMaxPages;
+    private readonly int _incrementalSyncMaxPages;
 
     // In-memory cache for fast access during active conversations
     private readonly Dictionary<string, List<ChatMessage>> _cache = new();
@@ -28,17 +33,42 @@ public class ConversationHistoryService : IConversationHistoryService
         IExternalBookingService externalBookingService,
         IContextBuilderService contextBuilder,
         IConfiguration configuration,
+        ILogger<ConversationHistoryService> logger)
+        : this(
+            messageRepository,
+            externalBookingService,
+            contextBuilder,
+            configuration,
+            logger,
+            null,
+            null,
+            null)
+    {
+    }
+
+    public ConversationHistoryService(
+        IMessageRepository messageRepository,
+        IExternalBookingService externalBookingService,
+        IContextBuilderService contextBuilder,
+        IConfiguration configuration,
         ILogger<ConversationHistoryService> logger,
-        IAiStateExtractorService? aiStateExtractor = null)
+        IAiStateExtractorService? aiStateExtractor = null,
+        IWhatsAppService? whatsAppService = null,
+        IConversationVectorStore? vectorStore = null)
     {
         _messageRepository = messageRepository;
         _externalBookingService = externalBookingService;
         _contextBuilder = contextBuilder;
         _aiStateExtractor = aiStateExtractor;
+        _whatsAppService = whatsAppService;
+        _vectorStore = vectorStore;
         _logger = logger;
         _maxMessages = configuration.GetValue("History:MaxMessages", 30);
         _sessionTimeout = TimeSpan.FromMinutes(
             configuration.GetValue("History:SessionTimeoutMinutes", 30));
+        _historySyncPageSize = Math.Clamp(configuration.GetValue("History:SyncPageSize", 100), 1, 500);
+        _historySyncMaxPages = Math.Clamp(configuration.GetValue("History:FullSyncMaxPages", 50), 1, 500);
+        _incrementalSyncMaxPages = Math.Clamp(configuration.GetValue("History:IncrementalSyncMaxPages", 6), 1, 100);
     }
 
     public async Task<List<ChatMessage>> GetHistoryAsync(
@@ -63,6 +93,9 @@ public class ConversationHistoryService : IConversationHistoryService
 
         // Fetch from database
         var dbHistory = await _messageRepository.GetMessagesAsync(phoneNumber, cancellationToken);
+
+        // Sync with WhatsApp history when provider is available
+        dbHistory = await SyncWhatsAppHistoryAsync(phoneNumber, dbHistory, cancellationToken);
         
         // If no history exists, try to initialize from external booking
         if (dbHistory.Count == 0)
@@ -117,6 +150,18 @@ public class ConversationHistoryService : IConversationHistoryService
         // Save to database
         await _messageRepository.SaveMessageAsync(phoneNumber, message, cancellationToken);
 
+        if (_vectorStore != null && !string.IsNullOrWhiteSpace(message.Content))
+        {
+            try
+            {
+                await _vectorStore.UpsertMessageAsync(phoneNumber, message, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to upsert message into vector store for {Phone}", phoneNumber);
+            }
+        }
+
         // Update cache
         if (!_cache.ContainsKey(phoneNumber))
         {
@@ -151,6 +196,193 @@ public class ConversationHistoryService : IConversationHistoryService
         _lastActivity.Remove(phoneNumber);
 
         _logger.LogInformation("Cleared history for {Phone}", phoneNumber);
+    }
+
+    private async Task<List<ChatMessage>> SyncWhatsAppHistoryAsync(
+        string phoneNumber,
+        List<ChatMessage> currentHistory,
+        CancellationToken cancellationToken)
+    {
+        if (_whatsAppService == null)
+            return currentHistory;
+
+        try
+        {
+            if (currentHistory.Count == 0)
+            {
+                var fullHistory = await _whatsAppService.GetFullHistoryAsync(
+                    phoneNumber,
+                    _historySyncPageSize,
+                    _historySyncMaxPages,
+                    cancellationToken);
+
+                var mappedFullHistory = fullHistory
+                    .Select(MapWhatsAppMessage)
+                    .Where(m => m != null)
+                    .Cast<ChatMessage>()
+                    .OrderBy(ParseMessageTimestamp)
+                    .ToList();
+
+                if (mappedFullHistory.Count > 0)
+                {
+                    await _messageRepository.SaveMessagesDeduplicatedAsync(
+                        phoneNumber,
+                        mappedFullHistory,
+                        cancellationToken);
+
+                    await UpsertVectorBatchSafeAsync(phoneNumber, mappedFullHistory, cancellationToken);
+
+                    _logger.LogInformation(
+                        "Performed initial WhatsApp history sync for {Phone}. messages={Count}",
+                        phoneNumber,
+                        mappedFullHistory.Count);
+
+                    return await _messageRepository.GetMessagesAsync(phoneNumber, cancellationToken);
+                }
+
+                return currentHistory;
+            }
+
+            var recentIds = await _messageRepository.GetRecentMessageIdsAsync(phoneNumber, 400, cancellationToken);
+            var knownIds = recentIds.ToHashSet(StringComparer.Ordinal);
+
+            var newMessages = new List<ChatMessage>();
+            var offset = 0;
+
+            for (var pageIndex = 0; pageIndex < _incrementalSyncMaxPages; pageIndex++)
+            {
+                var page = await _whatsAppService.GetHistoryPageAsync(
+                    phoneNumber,
+                    _historySyncPageSize,
+                    offset,
+                    cancellationToken);
+
+                if (page.Messages.Count == 0)
+                    break;
+
+                var foundKnownMessage = false;
+
+                foreach (var waMessage in page.Messages)
+                {
+                    if (!string.IsNullOrWhiteSpace(waMessage.MessageId) && knownIds.Contains(waMessage.MessageId))
+                    {
+                        foundKnownMessage = true;
+                        continue;
+                    }
+
+                    var mapped = MapWhatsAppMessage(waMessage);
+                    if (mapped == null)
+                        continue;
+
+                    newMessages.Add(mapped);
+
+                    if (!string.IsNullOrWhiteSpace(waMessage.MessageId))
+                        knownIds.Add(waMessage.MessageId);
+                }
+
+                if (foundKnownMessage || !page.HasMore)
+                    break;
+
+                var nextOffset = page.NextOffset > offset
+                    ? page.NextOffset
+                    : offset + page.Messages.Count;
+
+                if (nextOffset <= offset)
+                    break;
+
+                offset = nextOffset;
+            }
+
+            if (newMessages.Count == 0)
+                return currentHistory;
+
+            var orderedNewMessages = newMessages
+                .OrderBy(ParseMessageTimestamp)
+                .ToList();
+
+            var inserted = await _messageRepository.SaveMessagesDeduplicatedAsync(
+                phoneNumber,
+                orderedNewMessages,
+                cancellationToken);
+
+            if (inserted > 0)
+            {
+                await UpsertVectorBatchSafeAsync(phoneNumber, orderedNewMessages, cancellationToken);
+
+                _logger.LogInformation(
+                    "Applied incremental WhatsApp history sync for {Phone}. newMessages={Count}",
+                    phoneNumber,
+                    inserted);
+
+                return await _messageRepository.GetMessagesAsync(phoneNumber, cancellationToken);
+            }
+
+            return currentHistory;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed WhatsApp history sync for {Phone}", phoneNumber);
+            return currentHistory;
+        }
+    }
+
+    private async Task UpsertVectorBatchSafeAsync(
+        string phoneNumber,
+        List<ChatMessage> messages,
+        CancellationToken cancellationToken)
+    {
+        if (_vectorStore == null || messages.Count == 0)
+            return;
+
+        try
+        {
+            await _vectorStore.UpsertMessagesAsync(phoneNumber, messages, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to upsert conversation batch into vector store for {Phone}", phoneNumber);
+        }
+    }
+
+    private static ChatMessage? MapWhatsAppMessage(WhatsAppHistoryMessage input)
+    {
+        if (string.IsNullOrWhiteSpace(input.Text))
+            return null;
+
+        return new ChatMessage
+        {
+            Role = input.FromMe ? "assistant" : "user",
+            Content = input.Text.Trim(),
+            Timestamp = NormalizeTimestamp(input.Timestamp).ToString("O"),
+            MessageId = input.MessageId,
+            FromName = input.SenderName
+        };
+    }
+
+    private static DateTime NormalizeTimestamp(long timestamp)
+    {
+        if (timestamp <= 0)
+            return DateTime.UtcNow;
+
+        try
+        {
+            var isMilliseconds = timestamp > 10_000_000_000;
+            return isMilliseconds
+                ? DateTimeOffset.FromUnixTimeMilliseconds(timestamp).UtcDateTime
+                : DateTimeOffset.FromUnixTimeSeconds(timestamp).UtcDateTime;
+        }
+        catch
+        {
+            return DateTime.UtcNow;
+        }
+    }
+
+    private static DateTime ParseMessageTimestamp(ChatMessage message)
+    {
+        if (DateTime.TryParse(message.Timestamp, out var parsed))
+            return parsed;
+
+        return DateTime.UtcNow;
     }
 
     /// <summary>

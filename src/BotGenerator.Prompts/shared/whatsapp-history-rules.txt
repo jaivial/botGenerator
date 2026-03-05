@@ -24,3 +24,12 @@
 
 ### HISTORIAL ACTUAL
 {{formattedHistory}}
+
+{{#if hasSemanticContext}}
+
+### CONTEXTO SEMÁNTICO RECUPERADO (MEMORIA LARGA)
+{{semanticContext}}
+
+Usa este contexto para mantener continuidad entre sesiones y evitar preguntas repetidas.
+Si hay conflicto, prioriza siempre lo más reciente que diga el cliente en esta conversación.
+{{/if}}

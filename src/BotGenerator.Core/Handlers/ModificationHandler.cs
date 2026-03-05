@@ -258,6 +258,17 @@ public class ModificationHandler
         else if (text == "2")
             field = "time";
 
+        // Balanced guardrail relaxation: infer field directly from value if user skips menu index.
+        if (field == null)
+        {
+            if (ParseDate(text) != null)
+                field = "date";
+            else if (ParseTime(text) != null || Regex.IsMatch(text, @"\b(a\s+las|sobre\s+las)\b"))
+                field = "time";
+            else if (Regex.IsMatch(text, @"\b(arroz|paella|fideu[aá]?|raci[oó]n|raciones)\b"))
+                field = "rice";
+        }
+
         if (field == null)
         {
             // Couldn't understand, ask again
@@ -699,6 +710,8 @@ public class ModificationHandler
     {
         var booking = state.SelectedBooking!;
         var text = message.MessageText.ToLowerInvariant().Trim();
+        var pendingRiceType = state.PendingChanges?.ArrozType;
+        var isAwaitingServingsForValidatedRice = !string.IsNullOrWhiteSpace(pendingRiceType);
 
         // Check if canceling rice
         if (Regex.IsMatch(text, @"(cancelar|quitar|sin|no|nada|eliminar)\s*(el\s+)?(arroz)?"))
@@ -719,9 +732,14 @@ public class ModificationHandler
             };
         }
 
-        // Check if changing servings only
-        var servingsMatch = Regex.Match(text, @"(\d+)\s*raciones?");
-        if (servingsMatch.Success && !Regex.IsMatch(text, @"(arroz|paella)"))
+        // Check if changing servings only (including short numeric reply when bot asked servings)
+        var servingsMatch = Regex.Match(text, @"(\d+)\s*(raciones?)?");
+        var hasRiceKeyword = Regex.IsMatch(text, @"(arroz|paella|fideu[aá]?)");
+        var isNumericOnly = Regex.IsMatch(text, @"^\d+$");
+        var looksLikeServingsOnly = servingsMatch.Success && !hasRiceKeyword &&
+                                    (Regex.IsMatch(text, @"raciones?") || isNumericOnly || isAwaitingServingsForValidatedRice);
+
+        if (looksLikeServingsOnly)
         {
             var newServings = int.Parse(servingsMatch.Groups[1].Value);
 
@@ -743,12 +761,18 @@ public class ModificationHandler
                 };
             }
 
-            var pendingChanges = new BookingUpdateData { ArrozServings = newServings };
+            var pendingChanges = new BookingUpdateData
+            {
+                ArrozType = pendingRiceType,
+                ArrozServings = newServings
+            };
             var newState = state with
             {
                 Stage = ModificationStage.AwaitingConfirmation,
                 PendingChanges = pendingChanges,
-                ChangeDescription = $"cambiar a {newServings} raciones de arroz"
+                ChangeDescription = !string.IsNullOrWhiteSpace(pendingRiceType)
+                    ? $"cambiar a {pendingRiceType} ({newServings} raciones)"
+                    : $"cambiar a {newServings} raciones de arroz"
             };
             _stateStore.Set(message.SenderNumber, newState);
 

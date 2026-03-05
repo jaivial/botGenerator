@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -198,8 +199,25 @@ public class WhatsAppService : IWhatsAppService
         int limit = 20,
         CancellationToken cancellationToken = default)
     {
+        var page = await GetHistoryPageAsync(phoneNumber, limit, 0, cancellationToken);
+        return page.Messages;
+    }
+
+    public async Task<WhatsAppHistoryPage> GetHistoryPageAsync(
+        string phoneNumber,
+        int limit = 100,
+        int offset = 0,
+        CancellationToken cancellationToken = default)
+    {
         var normalizedNumber = NormalizeChatIdNumber(phoneNumber);
-        _logger.LogDebug("Getting history for {Phone}, limit: {Limit}", normalizedNumber, limit);
+        var safeLimit = Math.Clamp(limit, 1, 500);
+        var safeOffset = Math.Max(0, offset);
+
+        _logger.LogDebug(
+            "Getting history page for {Phone}, limit: {Limit}, offset: {Offset}",
+            normalizedNumber,
+            safeLimit,
+            safeOffset);
 
         var request = new HttpRequestMessage(
             HttpMethod.Post,
@@ -209,7 +227,8 @@ public class WhatsAppService : IWhatsAppService
         request.Content = JsonContent.Create(new
         {
             chatid = $"{normalizedNumber}@s.whatsapp.net",
-            limit = limit
+            limit = safeLimit,
+            offset = safeOffset
         });
 
         try
@@ -218,41 +237,294 @@ public class WhatsAppService : IWhatsAppService
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("Failed to get history for {Phone}", phoneNumber);
-                return new List<WhatsAppHistoryMessage>();
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogWarning(
+                    "Failed to get history page for {Phone}. status={Status} body={Body}",
+                    phoneNumber,
+                    (int)response.StatusCode,
+                    body);
+
+                return new WhatsAppHistoryPage
+                {
+                    Limit = safeLimit,
+                    Offset = safeOffset,
+                    NextOffset = safeOffset,
+                    HasMore = false
+                };
             }
 
-            var result = await response.Content.ReadFromJsonAsync<HistoryResponse>(
-                cancellationToken: cancellationToken);
-
-            return result?.Messages?.Select(m => new WhatsAppHistoryMessage
-            {
-                Text = m.Text ?? "",
-                FromMe = m.FromMe,
-                Timestamp = m.MessageTimestamp,
-                SenderName = m.SenderName,
-                MessageId = m.MessageId
-            }).ToList() ?? new List<WhatsAppHistoryMessage>();
+            var raw = await response.Content.ReadAsStringAsync(cancellationToken);
+            return ParseHistoryPage(raw, safeLimit, safeOffset);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting history for {Phone}", phoneNumber);
-            return new List<WhatsAppHistoryMessage>();
+            _logger.LogError(ex, "Error getting history page for {Phone}", phoneNumber);
+            return new WhatsAppHistoryPage
+            {
+                Limit = safeLimit,
+                Offset = safeOffset,
+                NextOffset = safeOffset,
+                HasMore = false
+            };
         }
     }
 
-    private class HistoryResponse
+    public async Task<List<WhatsAppHistoryMessage>> GetFullHistoryAsync(
+        string phoneNumber,
+        int pageSize = 100,
+        int maxPages = 50,
+        CancellationToken cancellationToken = default)
     {
-        public List<HistoryMessage>? Messages { get; set; }
+        var safePageSize = Math.Clamp(pageSize, 1, 500);
+        var safeMaxPages = Math.Clamp(maxPages, 1, 500);
+
+        var dedup = new Dictionary<string, WhatsAppHistoryMessage>(StringComparer.Ordinal);
+        var offset = 0;
+
+        for (var i = 0; i < safeMaxPages; i++)
+        {
+            var page = await GetHistoryPageAsync(phoneNumber, safePageSize, offset, cancellationToken);
+            if (page.Messages.Count == 0)
+                break;
+
+            foreach (var message in page.Messages)
+            {
+                var key = !string.IsNullOrWhiteSpace(message.MessageId)
+                    ? message.MessageId!
+                    : $"{message.FromMe}|{message.Timestamp}|{message.Text}";
+
+                dedup[key] = message;
+            }
+
+            if (!page.HasMore)
+                break;
+
+            var nextOffset = page.NextOffset > offset
+                ? page.NextOffset
+                : offset + page.Messages.Count;
+
+            if (nextOffset <= offset)
+                break;
+
+            offset = nextOffset;
+        }
+
+        return dedup.Values
+            .OrderBy(m => NormalizeTimestamp(m.Timestamp))
+            .ToList();
     }
 
-    private class HistoryMessage
+    private WhatsAppHistoryPage ParseHistoryPage(string raw, int requestedLimit, int requestedOffset)
     {
-        public string? Text { get; set; }
-        public bool FromMe { get; set; }
-        public long MessageTimestamp { get; set; }
-        public string? SenderName { get; set; }
-        public string? MessageId { get; set; }
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            var root = doc.RootElement;
+
+            if (root.ValueKind == JsonValueKind.Array)
+            {
+                var list = ParseMessages(root);
+                return new WhatsAppHistoryPage
+                {
+                    Messages = list,
+                    Limit = requestedLimit,
+                    Offset = requestedOffset,
+                    NextOffset = requestedOffset + list.Count,
+                    HasMore = list.Count >= requestedLimit
+                };
+            }
+
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return new WhatsAppHistoryPage
+                {
+                    Limit = requestedLimit,
+                    Offset = requestedOffset,
+                    NextOffset = requestedOffset,
+                    HasMore = false
+                };
+            }
+
+            var messagesElement = TryGetPropertyIgnoreCase(root, "messages", out var directMessages)
+                ? directMessages
+                : default;
+
+            if (messagesElement.ValueKind != JsonValueKind.Array &&
+                TryGetPropertyIgnoreCase(root, "result", out var resultElement) &&
+                resultElement.ValueKind == JsonValueKind.Object &&
+                TryGetPropertyIgnoreCase(resultElement, "messages", out var nestedMessages))
+            {
+                messagesElement = nestedMessages;
+            }
+
+            var messages = messagesElement.ValueKind == JsonValueKind.Array
+                ? ParseMessages(messagesElement)
+                : new List<WhatsAppHistoryMessage>();
+
+            var limit = GetIntProperty(root, "limit") ?? requestedLimit;
+            var offset = GetIntProperty(root, "offset") ?? requestedOffset;
+            var nextOffset = GetIntProperty(root, "nextOffset") ?? (offset + messages.Count);
+            var hasMore = GetBoolProperty(root, "hasMore") ?? (messages.Count >= limit);
+
+            return new WhatsAppHistoryPage
+            {
+                Messages = messages,
+                Limit = limit,
+                Offset = offset,
+                NextOffset = nextOffset,
+                HasMore = hasMore
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse history response payload");
+            return new WhatsAppHistoryPage
+            {
+                Limit = requestedLimit,
+                Offset = requestedOffset,
+                NextOffset = requestedOffset,
+                HasMore = false
+            };
+        }
+    }
+
+    private static List<WhatsAppHistoryMessage> ParseMessages(JsonElement arrayElement)
+    {
+        var output = new List<WhatsAppHistoryMessage>();
+
+        foreach (var item in arrayElement.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+                continue;
+
+            var text = GetStringProperty(item, "text")
+                ?? GetStringProperty(item, "body")
+                ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(text))
+                continue;
+
+            var fromMe = GetBoolProperty(item, "fromMe")
+                ?? GetBoolProperty(item, "from_me")
+                ?? false;
+
+            var timestamp = GetLongProperty(item, "messageTimestamp")
+                ?? GetLongProperty(item, "timestamp")
+                ?? 0;
+
+            var senderName = GetStringProperty(item, "senderName")
+                ?? GetStringProperty(item, "sender");
+
+            var messageId = GetStringProperty(item, "messageid")
+                ?? GetStringProperty(item, "messageId")
+                ?? GetStringProperty(item, "id");
+
+            output.Add(new WhatsAppHistoryMessage
+            {
+                Text = text,
+                FromMe = fromMe,
+                Timestamp = timestamp,
+                SenderName = senderName,
+                MessageId = messageId
+            });
+        }
+
+        return output;
+    }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement element, string propertyName, out JsonElement value)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+                {
+                    value = property.Value;
+                    return true;
+                }
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static string? GetStringProperty(JsonElement element, string propertyName)
+    {
+        if (!TryGetPropertyIgnoreCase(element, propertyName, out var value))
+            return null;
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString(),
+            JsonValueKind.Number => value.ToString(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            _ => null
+        };
+    }
+
+    private static int? GetIntProperty(JsonElement element, string propertyName)
+    {
+        if (!TryGetPropertyIgnoreCase(element, propertyName, out var value))
+            return null;
+
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var intValue))
+            return intValue;
+
+        if (value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out intValue))
+            return intValue;
+
+        return null;
+    }
+
+    private static long? GetLongProperty(JsonElement element, string propertyName)
+    {
+        if (!TryGetPropertyIgnoreCase(element, propertyName, out var value))
+            return null;
+
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var longValue))
+            return longValue;
+
+        if (value.ValueKind == JsonValueKind.String && long.TryParse(value.GetString(), out longValue))
+            return longValue;
+
+        return null;
+    }
+
+    private static bool? GetBoolProperty(JsonElement element, string propertyName)
+    {
+        if (!TryGetPropertyIgnoreCase(element, propertyName, out var value))
+            return null;
+
+        if (value.ValueKind == JsonValueKind.True)
+            return true;
+        if (value.ValueKind == JsonValueKind.False)
+            return false;
+
+        if (value.ValueKind == JsonValueKind.String && bool.TryParse(value.GetString(), out var boolValue))
+            return boolValue;
+
+        return null;
+    }
+
+    private static DateTime NormalizeTimestamp(long timestamp)
+    {
+        if (timestamp <= 0)
+            return DateTime.MinValue;
+
+        try
+        {
+            var isMilliseconds = timestamp > 10_000_000_000;
+            return isMilliseconds
+                ? DateTimeOffset.FromUnixTimeMilliseconds(timestamp).UtcDateTime
+                : DateTimeOffset.FromUnixTimeSeconds(timestamp).UtcDateTime;
+        }
+        catch
+        {
+            return DateTime.MinValue;
+        }
     }
 
     public async Task<bool> SendLinkButtonsAsync(
