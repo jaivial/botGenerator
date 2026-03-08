@@ -1569,6 +1569,36 @@ public class ModificationHandler
             "Starting rice modification for booking {BookingId}, pre-extracted rice: {Rice}, servings: {Servings}",
             booking.Id, preExtractedRiceType ?? "(none)", preExtractedServings?.ToString() ?? "N/A");
 
+        // NEW: Check if booking is for same day BEFORE showing rice options.
+        // Same-day rice modifications must be handled by phone.
+        if (booking.ReservationDate.Date <= DateTime.Now.Date)
+        {
+            _logger.LogInformation(
+                "Same-day rice modification rejected for booking {BookingId} (date: {Date})",
+                booking.Id, booking.ReservationDate.ToString("yyyy-MM-dd"));
+
+            _stateStore.Clear(message.SenderNumber);
+
+            await _whatsAppService.SendTextAsync(
+                message.SenderNumber,
+                ResponseVariations.SameDayBookingIntro(),
+                ct);
+
+            await _whatsAppService.SendContactCardAsync(
+                message.SenderNumber,
+                fullName: "Gestión Reservas Villa Carmen",
+                contactPhoneNumber: "34638857294",
+                organization: "Alquería Villa Carmen",
+                email: null,
+                cancellationToken: ct);
+
+            return new AgentResponse
+            {
+                Intent = IntentType.Normal,
+                AiResponse = ResponseVariations.SameDayBookingRejection()
+            };
+        }
+
         // If rice type was extracted, validate it first
         if (!string.IsNullOrWhiteSpace(preExtractedRiceType))
         {
