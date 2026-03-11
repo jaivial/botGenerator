@@ -23,6 +23,7 @@ public class ModificationHandler
     private readonly IExternalReservationService _externalReservationService;
     private readonly IFieldAccumulatorService _fieldAccumulator;
     private readonly INaturalLanguageModificationParser _nlParser;
+    private readonly IPendingRiceStore _pendingRiceStore;
 
     // Spanish day names for lazy response parsing
     private static readonly Dictionary<string, DayOfWeek> SpanishDays = new(StringComparer.OrdinalIgnoreCase)
@@ -58,7 +59,8 @@ public class ModificationHandler
         IContextBuilderService contextBuilder,
         IExternalReservationService externalReservationService,
         IFieldAccumulatorService fieldAccumulator,
-        INaturalLanguageModificationParser nlParser)
+        INaturalLanguageModificationParser nlParser,
+        IPendingRiceStore pendingRiceStore)
     {
         _logger = logger;
         _bookingRepository = bookingRepository;
@@ -70,6 +72,7 @@ public class ModificationHandler
         _externalReservationService = externalReservationService;
         _fieldAccumulator = fieldAccumulator;
         _nlParser = nlParser;
+        _pendingRiceStore = pendingRiceStore;
     }
 
     /// <summary>
@@ -1085,6 +1088,92 @@ public class ModificationHandler
         var pendingRiceType = state.PendingChanges?.ArrozType;
         var isAwaitingServingsForValidatedRice = !string.IsNullOrWhiteSpace(pendingRiceType);
 
+        // PRIORITY 0: Check if user is selecting from pending rice options (numbered list)
+        var pendingRiceSelection = _pendingRiceStore.Get(message.SenderNumber);
+        if (pendingRiceSelection?.Options != null && pendingRiceSelection.Options.Count > 0)
+        {
+            var selectedRice = TryParseRiceSelection(text, pendingRiceSelection.Options);
+            if (!string.IsNullOrEmpty(selectedRice))
+            {
+                _logger.LogInformation(
+                    "User selected rice option: {Selected} from {Count} options",
+                    selectedRice,
+                    pendingRiceSelection.Options.Count);
+
+                // Clear pending rice options
+                _pendingRiceStore.Clear(message.SenderNumber);
+
+                // Check if servings were also mentioned
+                var pendingServingsMatch = Regex.Match(text, @"(\d+)\s*(raciones?)?");
+                if (pendingServingsMatch.Success)
+                {
+                    var pendingServings = int.Parse(pendingServingsMatch.Groups[1].Value);
+                    if (pendingServings < 2)
+                    {
+                        return new AgentResponse
+                        {
+                            Intent = IntentType.Modification,
+                            AiResponse = ResponseVariations.MinRicePortions()
+                        };
+                    }
+
+                    if (pendingServings > booking.PartySize)
+                    {
+                        return new AgentResponse
+                        {
+                            Intent = IntentType.Modification,
+                            AiResponse = ResponseVariations.RiceServingsExceedPartySize(booking.PartySize)
+                        };
+                    }
+
+                    // Have both rice type and servings - go to confirmation
+                    var pendingChanges = new BookingUpdateData
+                    {
+                        ArrozType = selectedRice,
+                        ArrozServings = pendingServings
+                    };
+                    var confirmedState = state with
+                    {
+                        Stage = ModificationStage.AwaitingConfirmation,
+                        PendingChanges = pendingChanges,
+                        ChangeDescription = $"cambiar a {selectedRice} ({pendingServings} raciones)"
+                    };
+                    _stateStore.Set(message.SenderNumber, confirmedState);
+
+                    return new AgentResponse
+                    {
+                        Intent = IntentType.Modification,
+                        AiResponse = $"Vas a {confirmedState.ChangeDescription}. ¿Confirmas? (Sí/No)"
+                    };
+                }
+
+                // Only rice type selected - ask for servings
+                var tempState = state with
+                {
+                    PendingChanges = new BookingUpdateData { ArrozType = selectedRice }
+                };
+                _stateStore.Set(message.SenderNumber, tempState);
+
+                return new AgentResponse
+                {
+                    Intent = IntentType.Modification,
+                    AiResponse = $"✅ {selectedRice} disponible. ¿Cuántas raciones quieres? (mínimo 2, máximo {booking.PartySize})"
+                };
+            }
+            else
+            {
+                // User didn't select a valid option, ask again
+                _logger.LogInformation("Could not parse rice selection from: {Message}", text);
+                var formattedOptions = string.Join("\n", pendingRiceSelection.Options.Select((r, i) => $"{i + 1}. {r}"));
+                var retryMsg = $"No he entendido tu elección. Por favor, dime el número de la opción que prefieres:\n\n{formattedOptions}";
+                return new AgentResponse
+                {
+                    Intent = IntentType.Modification,
+                    AiResponse = retryMsg
+                };
+            }
+        }
+
         // Check if canceling rice
         if (Regex.IsMatch(text, @"(cancelar|quitar|sin|no|nada|eliminar)\s*(el\s+)?(arroz)?"))
         {
@@ -2078,11 +2167,18 @@ public class ModificationHandler
                 };
                 _stateStore.Set(message.SenderNumber, state);
 
+                // Store options in PENDING RICE STORE for later selection parsing
+                _pendingRiceStore.Set(message.SenderNumber, new PendingRiceSelection
+                {
+                    Options = validation.Options,
+                    OriginalRequest = preExtractedRiceType ?? ""
+                });
+
                 var options = string.Join("\n", validation.Options.Select((r, i) => $"{i + 1}. {r}"));
                 return new AgentResponse
                 {
                     Intent = IntentType.Modification,
-                    AiResponse = $"He encontrado varias opciones de arroz. ¿Cuál prefieres?\n\n{options}"
+                    AiResponse = $"He encontrado varias opciones parecidas. Elige una, por favor:\n\n{options}\n\nPuedes decirme el número o el nombre del arroz."
                 };
             }
 
@@ -2188,6 +2284,58 @@ public class ModificationHandler
             Intent = IntentType.Modification,
             AiResponse = sb.ToString()
         });
+    }
+
+    #endregion
+
+    #region Helper Methods
+
+    /// <summary>
+    /// Tries to parse user's rice selection from their message.
+    /// Supports: numbers (1, 2), ordinals (la primera, la segunda), partial names.
+    /// </summary>
+    private static string? TryParseRiceSelection(string userMessage, List<string> options)
+    {
+        var text = userMessage.Trim().ToLowerInvariant();
+
+        // Direct number selection: "1", "2", etc.
+        if (int.TryParse(text, out var num) && num >= 1 && num <= options.Count)
+        {
+            return options[num - 1];
+        }
+
+        // Ordinal selection: "la primera", "el segundo", "la tercera opción"
+        foreach (var (ordinal, index) in OrdinalMappings)
+        {
+            if (text.Contains(ordinal) && index < options.Count)
+            {
+                return options[index];
+            }
+        }
+
+        // Partial name match (case-insensitive)
+        foreach (var option in options)
+        {
+            var optionLower = option.ToLowerInvariant();
+            
+            // Check if user message contains the rice name or vice versa
+            if (optionLower.Contains(text) || text.Contains(optionLower))
+            {
+                return option;
+            }
+
+            // Check for key words (e.g., "valenciana" matches "Paella Valenciana")
+            var words = text.Split(new[] { ' ', ',', '.' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var word in words)
+            {
+                if (word.Length >= 3 && optionLower.Contains(word))
+                {
+                    return option;
+                }
+            }
+        }
+
+        return null;
     }
 
     #endregion

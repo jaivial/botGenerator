@@ -24,6 +24,7 @@ public class ModificationHandlerTests
     private readonly Mock<IExternalReservationService> _externalReservationServiceMock;
     private readonly Mock<IFieldAccumulatorService> _fieldAccumulatorMock;
     private readonly Mock<INaturalLanguageModificationParser> _nlParserMock;
+    private readonly Mock<IPendingRiceStore> _pendingRiceStoreMock;
     private readonly ModificationHandler _handler;
 
     public ModificationHandlerTests()
@@ -44,6 +45,7 @@ public class ModificationHandlerTests
         _externalReservationServiceMock = new Mock<IExternalReservationService>();
         _fieldAccumulatorMock = new Mock<IFieldAccumulatorService>();
         _nlParserMock = new Mock<INaturalLanguageModificationParser>();
+        _pendingRiceStoreMock = new Mock<IPendingRiceStore>();
 
         // Setup default mock behavior for natural language parser
         _nlParserMock
@@ -53,6 +55,11 @@ public class ModificationHandlerTests
         _nlParserMock
             .Setup(x => x.IsCorrection(It.IsAny<string>()))
             .Returns(false);
+
+        // Setup default mock behavior for pending rice store
+        _pendingRiceStoreMock
+            .Setup(x => x.Get(It.IsAny<string>()))
+            .Returns((PendingRiceSelection?)null);
 
         // Create a real RiceValidatorAgent with mocked dependencies
         var riceValidatorAgent = CreateMockRiceValidatorAgent();
@@ -67,7 +74,8 @@ public class ModificationHandlerTests
             _contextBuilderMock.Object,
             _externalReservationServiceMock.Object,
             _fieldAccumulatorMock.Object,
-            _nlParserMock.Object);
+            _nlParserMock.Object,
+            _pendingRiceStoreMock.Object);
     }
 
     private RiceValidatorAgent CreateMockRiceValidatorAgent()
