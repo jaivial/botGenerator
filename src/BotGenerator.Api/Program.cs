@@ -170,7 +170,9 @@ builder.Services.AddSingleton<ICallAutoReplyStore, CallAutoReplyStore>();
 builder.Services.AddScoped<IIntentRouterService, IntentRouterService>();
 builder.Services.AddSingleton<IAiStateExtractorService, AiStateExtractorService>();
 builder.Services.AddScoped<IFieldAccumulatorService, FieldAccumulatorService>();
-builder.Services.AddScoped<INaturalLanguageModificationParser, NaturalLanguageModificationParser>();
+builder.Services.AddScoped<IFieldValidatorService, FieldValidatorService>();
+builder.Services.AddScoped<IConfidenceScorerService, ConfidenceScorerService>();
+builder.Services.AddScoped<INaturalLanguageModificationParser, AiNaturalLanguageModificationParser>();
 
 // ========== Agents ==========
 builder.Services.AddScoped<MainConversationAgent>();
