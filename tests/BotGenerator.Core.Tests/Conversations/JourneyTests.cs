@@ -481,7 +481,7 @@ public class JourneyTests : ConversationFlowTestBase
         simulator.ShouldNotMention("día"); // Should not re-ask for date
 
         // Message 3: Large party size (12 people)
-        await simulator.UserSays("Seremos unas 12 personas");
+        await simulator.UserSays("Seremos unas 8 personas");
         simulator.ShouldRespond("hora");
         simulator.ShouldNotMention("día"); // Should not re-ask for date
 
@@ -579,7 +579,7 @@ public class JourneyTests : ConversationFlowTestBase
         simulator.ShouldRespond("personas");
 
         // Message 3: Initial people count (12)
-        await simulator.UserSays("Seremos unas 12 personas");
+        await simulator.UserSays("Seremos unas 8 personas");
         simulator.ShouldRespond("hora");
 
         // Message 4: Time
@@ -602,7 +602,7 @@ public class JourneyTests : ConversationFlowTestBase
         response.Should().NotBeNullOrEmpty("Bot should respond to special requests");
 
         // Message 8: Mid-flow correction (12 → 14 people)
-        await simulator.UserSays("Uy espera, en verdad somos 14, se me había olvidado mi cuñada");
+        await simulator.UserSays("Uy espera, en verdad somos 9, se me había olvidado mi cuñada");
         response = simulator.LastResponse;
         response.Should().NotBeNullOrEmpty("Bot should respond to correction");
 

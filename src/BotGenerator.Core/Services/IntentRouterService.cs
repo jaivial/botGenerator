@@ -232,7 +232,7 @@ public class IntentRouterService : IIntentRouterService
             if (mainAgentResponse.Intent != IntentType.Booking)
             {
                 var pending = _pendingBookingStore.Get(originalMessage.SenderNumber);
-                if (pending != null)
+                if (pending != null && ShouldContinuePendingBooking(mainAgentResponse, originalMessage.MessageText))
                 {
                     var synthetic = mainAgentResponse with
                     {
@@ -278,6 +278,38 @@ public class IntentRouterService : IIntentRouterService
             _logger.LogError(ex, "Error routing intent {Intent}", mainAgentResponse.Intent);
             return AgentResponse.Error("Error processing your request");
         }
+    }
+
+    private static bool ShouldContinuePendingBooking(AgentResponse mainAgentResponse, string userText)
+    {
+        // Respect explicit non-booking intents from the classifier/router.
+        if (mainAgentResponse.Intent is IntentType.Cancellation or
+            IntentType.Modification or
+            IntentType.ReservationQuery or
+            IntentType.SameDay or
+            IntentType.Interactive or
+            IntentType.Error)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(userText))
+            return false;
+
+        // If user is clearly switching intent, don't force booking continuation.
+        if (System.Text.RegularExpressions.Regex.IsMatch(
+                userText,
+                @"\b(cancelar|anular|modificar|cambiar|mis\s+reservas?|ver\s+reservas?)\b",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+        {
+            return false;
+        }
+
+        // Continue pending booking only for messages that look like booking follow-up data.
+        return System.Text.RegularExpressions.Regex.IsMatch(
+            userText,
+            @"\b(sí|si|no|vale|ok|perfecto|confirmo|confirmar|personas?|comensales?|trona|tronas|carrito|carritos|arroz|raciones?|sin\s+arroz|a\s+las|\d{1,2}:\d{2}|\d{1,2}/\d{1,2}|lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo|mañana|pasado\s+mañana)\b",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
     }
 
     #region Intent Handlers

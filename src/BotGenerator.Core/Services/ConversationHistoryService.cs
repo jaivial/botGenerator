@@ -581,8 +581,32 @@ public class ConversationHistoryService : IConversationHistoryService
                 }
             }
 
+            // Check for explicit date (dd/mm or dd/mm/yyyy, dd-mm or dd-mm-yyyy)
+            var dateMatch = Regex.Match(text, @"\b(\d{1,2})[/\-](\d{1,2})(?:[/\-](\d{2,4}))?\b");
+            if (dateMatch.Success)
+            {
+                if (int.TryParse(dateMatch.Groups[1].Value, out var day) &&
+                    int.TryParse(dateMatch.Groups[2].Value, out var month))
+                {
+                    var hasYear = dateMatch.Groups[3].Success;
+                    var parsedYear = hasYear && int.TryParse(dateMatch.Groups[3].Value, out var y)
+                        ? (dateMatch.Groups[3].Value.Length == 2 ? 2000 + y : y)
+                        : DateTime.Now.Year;
+
+                    if (day is >= 1 and <= 31 && month is >= 1 and <= 12)
+                    {
+                        var candidateDate = new DateTime(parsedYear, month, day);
+                        if (!hasYear && candidateDate < DateTime.Now.Date)
+                        {
+                            candidateDate = candidateDate.AddYears(1);
+                        }
+                        return candidateDate.ToString("dd/MM/yyyy");
+                    }
+                }
+            }
+
             // Check for day names (domingo, sábado, viernes, jueves)
-            var dayMatch = Regex.Match(text, @"(?:para\s+el|el|para)\s+(domingo|sábado|viernes|jueves)");
+            var dayMatch = Regex.Match(text, @"(?:para\s+el|el|para)\s+(domingo|s[áa]bado|viernes|jueves)");
             if (dayMatch.Success)
             {
                 var dayName = dayMatch.Groups[1].Value;
@@ -598,6 +622,7 @@ public class ConversationHistoryService : IConversationHistoryService
                 {
                     "domingo" => DayOfWeek.Sunday,
                     "sábado" => DayOfWeek.Saturday,
+                    "sabado" => DayOfWeek.Saturday,
                     "viernes" => DayOfWeek.Friday,
                     "jueves" => DayOfWeek.Thursday,
                     _ => DayOfWeek.Sunday
@@ -609,12 +634,6 @@ public class ConversationHistoryService : IConversationHistoryService
                 return nextDate.ToString("dd/MM/yyyy");
             }
 
-            // Check for explicit date (dd/mm/yyyy or dd-mm-yyyy)
-            var dateMatch = Regex.Match(text, @"(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})");
-            if (dateMatch.Success)
-            {
-                return $"{dateMatch.Groups[1].Value}/{dateMatch.Groups[2].Value}/{dateMatch.Groups[3].Value}";
-            }
         }
 
         return null;
@@ -672,9 +691,13 @@ public class ConversationHistoryService : IConversationHistoryService
             if (msg.Role != "user") continue;
 
             // Prefer explicit mentions of "personas" to avoid misreading counts for tronas/carritos.
-            var match = Regex.Match(msg.Content, @"(?:para|somos)\s+(\d+)\s*personas?", RegexOptions.IgnoreCase);
+            var match = Regex.Match(msg.Content, @"\bpara\s+(\d+)\s*personas?\b", RegexOptions.IgnoreCase);
             if (match.Success && int.TryParse(match.Groups[1].Value, out var count1))
                 return count1;
+
+            match = Regex.Match(msg.Content, @"\b(?:somos|seremos)\s+(?:unas?\s+)?(\d+)(?:\s*personas?)?\b", RegexOptions.IgnoreCase);
+            if (match.Success && int.TryParse(match.Groups[1].Value, out var countFromSomos))
+                return countFromSomos;
 
             match = Regex.Match(msg.Content, @"(\d+)\s*personas?", RegexOptions.IgnoreCase);
             if (match.Success && int.TryParse(match.Groups[1].Value, out var count2))
@@ -751,7 +774,7 @@ public class ConversationHistoryService : IConversationHistoryService
                 history[i - 1].Role == "assistant" &&
                 Regex.IsMatch(history[i - 1].Content, @"queréis arroz", RegexOptions.IgnoreCase))
             {
-                if (Regex.IsMatch(msg.Content, @"^(no|nada|no\s+gracias)$", RegexOptions.IgnoreCase))
+                if (Regex.IsMatch(msg.Content, @"^(no|nada|no\s*,?\s*gracias)\s*[.!]?$", RegexOptions.IgnoreCase))
                 {
                     riceType = ""; // Empty string means "no rice"
                     break;

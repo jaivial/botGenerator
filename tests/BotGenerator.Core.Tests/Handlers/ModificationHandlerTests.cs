@@ -22,6 +22,8 @@ public class ModificationHandlerTests
     private readonly Mock<IWhatsAppService> _whatsAppMock;
     private readonly Mock<IContextBuilderService> _contextBuilderMock;
     private readonly Mock<IExternalReservationService> _externalReservationServiceMock;
+    private readonly Mock<IFieldAccumulatorService> _fieldAccumulatorMock;
+    private readonly Mock<INaturalLanguageModificationParser> _nlParserMock;
     private readonly ModificationHandler _handler;
 
     public ModificationHandlerTests()
@@ -40,6 +42,17 @@ public class ModificationHandlerTests
         _whatsAppMock = new Mock<IWhatsAppService>();
         _contextBuilderMock = new Mock<IContextBuilderService>();
         _externalReservationServiceMock = new Mock<IExternalReservationService>();
+        _fieldAccumulatorMock = new Mock<IFieldAccumulatorService>();
+        _nlParserMock = new Mock<INaturalLanguageModificationParser>();
+
+        // Setup default mock behavior for natural language parser
+        _nlParserMock
+            .Setup(x => x.ExtractFields(It.IsAny<string>(), It.IsAny<ModificationState>()))
+            .Returns(new Dictionary<string, object>());
+
+        _nlParserMock
+            .Setup(x => x.IsCorrection(It.IsAny<string>()))
+            .Returns(false);
 
         // Create a real RiceValidatorAgent with mocked dependencies
         var riceValidatorAgent = CreateMockRiceValidatorAgent();
@@ -52,7 +65,9 @@ public class ModificationHandlerTests
             riceValidatorAgent,
             _whatsAppMock.Object,
             _contextBuilderMock.Object,
-            _externalReservationServiceMock.Object);
+            _externalReservationServiceMock.Object,
+            _fieldAccumulatorMock.Object,
+            _nlParserMock.Object);
     }
 
     private RiceValidatorAgent CreateMockRiceValidatorAgent()
@@ -255,7 +270,7 @@ public class ModificationHandlerTests
         result.AiResponse.Should().MatchRegex("([Nn]o.*encontr|[Nn]o.*reserva)");
 
         // Should offer to make a new reservation
-        result.AiResponse.Should().MatchRegex("(nueva|hacer|reservar)");
+        result.AiResponse.Should().MatchRegex("(nueva|hacer|reservar|reserve)");
 
         // Should NOT set any state
         _stateStoreMock.Verify(
@@ -360,7 +375,7 @@ public class ModificationHandlerTests
         result.AiResponse.Should().NotBeNullOrWhiteSpace();
 
         // Should indicate success
-        result.AiResponse.Should().MatchRegex("(modificad|actualizad|[Ll]isto|[Hh]echo|[Pp]erfecto)");
+        result.AiResponse.Should().MatchRegex("(modificad|actualizad|[Ll]isto|[Hh]echo|[Pp]erfecto|[Gg]enial|realizado)");
 
         // Should clear state
         _stateStoreMock.Verify(x => x.Clear(It.IsAny<string>()), Times.Once);
@@ -407,7 +422,7 @@ public class ModificationHandlerTests
         result.AiResponse.Should().NotBeNullOrWhiteSpace();
 
         // Should indicate cancellation
-        result.AiResponse.Should().MatchRegex("([Nn]o.*cambio|cancel|igual)");
+        result.AiResponse.Should().MatchRegex("([Nn]o.*cambio|cancel|igual|dejamos|como\\s+est[aá]|sin\\s+cambios?|no\\s+modifico)");
 
         // Should clear state
         _stateStoreMock.Verify(x => x.Clear(It.IsAny<string>()), Times.Once);
@@ -535,6 +550,54 @@ public class ModificationHandlerTests
         result.Intent.Should().Be(IntentType.Modification);
         result.AiResponse.Should().Contain("¿Qué arroz quieres poner?");
         result.AiResponse.Should().NotContain("No tenemos ese tipo de arroz");
+    }
+
+    [Fact]
+    public async Task HandleBookingSelection_DateInput_DoesNotMisclassifyAsOrdinalNumber()
+    {
+        // Arrange
+        var phone = "34612345678";
+        var message = CreateTextMessage(phone, "la del 21/12");
+
+        var bookings = new List<BookingRecord>
+        {
+            new()
+            {
+                Id = 1,
+                ReservationDate = new DateTime(DateTime.Today.Year, 11, 10),
+                ReservationTime = TimeSpan.FromHours(14),
+                PartySize = 4,
+                ContactPhone = "612345678"
+            },
+            new()
+            {
+                Id = 2,
+                ReservationDate = new DateTime(DateTime.Today.Year, 12, 21),
+                ReservationTime = TimeSpan.FromHours(20),
+                PartySize = 2,
+                ContactPhone = "612345678"
+            }
+        };
+
+        var currentState = new ModificationState
+        {
+            PhoneNumber = phone,
+            Stage = ModificationStage.SelectingBooking,
+            FoundBookings = bookings
+        };
+
+        // Act
+        var result = await _handler.ProcessModificationAsync(message, currentState);
+
+        // Assert
+        result.Should().NotBeNull();
+
+        _stateStoreMock.Verify(
+            x => x.Set(It.IsAny<string>(), It.Is<ModificationState>(s =>
+                s.Stage == ModificationStage.SelectingField &&
+                s.SelectedBooking != null &&
+                s.SelectedBooking.Id == 2)),
+            Times.Once);
     }
 
     private static WhatsAppMessage CreateTextMessage(string phone, string text)

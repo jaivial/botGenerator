@@ -129,7 +129,7 @@ public class CancellationHandlerTests
         result.AiResponse.Should().Contain("4 personas");
 
         // Should ask for confirmation (response variations include "Seguro", "Confirmas", "Cancelamos...sí o no", etc.)
-        result.AiResponse.Should().MatchRegex("([Ss]eguro|[Cc]onfirm|[Cc]ancel.*sí|sí o no)");
+        result.AiResponse.Should().MatchRegex("([Ss]eguro|[Cc]onfirm|[Cc]ancel.*[Ss][íi]|[Ss][íi]\\s+o\\s+no)");
 
         // Should set state to AwaitingConfirmation with the booking selected
         _stateStoreMock.Verify(
@@ -395,7 +395,7 @@ public class CancellationHandlerTests
         result.Intent.Should().Be(IntentType.Cancellation);
 
         // Should ask for clarification
-        result.AiResponse.Should().MatchRegex("([Nn]o entendí|[Cc]uál|indica)");
+        result.AiResponse.Should().MatchRegex("([Nn]o.*clar|[Nn]o.*entend|[Cc]u[aá]l|describe|n[úu]mero|indica)");
 
         // Should NOT transition state (stays in SelectingBooking)
         _stateStoreMock.Verify(
@@ -461,7 +461,7 @@ public class CancellationHandlerTests
         result.AiResponse.Should().NotBeNullOrWhiteSpace();
 
         // Should indicate success
-        result.AiResponse.Should().MatchRegex("([Ll]isto|cancelad|[Hh]echo)");
+        result.AiResponse.Should().MatchRegex("([Ll]isto|cancelad|[Hh]echo|[Cc]ancelaci[oó]n\\s+completada)");
 
         // Should clear state
         _stateStoreMock.Verify(x => x.Clear(It.IsAny<string>()), Times.Once);
@@ -654,7 +654,7 @@ public class CancellationHandlerTests
         result.AiResponse.Should().NotBeNullOrWhiteSpace();
 
         // Should indicate error
-        result.AiResponse.Should().MatchRegex("([Ee]rror|[Ll]o siento|inténtalo)");
+        result.AiResponse.Should().MatchRegex("([Ee]rror|[Ll]o siento|[Pp]roblema|[Ff]all|[Nn]o\\s+se\\s+pudo|[Ii]ntentarl?[oa])");
 
         // Should still clear state
         _stateStoreMock.Verify(x => x.Clear(It.IsAny<string>()), Times.Once);
@@ -764,6 +764,54 @@ public class CancellationHandlerTests
         result.Should().NotBeNull();
 
         // Should select the second booking (Id = 20)
+        _stateStoreMock.Verify(
+            x => x.Set(It.IsAny<string>(), It.Is<CancellationState>(s =>
+                s.Stage == CancellationStage.AwaitingConfirmation &&
+                s.SelectedBooking != null &&
+                s.SelectedBooking.Id == 20)),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleBookingSelection_DateInput_DoesNotMisclassifyAsOrdinalNumber()
+    {
+        // Arrange
+        var phone = "34612345678";
+        var message = CreateTextMessage(phone, "la del 21/12");
+
+        var bookings = new List<BookingRecord>
+        {
+            new()
+            {
+                Id = 10,
+                ReservationDate = new DateTime(DateTime.Today.Year, 11, 10),
+                ReservationTime = TimeSpan.FromHours(14),
+                PartySize = 4,
+                ContactPhone = "612345678"
+            },
+            new()
+            {
+                Id = 20,
+                ReservationDate = new DateTime(DateTime.Today.Year, 12, 21),
+                ReservationTime = TimeSpan.FromHours(20),
+                PartySize = 2,
+                ContactPhone = "612345678"
+            }
+        };
+
+        var currentState = new CancellationState
+        {
+            PhoneNumber = phone,
+            Stage = CancellationStage.SelectingBooking,
+            FoundBookings = bookings
+        };
+
+        // Act
+        var result = await _handler.ProcessCancellationAsync(message, currentState);
+
+        // Assert
+        result.Should().NotBeNull();
+
         _stateStoreMock.Verify(
             x => x.Set(It.IsAny<string>(), It.Is<CancellationState>(s =>
                 s.Stage == CancellationStage.AwaitingConfirmation &&

@@ -44,7 +44,7 @@ public class WebhookControllerTests
         _riceValidatorMock = new Mock<IRiceValidatorService>();
         _availabilityMock = new Mock<IBookingAvailabilityService>();
         _bookingRepositoryMock = new Mock<IBookingRepository>();
-        _bookingHandlerMock = new Mock<BookingHandler>(MockBehavior.Loose, null!, null!, null!);
+        _bookingHandlerMock = new Mock<BookingHandler>(MockBehavior.Loose, null!, null!, null!, null!);
         _geminiServiceMock = new Mock<IGeminiService>();
         _environmentMock = new Mock<IHostEnvironment>();
         _loggerMock = new Mock<ILogger<WebhookController>>();
@@ -82,6 +82,45 @@ public class WebhookControllerTests
                 IsAvailable = true,
                 Reason = "ok"
             });
+
+        _availabilityMock
+            .Setup(x => x.GetDailyLimitAsync(It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((DateTime date, CancellationToken _) => new DailyLimitResult
+            {
+                Date = date.Date,
+                DailyLimit = 120,
+                TotalPeople = 0,
+                FreeBookingSeats = 120
+            });
+
+        _availabilityMock
+            .Setup(x => x.GetHourDataAsync(It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((DateTime date, CancellationToken _) => new HourDataResult
+            {
+                Date = date.Date,
+                IsDefaultData = false,
+                DailyLimit = 120,
+                TotalPeople = 0,
+                ActiveHours = new List<string> { "13:30", "14:00", "14:30", "15:00", "15:30" },
+                HourData = new Dictionary<string, HourSlotData>
+                {
+                    ["14:00"] = new HourSlotData
+                    {
+                        Status = "available",
+                        Capacity = 120,
+                        TotalCapacity = 120,
+                        Bookings = 0,
+                        Percentage = 0,
+                        Completion = 0,
+                        IsClosed = false
+                    }
+                }
+            });
+
+        _riceValidatorMock
+            .Setup(x => x.ValidateAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string request, string _, CancellationToken _) =>
+                BotGenerator.Core.Models.RiceValidationResult.Valid("Paella valenciana", request));
 
         // Default AI state extractor behavior - return empty state
         _aiStateExtractorMock
@@ -352,15 +391,8 @@ public class WebhookControllerTests
         var result = await controller.HandleWhatsAppWebhook(jsonElement, CancellationToken.None);
 
         // Assert
-        // Note: Current implementation returns 500 for missing required properties
-        // This test documents the actual behavior - ideally should return 400
-        var objectResult = result.Should().BeOfType<ObjectResult>().Subject;
-        objectResult.StatusCode.Should().Be(500);
-
-        var value = objectResult.Value;
-        var errorProperty = value?.GetType().GetProperty("error");
-        var error = errorProperty?.GetValue(value) as string;
-        error.Should().Be("Internal error");
+        // Missing "message" payload is intentionally ignored.
+        result.Should().BeOfType<OkResult>();
     }
 
     [Fact]
@@ -419,14 +451,8 @@ public class WebhookControllerTests
         var result = await controller.HandleWhatsAppWebhook(jsonElement, CancellationToken.None);
 
         // Assert
-        // ExtractMessage will throw when trying to GetProperty("message")
-        var objectResult = result.Should().BeOfType<ObjectResult>().Subject;
-        objectResult.StatusCode.Should().Be(500);
-
-        var value = objectResult.Value;
-        var errorProperty = value?.GetType().GetProperty("error");
-        var error = errorProperty?.GetValue(value) as string;
-        error.Should().Be("Internal error");
+        // Missing "message" payload is intentionally ignored.
+        result.Should().BeOfType<OkResult>();
     }
 
     [Fact]
@@ -659,7 +685,12 @@ public class WebhookControllerTests
         var result = await controller.HandleWhatsAppWebhook(jsonElement, CancellationToken.None);
 
         // Assert
-        result.Should().BeOfType<OkResult>();
+        result.Should().BeOfType<OkObjectResult>();
+
+        var ok = (OkObjectResult)result;
+        var value = ok.Value;
+        value.Should().NotBeNull();
+        value!.GetType().GetProperty("unsupportedContent")?.GetValue(value).Should().Be(true);
 
         // Verify no processing occurred
         _intentRouterMock.Verify(x => x.RouteAsync(
@@ -669,9 +700,9 @@ public class WebhookControllerTests
             It.IsAny<CancellationToken>()), Times.Never);
 
         _whatsAppMock.Verify(x => x.SendTextAsync(
-            It.IsAny<string>(),
-            It.IsAny<string>(),
-            It.IsAny<CancellationToken>()), Times.Never);
+            "1234567890",
+            It.Is<string>(m => m.Contains("solo puedo gestionar mensajes de texto", StringComparison.OrdinalIgnoreCase)),
+            It.IsAny<CancellationToken>()), Times.Once);
 
         geminiMock.Verify(x => x.GenerateAsync(
             It.IsAny<string>(),
@@ -1554,7 +1585,7 @@ public class WebhookControllerTests
             "chatid": "1234567890@s.whatsapp.net",
             "content": {
               "Response": {
-                "SelectedDisplayText": "Arroz al horno"
+                "SelectedDisplayText": "Opción de menú"
               }
             },
             "fromMe": false,
@@ -2370,13 +2401,9 @@ public class WebhookControllerTests
         var result = await controller.HandleWhatsAppWebhook(jsonElement, CancellationToken.None);
 
         // Assert
-        var objectResult = result.Should().BeOfType<ObjectResult>().Subject;
-        objectResult.StatusCode.Should().Be(500);
-
-        var value = objectResult.Value;
-        var errorProperty = value?.GetType().GetProperty("error");
-        var error = errorProperty?.GetValue(value) as string;
-        error.Should().Be("Internal error");
+        // MainConversationAgent wraps provider errors and returns an AgentResponse.Error,
+        // so the controller still completes the request successfully.
+        result.Should().BeOfType<OkObjectResult>();
     }
 
     [Fact]
@@ -2481,14 +2508,13 @@ public class WebhookControllerTests
         var result = await controller.HandleWhatsAppWebhook(jsonElement, CancellationToken.None);
 
         // Assert
-        var objectResult = result.Should().BeOfType<ObjectResult>().Subject;
-        objectResult.StatusCode.Should().Be(500);
+        result.Should().BeOfType<OkObjectResult>();
 
-        // Verify error message was sent to user
+        // Verify generic controller-level error message is not sent.
         _whatsAppMock.Verify(x => x.SendTextAsync(
             "1234567890",
             "Disculpa, hubo un error. Por favor, inténtalo de nuevo.",
-            It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

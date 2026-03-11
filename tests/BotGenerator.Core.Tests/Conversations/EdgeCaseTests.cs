@@ -554,13 +554,16 @@ public class EdgeCaseTests : ConversationFlowTestBase
     [Fact]
     public async Task Edge_LargeGroup_Boundary_20People_Accepted()
     {
-        // Exactly 20 people should be accepted (at the limit)
+        // Current policy routes large groups to reservations team.
         await Simulator.UserSays("Reserva para 20 personas el sábado");
 
-        // Should NOT trigger large group rejection
-        Simulator.ShouldNotMention("llamar", "llámanos");
-        // Should continue with booking flow
-        Simulator.ShouldRespond("hora"); // OR other booking flow question
+        // Should trigger contact card / team handoff response
+        var response = Simulator.LastResponse.ToLower();
+        var mentionsReservationsTeam = response.Contains("contacto") ||
+                                      response.Contains("reservas") ||
+                                      response.Contains("equipo");
+        mentionsReservationsTeam.Should().BeTrue($"Bot should redirect large groups to reservations team, but responded: {Simulator.LastResponse}");
+        Simulator.ShouldNotMention("hora", "arroz", "confirmada");
 
         Simulator.MessageCount.Should().Be(2);
     }

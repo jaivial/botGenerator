@@ -38,11 +38,11 @@ public class CancellationHandler
     // Ordinal mappings for "la primera", "la segunda", etc.
     private static readonly Dictionary<string, int> OrdinalMappings = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["primera"] = 0, ["1"] = 0, ["la 1"] = 0, ["uno"] = 0,
-        ["segunda"] = 1, ["2"] = 1, ["la 2"] = 1, ["dos"] = 1,
-        ["tercera"] = 2, ["3"] = 2, ["la 3"] = 2, ["tres"] = 2,
-        ["cuarta"] = 3, ["4"] = 3, ["la 4"] = 3, ["cuatro"] = 3,
-        ["quinta"] = 4, ["5"] = 4, ["la 5"] = 4, ["cinco"] = 4
+        ["primera"] = 0, ["uno"] = 0,
+        ["segunda"] = 1, ["dos"] = 1,
+        ["tercera"] = 2, ["tres"] = 2,
+        ["cuarta"] = 3, ["cuatro"] = 3,
+        ["quinta"] = 4, ["cinco"] = 4
     };
 
     /// <summary>
@@ -387,43 +387,62 @@ Respuesta (solo CONFIRM, REJECT o UNCLEAR):";
 
     private BookingRecord? TryParseBookingSelection(string text, List<BookingRecord> bookings)
     {
+        var normalized = text.Trim().ToLowerInvariant();
+
+        // Try plain numeric input: "1", "2".
+        if (int.TryParse(normalized, out var num) && num >= 1 && num <= bookings.Count)
+        {
+            return bookings[num - 1];
+        }
+
+        // Try article + number: "la 1", "el 2".
+        var articleNumberMatch = Regex.Match(normalized, @"^(?:la|el)?\s*(\d+)$", RegexOptions.IgnoreCase);
+        if (articleNumberMatch.Success &&
+            int.TryParse(articleNumberMatch.Groups[1].Value, out var indexedNum) &&
+            indexedNum >= 1 && indexedNum <= bookings.Count)
+        {
+            return bookings[indexedNum - 1];
+        }
+
         // Try ordinal mapping ("la primera", "1", etc.)
         foreach (var (key, index) in OrdinalMappings)
         {
-            if (text.Contains(key) && index < bookings.Count)
+            if (Regex.IsMatch(normalized, $@"\b{Regex.Escape(key)}\b", RegexOptions.IgnoreCase) && index < bookings.Count)
             {
                 return bookings[index];
             }
         }
 
-        // Try plain number
-        if (int.TryParse(text, out var num) && num >= 1 && num <= bookings.Count)
-        {
-            return bookings[num - 1];
-        }
-
         // Try by day name ("la del sábado")
         foreach (var (dayName, dayOfWeek) in SpanishDays)
         {
-            if (text.Contains(dayName))
+            if (normalized.Contains(dayName))
             {
                 var match = bookings.FirstOrDefault(b => b.ReservationDate.DayOfWeek == dayOfWeek);
                 if (match != null) return match;
             }
         }
 
-        // Try by time ("la de las 14:00")
-        var timeMatch = Regex.Match(text, @"(\d{1,2}):?(\d{2})?");
+        // Try by time with explicit context ("la de las 14:00" or "14:00").
+        var timeMatch = Regex.Match(normalized, @"(?:a\s+las?\s+)?(\d{1,2}):(\d{2})\b");
         if (timeMatch.Success)
         {
             var hour = int.Parse(timeMatch.Groups[1].Value);
-            var minute = timeMatch.Groups[2].Success ? int.Parse(timeMatch.Groups[2].Value) : 0;
+            var minute = int.Parse(timeMatch.Groups[2].Value);
             var match = bookings.FirstOrDefault(b => b.ReservationTime.Hours == hour && b.ReservationTime.Minutes == minute);
             if (match != null) return match;
         }
 
+        var hourOnlyMatch = Regex.Match(normalized, @"a\s+las?\s+(\d{1,2})\b");
+        if (hourOnlyMatch.Success)
+        {
+            var hour = int.Parse(hourOnlyMatch.Groups[1].Value);
+            var match = bookings.FirstOrDefault(b => b.ReservationTime.Hours == hour && b.ReservationTime.Minutes == 0);
+            if (match != null) return match;
+        }
+
         // Try by party size ("la de 6 personas")
-        var sizeMatch = Regex.Match(text, @"(\d+)\s*personas?");
+        var sizeMatch = Regex.Match(normalized, @"(\d+)\s*personas?");
         if (sizeMatch.Success)
         {
             var size = int.Parse(sizeMatch.Groups[1].Value);
@@ -432,7 +451,7 @@ Respuesta (solo CONFIRM, REJECT o UNCLEAR):";
         }
 
         // Try by date ("la del 21/12")
-        var dateMatch = Regex.Match(text, @"(\d{1,2})[/\-](\d{1,2})");
+        var dateMatch = Regex.Match(normalized, @"(\d{1,2})[/\-](\d{1,2})");
         if (dateMatch.Success)
         {
             var day = int.Parse(dateMatch.Groups[1].Value);

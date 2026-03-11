@@ -49,6 +49,45 @@ public record ModificationState
     /// When this state was last updated.
     /// </summary>
     public DateTime UpdatedAt { get; init; } = DateTime.UtcNow;
+
+    // ========== ACCUMULATOR PATTERN FIELDS ==========
+
+    /// <summary>
+    /// Accumulated partial field values extracted from user messages.
+    /// Key: field name (date, time, party_size, rice, tronas, carritos)
+    /// Value: extracted value (can be string, int, or parsed object)
+    /// </summary>
+    public Dictionary<string, object>? AccumulatedChanges { get; init; }
+
+    /// <summary>
+    /// List of field names that have been successfully extracted.
+    /// Used to track which fields have been provided by the user.
+    /// </summary>
+    public List<string>? ExtractedFields { get; init; }
+
+    /// <summary>
+    /// The last field the bot asked the user about.
+    /// Used for context-aware parsing (e.g., if bot asked for date and user says "14:30", infer time).
+    /// </summary>
+    public string? LastAskedField { get; init; }
+
+    /// <summary>
+    /// The user's goal for this modification (change_date, change_time, change_both, add_rice, etc.).
+    /// Helps understand user intent across multiple turns.
+    /// </summary>
+    public string? UserGoal { get; init; }
+
+    /// <summary>
+    /// Number of conversation turns in this modification session.
+    /// Used to detect stuck conversations and offer human handoff.
+    /// </summary>
+    public int ConversationTurn { get; init; } = 0;
+
+    /// <summary>
+    /// The last question the bot asked, stored for context.
+    /// Example: "¿A qué hora?" → if user responds with time, we understand context.
+    /// </summary>
+    public string? PreviousBotQuestion { get; init; }
 }
 
 /// <summary>

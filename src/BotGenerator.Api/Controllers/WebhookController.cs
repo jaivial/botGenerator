@@ -7,6 +7,7 @@ using BotGenerator.Core.Services;
 using BotGenerator.Core.Services.TurnAnalysis;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace BotGenerator.Api.Controllers;
@@ -177,10 +178,18 @@ public class WebhookController : ControllerBase
                 return Ok();
             }
 
-            // Ignore empty messages or media (for now)
+            // Media/unsupported payloads often come without text.
+            // Reply once so the user knows how to continue instead of silently ignoring.
             if (string.IsNullOrWhiteSpace(message.MessageText))
             {
-                _logger.LogDebug("Ignoring empty/media message");
+                if (IsUnsupportedMessageType(message.MessageType))
+                {
+                    const string unsupportedReply = "Ahora mismo solo puedo gestionar mensajes de texto. ¿Me lo puedes escribir por aquí?";
+                    await _whatsApp.SendTextAsync(message.SenderNumber, unsupportedReply, cancellationToken);
+                    return Ok(new { processed = true, unsupportedContent = true });
+                }
+
+                _logger.LogDebug("Ignoring empty text message");
                 return Ok();
             }
 
@@ -195,6 +204,8 @@ public class WebhookController : ControllerBase
             // 2. Get conversation history (bot-side memory)
             var history = await _historyService.GetHistoryAsync(
                 message.SenderNumber, cancellationToken);
+
+            var requestServices = HttpContext?.RequestServices;
 
             // 2a. FETCH EXISTING BOOKINGS for context
             // This allows the AI to know about user's active reservations
@@ -251,13 +262,21 @@ public class WebhookController : ControllerBase
 
             // 2b. EARLY CANCELLATION DETECTION (AI-based)
             // Check for cancellation intent BEFORE state extraction to avoid day-full checks
-            var cancellationHandler = HttpContext.RequestServices.GetRequiredService<CancellationHandler>();
-            var cancellationStateStore = HttpContext.RequestServices.GetRequiredService<ICancellationStateStore>();
-            var cancellationState = cancellationStateStore.Get(message.SenderNumber);
+            CancellationHandler? cancellationHandler = null;
+            ICancellationStateStore? cancellationStateStore = null;
+
+            if (requestServices != null)
+            {
+                cancellationHandler = requestServices.GetRequiredService<CancellationHandler>();
+                cancellationStateStore = requestServices.GetRequiredService<ICancellationStateStore>();
+            }
+
+            var cancellationState = cancellationStateStore?.Get(message.SenderNumber);
 
             // Use AI to detect cancellation intent (understands natural language variations)
-            var isCancellationIntent = cancellationState != null ||
-                await DetectCancellationIntentAsync(message.MessageText, history, cancellationToken);
+            var isCancellationIntent = cancellationHandler != null &&
+                (cancellationState != null ||
+                 await DetectCancellationIntentAsync(message.MessageText, history, cancellationToken));
 
             // Route to cancellation if: active session OR AI detected cancellation intent
             if (isCancellationIntent)
@@ -299,55 +318,67 @@ public class WebhookController : ControllerBase
 
             if (isRiceModification && existingBookings.Count > 0)
             {
+                if (requestServices == null)
+                {
+                    _logger.LogDebug("Skipping early modification routing because RequestServices is unavailable");
+                }
+
                 _logger.LogInformation(
                     "Rice modification detected for {Phone}, rice type: {Rice}, servings: {Servings}, bookings: {Count}",
                     message.SenderNumber, extractedRiceType ?? "(to be specified)", extractedServings?.ToString() ?? "N/A", existingBookings.Count);
 
-                var modificationHandler = HttpContext.RequestServices.GetRequiredService<ModificationHandler>();
-
-                AgentResponse modResponse;
-                if (existingBookings.Count == 1)
+                var modificationHandler = requestServices?.GetService<ModificationHandler>();
+                if (modificationHandler == null)
                 {
-                    // Single booking - start modification with rice field pre-selected
-                    modResponse = await modificationHandler.StartRiceModificationAsync(
-                        message,
-                        existingBookings[0],
-                        extractedRiceType,
-                        extractedServings,
-                        cancellationToken);
+                    _logger.LogDebug("ModificationHandler not available, continuing with normal flow");
                 }
                 else
                 {
-                    // Multiple bookings - start modification flow asking which booking
-                    // Store the pre-extracted rice info for later use
-                    modResponse = await modificationHandler.StartRiceModificationWithSelectionAsync(
-                        message,
-                        existingBookings,
-                        extractedRiceType,
-                        extractedServings,
-                        cancellationToken);
-                }
 
-                // Store in history
-                await _historyService.AddMessageAsync(
-                    message.SenderNumber,
-                    ChatMessage.FromUser(message.MessageText, message.PushName, message.MessageId, message.Timestamp),
-                    cancellationToken);
+                    AgentResponse modResponse;
+                    if (existingBookings.Count == 1)
+                    {
+                        // Single booking - start modification with rice field pre-selected
+                        modResponse = await modificationHandler.StartRiceModificationAsync(
+                            message,
+                            existingBookings[0],
+                            extractedRiceType,
+                            extractedServings,
+                            cancellationToken);
+                    }
+                    else
+                    {
+                        // Multiple bookings - start modification flow asking which booking
+                        // Store the pre-extracted rice info for later use
+                        modResponse = await modificationHandler.StartRiceModificationWithSelectionAsync(
+                            message,
+                            existingBookings,
+                            extractedRiceType,
+                            extractedServings,
+                            cancellationToken);
+                    }
 
-                if (!string.IsNullOrWhiteSpace(modResponse.AiResponse))
-                {
-                    await _whatsApp.SendTextAsync(
-                        message.SenderNumber,
-                        modResponse.AiResponse,
-                        cancellationToken);
-
+                    // Store in history
                     await _historyService.AddMessageAsync(
                         message.SenderNumber,
-                        ChatMessage.FromAssistant(modResponse.AiResponse),
+                        ChatMessage.FromUser(message.MessageText, message.PushName, message.MessageId, message.Timestamp),
                         cancellationToken);
-                }
 
-                return Ok(new { processed = true, riceModification = true });
+                    if (!string.IsNullOrWhiteSpace(modResponse.AiResponse))
+                    {
+                        await _whatsApp.SendTextAsync(
+                            message.SenderNumber,
+                            modResponse.AiResponse,
+                            cancellationToken);
+
+                        await _historyService.AddMessageAsync(
+                            message.SenderNumber,
+                            ChatMessage.FromAssistant(modResponse.AiResponse),
+                            cancellationToken);
+                    }
+
+                    return Ok(new { processed = true, riceModification = true });
+                }
             }
 
             // 2e. DETECT FORWARDED CONFIRMATION MESSAGE
@@ -696,23 +727,30 @@ public class WebhookController : ControllerBase
                 return Ok(new { processed = true, bookingCreated = true, bookingId });
             }
 
-            var sent = await _whatsApp.SendTextAsync(
-                message.SenderNumber,
-                finalResponse.AiResponse,
-                cancellationToken);
-
-            if (!sent)
+            if (!string.IsNullOrWhiteSpace(finalResponse.AiResponse))
             {
-                _logger.LogWarning(
-                    "Failed to send response to {Phone}",
-                    message.SenderNumber);
-            }
+                var sent = await _whatsApp.SendTextAsync(
+                    message.SenderNumber,
+                    finalResponse.AiResponse,
+                    cancellationToken);
 
-            // Store assistant response (final response after routing)
-            await _historyService.AddMessageAsync(
-                message.SenderNumber,
-                ChatMessage.FromAssistant(finalResponse.AiResponse),
-                cancellationToken);
+                if (!sent)
+                {
+                    _logger.LogWarning(
+                        "Failed to send response to {Phone}",
+                        message.SenderNumber);
+                }
+
+                // Store assistant response (final response after routing)
+                await _historyService.AddMessageAsync(
+                    message.SenderNumber,
+                    ChatMessage.FromAssistant(finalResponse.AiResponse),
+                    cancellationToken);
+            }
+            else
+            {
+                _logger.LogDebug("Skipping outbound send for empty final response ({Phone})", message.SenderNumber);
+            }
 
             return Ok(new { processed = true });
         }
@@ -988,7 +1026,7 @@ public class WebhookController : ControllerBase
 
         // === COMPREHENSIVE VALIDATION: Date, Party Size, and Time ===
         // Extract values from current message
-        var extractedPartySize = TryExtractPartySizeFromMessage(message.MessageText);
+        var extractedPartySize = TryExtractPartySizeFromMessage(message.MessageText, history);
         var extractedTime = TryExtractTimeFromMessage(message.MessageText);
 
         // In active modification flow, short numeric replies ("1", "4") are often menu/servings inputs,
@@ -1126,6 +1164,7 @@ public class WebhookController : ControllerBase
         // This must happen BEFORE party size extraction to avoid treating "1" (rice selection) as party size
         var pendingRice = _pendingRiceStore.Get(message.SenderNumber);
         var isSelectingRice = pendingRice?.Options?.Count > 0;
+        var riceDeclined = DeclinesRice(message.MessageText, history);
 
         // Store extracted party size in state for subsequent messages
         // But NOT if user is selecting from pending rice options (a simple "1" is rice selection, not party size)
@@ -1145,45 +1184,54 @@ public class WebhookController : ControllerBase
         // === Rice constraints & validation (if user mentions a rice/paella) ===
         if (pendingRice?.Options?.Count > 0)
         {
-            var selectedRice = TryParseRiceSelection(message.MessageText, pendingRice.Options);
-            if (selectedRice != null)
+            if (riceDeclined)
             {
-                _logger.LogInformation("User selected rice from pending options: {Rice}", selectedRice);
-
-                // Clear pending options from persistent store
                 _pendingRiceStore.Clear(message.SenderNumber);
-
-                updatedState = updatedState with
-                {
-                    ArrozType = selectedRice,
-                    PendingRiceOptions = null // Also clear from ephemeral state
-                };
-
-                // ALWAYS store the full rice name in pending booking store
-                // This ensures the full DB name persists across messages (AI extractor might extract abbreviated names)
-                var pendingBooking = _pendingBookingStore.Get(message.SenderNumber) ?? new BookingData();
-                _pendingBookingStore.Set(message.SenderNumber, pendingBooking with { ArrozType = selectedRice });
-
-                // Extract servings if mentioned
-                if (TryExtractRiceServings(message.MessageText, out var servings))
-                {
-                    updatedState = updatedState with { ArrozServings = servings };
-                }
-
-                // Don't return here - let the conversation continue to ask for servings if needed
+                updatedState = updatedState with { ArrozType = "", ArrozServings = null, PendingRiceOptions = null };
+                _logger.LogInformation("User declined rice while selecting pending rice options");
             }
             else
             {
-                // User didn't select a valid option, prompt again
-                _logger.LogInformation("Could not parse rice selection from: {Message}", message.MessageText);
-                var formattedOptions = string.Join("\n", pendingRice.Options.Select((r, i) => $"{i + 1}. {r}"));
-                var retryMsg = $"No he entendido tu elección. Por favor, dime el número de la opción que prefieres:\n\n{formattedOptions}";
-                await _whatsApp.SendTextAsync(message.SenderNumber, retryMsg, cancellationToken);
-                return (true, retryMsg, updatedState);
+                var selectedRice = TryParseRiceSelection(message.MessageText, pendingRice.Options);
+                if (selectedRice != null)
+                {
+                    _logger.LogInformation("User selected rice from pending options: {Rice}", selectedRice);
+
+                    // Clear pending options from persistent store
+                    _pendingRiceStore.Clear(message.SenderNumber);
+
+                    updatedState = updatedState with
+                    {
+                        ArrozType = selectedRice,
+                        PendingRiceOptions = null // Also clear from ephemeral state
+                    };
+
+                    // ALWAYS store the full rice name in pending booking store
+                    // This ensures the full DB name persists across messages (AI extractor might extract abbreviated names)
+                    var pendingBooking = _pendingBookingStore.Get(message.SenderNumber) ?? new BookingData();
+                    _pendingBookingStore.Set(message.SenderNumber, pendingBooking with { ArrozType = selectedRice });
+
+                    // Extract servings if mentioned
+                    if (TryExtractRiceServings(message.MessageText, out var servings))
+                    {
+                        updatedState = updatedState with { ArrozServings = servings };
+                    }
+
+                    // Don't return here - let the conversation continue to ask for servings if needed
+                }
+                else
+                {
+                    // User didn't select a valid option, ask again
+                    _logger.LogInformation("Could not parse rice selection from: {Message}", message.MessageText);
+                    var formattedOptions = string.Join("\n", pendingRice.Options.Select((r, i) => $"{i + 1}. {r}"));
+                    var retryMsg = $"No he entendido tu elección. Por favor, dime el número de la opción que prefieres:\n\n{formattedOptions}";
+                    await _whatsApp.SendTextAsync(message.SenderNumber, retryMsg, cancellationToken);
+                    return (true, retryMsg, updatedState);
+                }
             }
         }
 
-        if (DeclinesRice(message.MessageText))
+        if (riceDeclined)
         {
             updatedState = updatedState with { ArrozType = "", ArrozServings = null, PendingRiceOptions = null };
             _pendingRiceStore.Clear(message.SenderNumber); // Also clear persistent store
@@ -1428,14 +1476,45 @@ public class WebhookController : ControllerBase
         return riceKeywords.Any(keyword => t.Contains(keyword));
     }
 
-    private static bool DeclinesRice(string text)
+    private static bool DeclinesRice(string text, List<ChatMessage>? history = null)
     {
-        var t = text.ToLowerInvariant();
-        return t.Contains("sin arroz") ||
-               t.Contains("no quiero arroz") ||
-               t.Contains("no queremos arroz") ||
-               t.Contains("no, sin arroz") ||
-               t == "no";
+        var t = text.ToLowerInvariant().Trim();
+
+        var explicitDecline = t.Contains("sin arroz") ||
+                              t.Contains("no quiero arroz") ||
+                              t.Contains("no queremos arroz") ||
+                              t.Contains("no, sin arroz") ||
+                              t.Contains("nada de arroz") ||
+                              Regex.IsMatch(t, @"\bno\s+al\s+arroz\b", RegexOptions.IgnoreCase);
+
+        if (explicitDecline)
+            return true;
+
+        // A plain "no" should only be interpreted as rice rejection when the latest
+        // assistant turn was explicitly asking about rice.
+        if (t == "no")
+            return WasLatestAssistantAskingAboutRice(history);
+
+        return false;
+    }
+
+    private static bool WasLatestAssistantAskingAboutRice(List<ChatMessage>? history)
+    {
+        if (history == null || history.Count == 0)
+            return false;
+
+        var lastAssistant = history
+            .Where(m => m.Role == "assistant")
+            .Select(m => m.Content)
+            .LastOrDefault();
+
+        if (string.IsNullOrWhiteSpace(lastAssistant))
+            return false;
+
+        return Regex.IsMatch(
+            lastAssistant,
+            @"(quer[eé]is|quieres|a[ñn]adir|a[ñn]adamos|reservar|apetece).*(arroz)|arroz.*\?",
+            RegexOptions.IgnoreCase);
     }
 
     /// <summary>
@@ -1577,17 +1656,24 @@ public class WebhookController : ControllerBase
 
         var text = messageText.ToLowerInvariant();
 
+        // Guard: if user is clearly trying to create a NEW booking, don't force modification.
+        if (Regex.IsMatch(text, @"\b(reservar|nueva\s+reserva|hacer\s+una\s+reserva)\b", RegexOptions.IgnoreCase) &&
+            !Regex.IsMatch(text, @"\b(modificar|cambiar|a[ñn]adir|incluir|agregar|poner)\b", RegexOptions.IgnoreCase))
+        {
+            return (false, null, null);
+        }
+
         // Check for rice + reservation context combination
         var hasRiceKeyword = System.Text.RegularExpressions.Regex.IsMatch(text,
             @"\b(arroz|paella|fideu[aá]?|meloso|caldoso|banda|señoret|señorito|bogavante|negro|albufera|chorizo|mariscos?)\b");
 
-        // Broader reservation context patterns
+        // Reservation context patterns (explicitly tied to an existing reservation)
         var hasReservationContext = System.Text.RegularExpressions.Regex.IsMatch(text,
-            @"(añadir|incluir|agregar|poner|quiero).*(reserva|para\s+\d+\s+de)|" +
+            @"(añadir|incluir|agregar|poner|modificar|cambiar).*(reserva|para\s+\d+\s+de)|" +
             @"(mi|la|esta)\s+reserva|" +
             @"(en|a|para)\s+(mi|la)\s+reserva|" +
             @"para\s+\d+\s+de\s+(los|las)\s+\d+|" +
-            @"(podría|podria|puedo).*(incluir|añadir)|" +
+            @"(podría|podria|puedo).*(incluir|añadir|agregar|poner).*(reserva)?|" +
             @"(modificar|cambiar).*(arroz|paella|fideu[aá]?)");
 
         if (hasRiceKeyword && hasReservationContext)
@@ -1747,6 +1833,19 @@ public class WebhookController : ControllerBase
     private static bool IsCallEventType(string eventType)
         => eventType.Contains("call", StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsUnsupportedMessageType(string? messageType)
+    {
+        if (string.IsNullOrWhiteSpace(messageType))
+            return false;
+
+        return messageType.Equals("audio", StringComparison.OrdinalIgnoreCase) ||
+               messageType.Equals("image", StringComparison.OrdinalIgnoreCase) ||
+               messageType.Equals("video", StringComparison.OrdinalIgnoreCase) ||
+               messageType.Equals("document", StringComparison.OrdinalIgnoreCase) ||
+               messageType.Equals("sticker", StringComparison.OrdinalIgnoreCase) ||
+               messageType.Equals("location", StringComparison.OrdinalIgnoreCase);
+    }
+
     private async Task<IActionResult> HandleCallWebhookAsync(
         JsonElement body,
         CancellationToken cancellationToken)
@@ -1905,16 +2004,16 @@ public class WebhookController : ControllerBase
             }
         }
 
-        // Check for "mañana"
-        if (System.Text.RegularExpressions.Regex.IsMatch(t, @"\bmañana\b"))
-        {
-            return today.AddDays(1);
-        }
-
         // Check for "pasado mañana"
-        if (t.Contains("pasado mañana"))
+        if (System.Text.RegularExpressions.Regex.IsMatch(t, @"\bpasado\s+ma[ñn]ana\b"))
         {
             return today.AddDays(2);
+        }
+
+        // Check for "mañana"
+        if (System.Text.RegularExpressions.Regex.IsMatch(t, @"\bma[ñn]ana\b"))
+        {
+            return today.AddDays(1);
         }
 
         // Check for date patterns: dd/MM, dd-MM, dd/MM/yyyy
@@ -1984,18 +2083,18 @@ public class WebhookController : ControllerBase
     /// <summary>
     /// Attempts to extract the party size from the user's message text.
     /// </summary>
-    private static int? TryExtractPartySizeFromMessage(string text)
+    private static int? TryExtractPartySizeFromMessage(string text, List<ChatMessage>? history = null)
     {
         var t = text.ToLowerInvariant();
 
-        // Pattern: "X personas" or "somos X" or "para X"
+        // Pattern: "X personas" or "somos X"
         var patterns = new[]
         {
             @"(\d+)\s*personas?",
             @"somos\s*(\d+)",
             @"seremos\s*(\d+)",
             @"mesa\s*(?:para|de)\s*(\d+)",
-            @"para\s*(\d+)\s*(?:personas?|comensales?|adultos?)?",
+            @"para\s*(\d+)\s*(?:personas?|comensales?|adultos?)\b",
             @"(\d+)\s*(?:comensales?|adultos?)"
         };
 
@@ -2008,14 +2107,37 @@ public class WebhookController : ControllerBase
             }
         }
 
-        // Fallback: if the entire message is just a number (user answering "how many people?")
+        // Fallback: if the entire message is just a number, only accept it when
+        // the previous assistant prompt was explicitly asking for party size.
         var trimmed = t.Trim();
-        if (int.TryParse(trimmed, out var bareNumber) && bareNumber > 0 && bareNumber <= 50)
+        if (int.TryParse(trimmed, out var bareNumber) &&
+            bareNumber > 0 &&
+            bareNumber <= 50 &&
+            WasLatestAssistantAskingForPartySize(history))
         {
             return bareNumber;
         }
 
         return null;
+    }
+
+    private static bool WasLatestAssistantAskingForPartySize(List<ChatMessage>? history)
+    {
+        if (history == null || history.Count == 0)
+            return false;
+
+        var lastAssistant = history
+            .Where(m => m.Role == "assistant")
+            .Select(m => m.Content)
+            .LastOrDefault();
+
+        if (string.IsNullOrWhiteSpace(lastAssistant))
+            return false;
+
+        return Regex.IsMatch(
+            lastAssistant,
+            @"(cu[aá]nt[oa]s?\s+(personas?|comensales?)|para\s+cu[aá]nt[oa]s?|n[úu]mero\s+de\s+personas?)",
+            RegexOptions.IgnoreCase);
     }
 
     /// <summary>
@@ -2169,16 +2291,32 @@ public class WebhookController : ControllerBase
     {
         var t = (text ?? "").Trim().ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(t)) return false;
-        if (t == "si" || t == "sí" || t == "ok" || t == "vale" || t == "perfecto" || t == "adelante") return true;
-        return t.Contains("confirmo") || t.Contains("confirmar") || t.Contains("sí, confirmo") || t.Contains("si, confirmo") || t.Contains("de acuerdo");
+
+        if (IsUserDeclining(t))
+            return false;
+
+        if (t == "si" || t == "sí" || t == "ok" || t == "vale" || t == "perfecto" || t == "adelante")
+            return true;
+
+        return Regex.IsMatch(
+                   t,
+                   @"\b(confirmo|confirmar|si,?\s*confirmo|sí,?\s*confirmo|de\s+acuerdo)\b",
+                   RegexOptions.IgnoreCase) &&
+               !Regex.IsMatch(t, @"\bno\b", RegexOptions.IgnoreCase);
     }
 
     private static bool IsUserDeclining(string text)
     {
         var t = (text ?? "").Trim().ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(t)) return false;
-        if (t == "no" || t == "cancelar" || t == "anular" || t == "dejalo" || t == "déjalo") return true;
-        return t.Contains("no confirmo") || t.Contains("no quiero") || t.Contains("cancela");
+
+        if (t == "no" || t == "cancelar" || t == "anular" || t == "dejalo" || t == "déjalo")
+            return true;
+
+        return Regex.IsMatch(
+            t,
+            @"\b(no\s+confirmo|no\s+quiero|no\s+estoy\s+de\s+acuerdo|mejor\s+no|cancela|cancelar|anula|anular)\b",
+            RegexOptions.IgnoreCase);
     }
 
     private static bool IsReadyToBook(ConversationState state)

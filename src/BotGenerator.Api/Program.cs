@@ -169,6 +169,8 @@ builder.Services.AddSingleton<ICallAutoReplyStore, CallAutoReplyStore>();
 // ========== Scoped Services ==========
 builder.Services.AddScoped<IIntentRouterService, IntentRouterService>();
 builder.Services.AddSingleton<IAiStateExtractorService, AiStateExtractorService>();
+builder.Services.AddScoped<IFieldAccumulatorService, FieldAccumulatorService>();
+builder.Services.AddScoped<INaturalLanguageModificationParser, NaturalLanguageModificationParser>();
 
 // ========== Agents ==========
 builder.Services.AddScoped<MainConversationAgent>();

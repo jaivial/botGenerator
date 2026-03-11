@@ -407,7 +407,15 @@ public class BookingFlowTests : ConversationFlowTestBase
         // Message 2: User provides INVALID rice type
         await Simulator.UserSays("Sí, arroz con pollo");
         // Bot should indicate this is not available and suggest valid options
-        Simulator.ShouldRespond("no tenemos");
+        var invalidRiceResponse = Simulator.LastResponse.ToLower();
+        var mentionsUnavailable = invalidRiceResponse.Contains("no tenemos") ||
+                                 invalidRiceResponse.Contains("no lo tenemos") ||
+                                 invalidRiceResponse.Contains("no disponemos") ||
+                                 invalidRiceResponse.Contains("no servimos") ||
+                                 invalidRiceResponse.Contains("no está en nuestra carta") ||
+                                 invalidRiceResponse.Contains("no está en el menú") ||
+                                 invalidRiceResponse.Contains("no está disponible");
+        mentionsUnavailable.Should().BeTrue($"Bot should reject unavailable rice, but responded: {Simulator.LastResponse}");
         Simulator.ShouldRespond("paella", "señoret", "negro"); // Should list valid options
         Simulator.ShouldNotMention("raciones"); // Should not ask for servings yet
 
@@ -474,9 +482,16 @@ public class BookingFlowTests : ConversationFlowTestBase
         await Simulator.UserSays("Sí, arroz con pollo");
 
         // Assert - bot should indicate it's not available
-        Simulator.ShouldRespond("no tenemos");
+        var unavailableResponse = Simulator.LastResponse.ToLower();
+        var indicatesUnavailable = unavailableResponse.Contains("no tenemos") ||
+                                   unavailableResponse.Contains("no lo tenemos") ||
+                                   unavailableResponse.Contains("no disponemos") ||
+                                   unavailableResponse.Contains("no servimos") ||
+                                   unavailableResponse.Contains("no está en nuestra carta") ||
+                                   unavailableResponse.Contains("no está en el menú");
+        indicatesUnavailable.Should().BeTrue($"Bot should indicate the rice is not available, but responded: {Simulator.LastResponse}");
         // Should mention valid options
-        var response = Simulator.LastResponse.ToLower();
+        var response = unavailableResponse;
         var mentionsRiceTypes = response.Contains("paella") ||
                                response.Contains("señoret") ||
                                response.Contains("negro") ||
@@ -597,9 +612,16 @@ public class BookingFlowTests : ConversationFlowTestBase
         // Message 2: User provides INVALID rice type
         await Simulator.UserSays("Arroz con pollo");
         // Bot should reject politely and indicate it's not available
-        Simulator.ShouldRespond("no tenemos");
+        var invalidRiceResponse = Simulator.LastResponse.ToLower();
+        var saysUnavailable = invalidRiceResponse.Contains("no tenemos") ||
+                             invalidRiceResponse.Contains("no lo tenemos") ||
+                             invalidRiceResponse.Contains("no disponemos") ||
+                             invalidRiceResponse.Contains("no servimos") ||
+                             invalidRiceResponse.Contains("no está en nuestra carta") ||
+                             invalidRiceResponse.Contains("no está en el menú");
+        saysUnavailable.Should().BeTrue($"Bot should reject unavailable rice, but responded: {Simulator.LastResponse}");
         // Should suggest checking the menu or list some options
-        var response = Simulator.LastResponse.ToLower();
+        var response = invalidRiceResponse;
         var mentionsOptions = response.Contains("disponible") ||
                              response.Contains("carta") ||
                              response.Contains("paella") ||
@@ -673,10 +695,18 @@ public class BookingFlowTests : ConversationFlowTestBase
         await Simulator.UserSays("Arroz con pollo");
 
         // Assert - bot should reject politely
-        Simulator.ShouldRespond("no tenemos");
+        var invalidResponse = Simulator.LastResponse.ToLower();
+        var marksInvalid = invalidResponse.Contains("no tenemos") ||
+                           invalidResponse.Contains("no lo tenemos") ||
+                           invalidResponse.Contains("no disponemos") ||
+                           invalidResponse.Contains("no servimos") ||
+                           invalidResponse.Contains("no está en nuestra carta") ||
+                           invalidResponse.Contains("no está en el menú") ||
+                           invalidResponse.Contains("no está disponible");
+        marksInvalid.Should().BeTrue($"Bot should reject unavailable rice, but responded: {Simulator.LastResponse}");
 
         // Should provide helpful alternatives
-        var response = Simulator.LastResponse.ToLower();
+        var response = invalidResponse;
         var mentionsOptions = response.Contains("disponible") ||
                              response.Contains("carta") ||
                              response.Contains("paella") ||

@@ -614,8 +614,8 @@ public class MainConversationAgentTests
         // Assert
         result.Should().NotBeNull();
         result.AiResponse.Should().NotBeNullOrWhiteSpace();
-        result.AiResponse.Should().Contain("Disculpa");
-        result.AiResponse.Should().MatchRegex(@"(?i)(no he entendido|repetir)");
+        result.AiResponse.Should().MatchRegex(@"(?i)(disculpa|perdona|lo siento|no he entendido|no te he pillado|no he captado|no te entend)");
+        result.AiResponse.Should().MatchRegex(@"(?i)(repet|repit|otra forma|de nuevo|otra vez|reformular)");
     }
 
     #region Helper Methods

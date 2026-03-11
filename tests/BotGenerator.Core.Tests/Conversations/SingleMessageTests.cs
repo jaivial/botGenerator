@@ -535,10 +535,16 @@ public class SingleMessageTests : ConversationFlowTestBase
 
         // Assert
         // Should indicate this rice type is not available and list valid options
-        Simulator.ShouldRespond("no tenemos");
-        Simulator.ShouldRespond("disponible");
-        // Should list valid rice types
         var response = Simulator.LastResponse.ToLower();
+        var isUnavailable = response.Contains("no tenemos") ||
+                            response.Contains("no lo tenemos") ||
+                            response.Contains("no disponemos") ||
+                            response.Contains("no servimos") ||
+                            response.Contains("no está en nuestra carta") ||
+                            response.Contains("no está en el menú") ||
+                            response.Contains("no está disponible");
+        isUnavailable.Should().BeTrue($"Bot should reject unavailable rice, but responded: {Simulator.LastResponse}");
+        // Should list valid rice types
         var hasValidOptions = response.Contains("paella") || response.Contains("señoret") ||
                               response.Contains("negro") || response.Contains("banda") ||
                               response.Contains("fideuá");

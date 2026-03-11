@@ -9,7 +9,7 @@ namespace BotGenerator.Core.Handlers;
 
 /// <summary>
 /// Handler for modifying existing bookings.
-/// Manages the multi-turn modification conversation flow.
+/// Manages the multi-turn modification conversation flow with natural language understanding.
 /// </summary>
 public class ModificationHandler
 {
@@ -21,6 +21,8 @@ public class ModificationHandler
     private readonly IWhatsAppService _whatsAppService;
     private readonly IContextBuilderService _contextBuilder;
     private readonly IExternalReservationService _externalReservationService;
+    private readonly IFieldAccumulatorService _fieldAccumulator;
+    private readonly INaturalLanguageModificationParser _nlParser;
 
     // Spanish day names for lazy response parsing
     private static readonly Dictionary<string, DayOfWeek> SpanishDays = new(StringComparer.OrdinalIgnoreCase)
@@ -39,11 +41,11 @@ public class ModificationHandler
     // Ordinal mappings for "la primera", "la segunda", etc.
     private static readonly Dictionary<string, int> OrdinalMappings = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["primera"] = 0, ["1"] = 0, ["la 1"] = 0, ["uno"] = 0,
-        ["segunda"] = 1, ["2"] = 1, ["la 2"] = 1, ["dos"] = 1,
-        ["tercera"] = 2, ["3"] = 2, ["la 3"] = 2, ["tres"] = 2,
-        ["cuarta"] = 3, ["4"] = 3, ["la 4"] = 3, ["cuatro"] = 3,
-        ["quinta"] = 4, ["5"] = 4, ["la 5"] = 4, ["cinco"] = 4
+        ["primera"] = 0, ["uno"] = 0,
+        ["segunda"] = 1, ["dos"] = 1,
+        ["tercera"] = 2, ["tres"] = 2,
+        ["cuarta"] = 3, ["cuatro"] = 3,
+        ["quinta"] = 4, ["cinco"] = 4
     };
 
     public ModificationHandler(
@@ -54,7 +56,9 @@ public class ModificationHandler
         RiceValidatorAgent riceValidator,
         IWhatsAppService whatsAppService,
         IContextBuilderService contextBuilder,
-        IExternalReservationService externalReservationService)
+        IExternalReservationService externalReservationService,
+        IFieldAccumulatorService fieldAccumulator,
+        INaturalLanguageModificationParser nlParser)
     {
         _logger = logger;
         _bookingRepository = bookingRepository;
@@ -64,6 +68,8 @@ public class ModificationHandler
         _whatsAppService = whatsAppService;
         _contextBuilder = contextBuilder;
         _externalReservationService = externalReservationService;
+        _fieldAccumulator = fieldAccumulator;
+        _nlParser = nlParser;
     }
 
     /// <summary>
@@ -218,8 +224,9 @@ public class ModificationHandler
 
     /// <summary>
     /// Step 3: Handle field selection (what to modify).
+    /// Enhanced with natural language understanding to extract multiple fields at once.
     /// </summary>
-    private Task<AgentResponse> HandleFieldSelectionAsync(
+    private async Task<AgentResponse> HandleFieldSelectionAsync(
         WhatsAppMessage message,
         ModificationState state,
         CancellationToken ct)
@@ -231,16 +238,31 @@ public class ModificationHandler
         {
             _logger.LogInformation("User wants to exit modification flow without changes");
             _stateStore.Clear(message.SenderNumber);
-            return Task.FromResult(new AgentResponse
+            return new AgentResponse
             {
                 Intent = IntentType.Normal,
                 AiResponse = ResponseVariations.ModificationExitConfirmation()
-            });
+            };
         }
         
+        // NEW: Use natural language parser to extract all possible fields
+        var extractedFields = _nlParser.ExtractFields(message.MessageText, state);
+        
+        _logger.LogInformation(
+            "Extracted {Count} fields from message: {Fields}",
+            extractedFields.Count,
+            string.Join(", ", extractedFields.Keys));
+
+        // If multiple fields extracted, handle combined modification (e.g., date+time)
+        if (extractedFields.Count > 1)
+        {
+            return await HandleMultiFieldModificationAsync(message, state, extractedFields, ct);
+        }
+
+        // Single field or no fields - fall back to original logic
         string? field = null;
 
-        // Parse which field to modify
+        // Parse which field to modify (original logic)
         if (Regex.IsMatch(text, @"\b(fecha|día|dia)\b"))
             field = "date";
         else if (Regex.IsMatch(text, @"\b(hora|horario)\b"))
@@ -261,7 +283,12 @@ public class ModificationHandler
         // Balanced guardrail relaxation: infer field directly from value if user skips menu index.
         if (field == null)
         {
-            if (ParseDate(text) != null)
+            // NEW: Use extracted fields from parser
+            if (extractedFields.ContainsKey("date"))
+                field = "date";
+            else if (extractedFields.ContainsKey("time"))
+                field = "time";
+            else if (ParseDate(text) != null)
                 field = "date";
             else if (ParseTime(text) != null || Regex.IsMatch(text, @"\b(a\s+las|sobre\s+las)\b"))
                 field = "time";
@@ -272,27 +299,264 @@ public class ModificationHandler
         if (field == null)
         {
             // Couldn't understand, ask again
-            return Task.FromResult(new AgentResponse
+            return new AgentResponse
             {
                 Intent = IntentType.Modification,
                 AiResponse = ResponseVariations.FieldSelectionNotUnderstood()
-            });
+            };
         }
 
-        // Update state
+        // Update state with accumulator pattern
         var newState = state with
         {
             Stage = ModificationStage.CollectingNewValue,
-            FieldToModify = field
+            FieldToModify = field,
+            // NEW: Initialize accumulator if needed
+            AccumulatedChanges = extractedFields.Count > 0 ? extractedFields : new Dictionary<string, object>(),
+            ExtractedFields = extractedFields.Keys.ToList(),
+            ConversationTurn = state.ConversationTurn + 1,
+            LastAskedField = field
         };
         _stateStore.Set(message.SenderNumber, newState);
 
+        // If we already extracted the value, skip asking and go directly to processing
+        if (extractedFields.TryGetValue(field, out var extractedValue))
+        {
+            _logger.LogInformation("Field {Field} already extracted from message, processing directly", field);
+            
+            // Create synthetic message with extracted value for processing
+            var syntheticMessage = message with { MessageText = extractedValue.ToString() ?? "" };
+            return await HandleNewValueAsync(syntheticMessage, newState, ct);
+        }
+
         // Ask for the new value
-        return Task.FromResult(BuildAskNewValueResponse(field, state.SelectedBooking!));
+        return BuildAskNewValueResponse(field, state.SelectedBooking!);
+    }
+
+    /// <summary>
+    /// Handles modifications where multiple fields were extracted from a single message.
+    /// Example: "domingo 15 a las 14:30" → date + time together.
+    /// </summary>
+    private async Task<AgentResponse> HandleMultiFieldModificationAsync(
+        WhatsAppMessage message,
+        ModificationState state,
+        Dictionary<string, object> extractedFields,
+        CancellationToken ct)
+    {
+        _logger.LogInformation(
+            "Handling multi-field modification with {Count} fields: {Fields}",
+            extractedFields.Count,
+            string.Join(", ", extractedFields.Keys));
+
+        var booking = state.SelectedBooking!;
+        var changeDescriptions = new List<string>();
+        
+        // Variables to build BookingUpdateData
+        string? reservationDate = null;
+        string? reservationTime = null;
+        int? partySize = null;
+        string? arrozType = null;
+        int? arrozServings = null;
+        int? highChairs = null;
+        int? babyStrollers = null;
+        bool clearRice = false;
+
+        // Process date if present
+        if (extractedFields.TryGetValue("date", out var dateObj) && dateObj is DateTime newDate)
+        {
+            // Check availability for the new date with current time
+            var timeToCheck = extractedFields.ContainsKey("time") && extractedFields["time"] is TimeSpan newTime
+                ? newTime
+                : booking.ReservationTime;
+
+            var decision = await _availabilityService.EvaluateAsync(
+                newDate,
+                booking.PartySize,
+                timeToCheck,
+                ct);
+
+            if (!decision.IsAvailable)
+            {
+                // Handle availability rejection
+                if (decision.Reason == "same_day")
+                {
+                    _stateStore.Clear(message.SenderNumber);
+                    await _whatsAppService.SendTextAsync(
+                        message.SenderNumber,
+                        ResponseVariations.SameDayBookingIntro(),
+                        ct);
+                    await _whatsAppService.SendContactCardAsync(
+                        message.SenderNumber,
+                        fullName: "Gestión Reservas Villa Carmen",
+                        contactPhoneNumber: "34638857294",
+                        organization: "Alquería Villa Carmen",
+                        email: null,
+                        cancellationToken: ct);
+                    return new AgentResponse
+                    {
+                        Intent = IntentType.Normal,
+                        AiResponse = ResponseVariations.SameDayBookingRejection()
+                    };
+                }
+
+                // Suggest alternatives
+                if (decision.SuggestedHours?.Count > 0)
+                {
+                    return new AgentResponse
+                    {
+                        Intent = IntentType.Modification,
+                        AiResponse = $"El {newDate:dd/MM/yyyy} a las {timeToCheck.Hours:D2}:{timeToCheck.Minutes:D2} no está disponible. " +
+                                    $"Horas disponibles: {string.Join(", ", decision.SuggestedHours)}. " +
+                                    "¿Prefieres alguna de estas?"
+                    };
+                }
+
+                return new AgentResponse
+                {
+                    Intent = IntentType.Modification,
+                    AiResponse = $"No tengo disponibilidad para el {newDate:dd/MM/yyyy} a las {timeToCheck.Hours:D2}:{timeToCheck.Minutes:D2}. " +
+                                "¿Qué otra fecha u hora te viene bien?"
+                };
+            }
+
+            reservationDate = newDate.ToString("yyyy-MM-dd");
+            changeDescriptions.Add($"fecha al {newDate:dd/MM/yyyy}");
+        }
+
+        // Process time if present
+        if (extractedFields.TryGetValue("time", out var timeObj) && timeObj is TimeSpan time)
+        {
+            var dateToCheck = extractedFields.ContainsKey("date") && extractedFields["date"] is DateTime dt
+                ? dt
+                : booking.ReservationDate;
+
+            // Only check availability if date wasn't already checked
+            if (!extractedFields.ContainsKey("date"))
+            {
+                var decision = await _availabilityService.EvaluateAsync(
+                    dateToCheck,
+                    booking.PartySize,
+                    time,
+                    ct);
+
+                if (!decision.IsAvailable)
+                {
+                    if (decision.Reason == "same_day")
+                    {
+                        _stateStore.Clear(message.SenderNumber);
+                        await _whatsAppService.SendTextAsync(
+                            message.SenderNumber,
+                            ResponseVariations.SameDayBookingIntro(),
+                            ct);
+                        await _whatsAppService.SendContactCardAsync(
+                            message.SenderNumber,
+                            fullName: "Gestión Reservas Villa Carmen",
+                            contactPhoneNumber: "34638857294",
+                            organization: "Alquería Villa Carmen",
+                            email: null,
+                            cancellationToken: ct);
+                        return new AgentResponse
+                        {
+                            Intent = IntentType.Normal,
+                            AiResponse = ResponseVariations.SameDayBookingRejection()
+                        };
+                    }
+
+                    if (decision.SuggestedHours?.Count > 0)
+                    {
+                        return new AgentResponse
+                        {
+                            Intent = IntentType.Modification,
+                            AiResponse = $"Las {time.Hours:D2}:{time.Minutes:D2} no está disponible. " +
+                                        $"Horas disponibles: {string.Join(", ", decision.SuggestedHours)}. " +
+                                        "¿Cuál prefieres?"
+                        };
+                    }
+
+                    return new AgentResponse
+                    {
+                        Intent = IntentType.Modification,
+                        AiResponse = ResponseVariations.ModificationTimeUnavailable() + " ¿Qué otra hora te vendría bien?"
+                    };
+                }
+            }
+
+            reservationTime = $"{time.Hours:D2}:{time.Minutes:D2}:00";
+            changeDescriptions.Add($"hora a las {time.Hours:D2}:{time.Minutes:D2}");
+        }
+
+        // Process party size if present
+        if (extractedFields.TryGetValue("party_size", out var partyObj) && partyObj is int pSize)
+        {
+            if (pSize > 10)
+            {
+                await _whatsAppService.SendTextAsync(
+                    message.SenderNumber,
+                    ResponseVariations.LargeGroupIntro(),
+                    ct);
+                await _whatsAppService.SendContactCardAsync(
+                    message.SenderNumber,
+                    fullName: "Gestión Reservas Villa Carmen",
+                    contactPhoneNumber: "34638857294",
+                    organization: "Alquería Villa Carmen",
+                    cancellationToken: ct);
+                _stateStore.Clear(message.SenderNumber);
+                return new AgentResponse
+                {
+                    Intent = IntentType.Normal,
+                    AiResponse = ResponseVariations.ModificationLargeGroupVCard()
+                };
+            }
+
+            partySize = pSize;
+            changeDescriptions.Add($"de {booking.PartySize} a {pSize} personas");
+        }
+
+        // Build BookingUpdateData with object initializer
+        var pendingChanges = new BookingUpdateData
+        {
+            ReservationDate = reservationDate,
+            ReservationTime = reservationTime,
+            PartySize = partySize,
+            ArrozType = arrozType,
+            ArrozServings = arrozServings,
+            HighChairs = highChairs,
+            BabyStrollers = babyStrollers,
+            ClearRice = clearRice
+        };
+
+        // Build confirmation message
+        var changeDescription = string.Join(", ", changeDescriptions);
+        var newState = state with
+        {
+            Stage = ModificationStage.AwaitingConfirmation,
+            PendingChanges = pendingChanges,
+            ChangeDescription = changeDescription,
+            AccumulatedChanges = extractedFields,
+            ExtractedFields = extractedFields.Keys.ToList(),
+            ConversationTurn = state.ConversationTurn + 1
+        };
+        _stateStore.Set(message.SenderNumber, newState);
+
+        // Smart confirmation message
+        var confirmationMessage = extractedFields.Count switch
+        {
+            2 when extractedFields.ContainsKey("date") && extractedFields.ContainsKey("time") =>
+                $"Perfecto, cambio tu reserva al {((DateTime)extractedFields["date"]):dd/MM/yyyy} a las {((TimeSpan)extractedFields["time"]).Hours:D2}:{((TimeSpan)extractedFields["time"]).Minutes:D2}. ¿Confirmas? (Sí/No)",
+            
+            _ => $"Vas a cambiar {changeDescription}. ¿Confirmas? (Sí/No)"
+        };
+
+        return new AgentResponse
+        {
+            Intent = IntentType.Modification,
+            AiResponse = confirmationMessage
+        };
     }
 
     /// <summary>
     /// Step 4: Handle the new value provided by the user.
+    /// Enhanced with context-aware parsing and accumulator pattern.
     /// </summary>
     private async Task<AgentResponse> HandleNewValueAsync(
         WhatsAppMessage message,
@@ -302,6 +566,79 @@ public class ModificationHandler
         var field = state.FieldToModify;
         var booking = state.SelectedBooking!;
 
+        // NEW: Extract fields from message using natural language parser
+        var extractedFields = _nlParser.ExtractFields(message.MessageText, state) ?? new Dictionary<string, object>();
+        
+        // NEW: Detect if user is making a correction
+        if (_nlParser.IsCorrection(message.MessageText))
+        {
+            _logger.LogInformation("User is making a correction: {Message}", message.MessageText);
+            
+            // If user provides a different field than what we're asking for, handle it
+            if (extractedFields.Count > 0 && !extractedFields.ContainsKey(field))
+            {
+                _logger.LogInformation(
+                    "User provided different field {NewField} instead of {ExpectedField}",
+                    string.Join(", ", extractedFields.Keys),
+                    field);
+                
+                // Switch to the field the user actually provided
+                var correctedField = extractedFields.Keys.First();
+                var syntheticMessage = message with 
+                { 
+                    MessageText = extractedFields[correctedField].ToString() ?? "" 
+                };
+                
+                var correctedState = state with { FieldToModify = correctedField };
+                return correctedField switch
+                {
+                    "date" => await HandleDateChangeAsync(syntheticMessage, correctedState, ct),
+                    "time" => await HandleTimeChangeAsync(syntheticMessage, correctedState, ct),
+                    "party_size" => await HandlePartySizeChangeAsync(syntheticMessage, correctedState, ct),
+                    _ => await HandleFieldExtractionAsync(syntheticMessage, correctedState, extractedFields, ct)
+                };
+            }
+        }
+
+        // NEW: Accumulate extracted fields
+        if (extractedFields.Count > 0)
+        {
+            var accumulated = state.AccumulatedChanges ?? new Dictionary<string, object>();
+            foreach (var kvp in extractedFields)
+            {
+                accumulated[kvp.Key] = kvp.Value;
+            }
+
+            var updatedState = state with
+            {
+                AccumulatedChanges = accumulated,
+                ExtractedFields = accumulated.Keys.ToList(),
+                ConversationTurn = state.ConversationTurn + 1
+            };
+            _stateStore.Set(message.SenderNumber, updatedState);
+
+            // If we have the field we're looking for, process it
+            if (extractedFields.TryGetValue(field, out var value))
+            {
+                var syntheticMessage = message with { MessageText = value.ToString() ?? "" };
+                return field switch
+                {
+                    "date" => await HandleDateChangeAsync(syntheticMessage, updatedState, ct),
+                    "time" => await HandleTimeChangeAsync(syntheticMessage, updatedState, ct),
+                    "party_size" => await HandlePartySizeChangeAsync(syntheticMessage, updatedState, ct),
+                    "rice" => await HandleRiceChangeAsync(syntheticMessage, updatedState, ct),
+                    "tronas" => await HandleTronasChangeAsync(message, updatedState, ct),
+                    "carritos" => await HandleCarritosChangeAsync(message, updatedState, ct),
+                    _ => new AgentResponse
+                    {
+                        Intent = IntentType.Normal,
+                        AiResponse = ResponseVariations.ModificationUnknownError()
+                    }
+                };
+            }
+        }
+
+        // Fall back to original field-specific handlers
         return field switch
         {
             "date" => await HandleDateChangeAsync(message, state, ct),
@@ -314,6 +651,41 @@ public class ModificationHandler
             {
                 Intent = IntentType.Normal,
                 AiResponse = ResponseVariations.ModificationUnknownError()
+            }
+        };
+    }
+
+    /// <summary>
+    /// Handles field extraction when user provides unexpected fields.
+    /// </summary>
+    private async Task<AgentResponse> HandleFieldExtractionAsync(
+        WhatsAppMessage message,
+        ModificationState state,
+        Dictionary<string, object> extractedFields,
+        CancellationToken ct)
+    {
+        // If multiple fields extracted, use multi-field handler
+        if (extractedFields.Count > 1)
+        {
+            return await HandleMultiFieldModificationAsync(message, state, extractedFields, ct);
+        }
+
+        // Single field - redirect to appropriate handler
+        var field = extractedFields.Keys.First();
+        var syntheticMessage = message with 
+        { 
+            MessageText = extractedFields[field].ToString() ?? "" 
+        };
+
+        return field switch
+        {
+            "date" => await HandleDateChangeAsync(syntheticMessage, state, ct),
+            "time" => await HandleTimeChangeAsync(syntheticMessage, state, ct),
+            "party_size" => await HandlePartySizeChangeAsync(syntheticMessage, state, ct),
+            _ => new AgentResponse
+            {
+                Intent = IntentType.Modification,
+                AiResponse = "No entendí ese cambio. ¿Puedes repetirlo?"
             }
         };
     }
@@ -994,44 +1366,62 @@ public class ModificationHandler
 
     private BookingRecord? TryParseBookingSelection(string text, List<BookingRecord> bookings)
     {
+        var normalized = text.Trim().ToLowerInvariant();
+
+        // Try plain numeric input: "1", "2".
+        if (int.TryParse(normalized, out var num) && num >= 1 && num <= bookings.Count)
+        {
+            return bookings[num - 1];
+        }
+
+        // Try article + number: "la 1", "el 2".
+        var articleNumberMatch = Regex.Match(normalized, @"^(?:la|el)?\s*(\d+)$", RegexOptions.IgnoreCase);
+        if (articleNumberMatch.Success &&
+            int.TryParse(articleNumberMatch.Groups[1].Value, out var indexedNum) &&
+            indexedNum >= 1 && indexedNum <= bookings.Count)
+        {
+            return bookings[indexedNum - 1];
+        }
+
         // Try ordinal mapping ("la primera", "1", etc.)
         foreach (var (key, index) in OrdinalMappings)
         {
-            if (text.Contains(key) && index < bookings.Count)
+            if (Regex.IsMatch(normalized, $@"\b{Regex.Escape(key)}\b", RegexOptions.IgnoreCase) && index < bookings.Count)
             {
                 return bookings[index];
             }
         }
 
-        // Try plain number
-        if (int.TryParse(text, out var num) && num >= 1 && num <= bookings.Count)
-        {
-            return bookings[num - 1];
-        }
-
         // Try by day name ("la del sábado")
         foreach (var (dayName, dayOfWeek) in SpanishDays)
         {
-            if (text.Contains(dayName))
+            if (normalized.Contains(dayName))
             {
                 var match = bookings.FirstOrDefault(b => b.ReservationDate.DayOfWeek == dayOfWeek);
                 if (match != null) return match;
             }
         }
 
-        // Try by time ("la de las 14:00")
-        var timeMatch = Regex.Match(text, @"(\d{1,2}):?(\d{2})?");
+        // Try by time with explicit context ("la de las 14:00" or "14:00").
+        var timeMatch = Regex.Match(normalized, @"(?:a\s+las?\s+)?(\d{1,2}):(\d{2})\b");
         if (timeMatch.Success)
         {
             var hour = int.Parse(timeMatch.Groups[1].Value);
-            var minute = timeMatch.Groups[2].Success ? int.Parse(timeMatch.Groups[2].Value) : 0;
-            var target = new TimeSpan(hour, minute, 0);
+            var minute = int.Parse(timeMatch.Groups[2].Value);
             var match = bookings.FirstOrDefault(b => b.ReservationTime.Hours == hour && b.ReservationTime.Minutes == minute);
             if (match != null) return match;
         }
 
+        var hourOnlyMatch = Regex.Match(normalized, @"a\s+las?\s+(\d{1,2})\b");
+        if (hourOnlyMatch.Success)
+        {
+            var hour = int.Parse(hourOnlyMatch.Groups[1].Value);
+            var match = bookings.FirstOrDefault(b => b.ReservationTime.Hours == hour && b.ReservationTime.Minutes == 0);
+            if (match != null) return match;
+        }
+
         // Try by party size ("la de 6 personas")
-        var sizeMatch = Regex.Match(text, @"(\d+)\s*personas?");
+        var sizeMatch = Regex.Match(normalized, @"(\d+)\s*personas?");
         if (sizeMatch.Success)
         {
             var size = int.Parse(sizeMatch.Groups[1].Value);
@@ -1040,7 +1430,7 @@ public class ModificationHandler
         }
 
         // Try by date ("la del 21/12")
-        var dateMatch = Regex.Match(text, @"(\d{1,2})[/\-](\d{1,2})");
+        var dateMatch = Regex.Match(normalized, @"(\d{1,2})[/\-](\d{1,2})");
         if (dateMatch.Success)
         {
             var day = int.Parse(dateMatch.Groups[1].Value);
@@ -1269,7 +1659,17 @@ public class ModificationHandler
         sb.AppendLine($"Arroz: {riceInfo}");
         sb.AppendLine($"Tronas: {booking.HighChairs}, Carritos: {booking.BabyStrollers}");
         sb.AppendLine();
-        sb.AppendLine(ResponseVariations.ModificationSelectField());
+        
+        // NEW: More natural, conversational prompt
+        sb.AppendLine("Cuéntame, ¿qué quieres cambiar?");
+        sb.AppendLine();
+        sb.AppendLine("Puedes decirme directamente lo que quieres modificar, por ejemplo:");
+        sb.AppendLine("• \"cambiar la fecha\" o \"para el domingo\"");
+        sb.AppendLine("• \"cambiar la hora\" o \"a las 14:30\"");
+        sb.AppendLine("• \"más personas\" o \"somos 8\"");
+        sb.AppendLine("• \"quiero arroz\" o \"paella para 4\"");
+        sb.AppendLine();
+        sb.AppendLine("O elige una opción:");
         sb.AppendLine("1️⃣ Fecha");
         sb.AppendLine("2️⃣ Hora");
         sb.AppendLine("3️⃣ Personas");

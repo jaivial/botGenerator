@@ -251,6 +251,13 @@ public abstract class ConversationFlowTestBase : IAsyncLifetime
         services.AddSingleton<IContextBuilderService, ContextBuilderService>();
         services.AddSingleton<IPromptLoaderService, PromptLoaderService>();
         services.AddSingleton<IConversationHistoryService, ConversationHistoryService>();
+
+        // In-memory conversation/session stores required by IntentRouterService
+        services.AddSingleton<IPendingBookingStore, PendingBookingStore>();
+        services.AddSingleton<IModificationStateStore, ModificationStateStore>();
+        services.AddSingleton<ICancellationStateStore, CancellationStateStore>();
+        services.AddSingleton<IPendingRiceStore, PendingRiceStore>();
+
         services.AddSingleton<IIntentRouterService, IntentRouterService>();
 
         // Agents
