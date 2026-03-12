@@ -12,14 +12,9 @@ public static class SameDayDetector
         var t = text.ToLowerInvariant();
         var nowLocal = now ?? DateTime.Now;
 
-        // NEW: Skip forwarded confirmation messages from automation systems.
+        // Skip forwarded confirmation messages from automation systems.
         // These contain structured booking data but are NOT booking requests.
         if (IsForwardedConfirmation(t))
-            return false;
-
-        // NEW: Check for booking/modification intent.
-        // Only trigger same-day rejection if user is explicitly requesting a NEW booking/modification.
-        if (!HasBookingOrModificationIntent(t))
             return false;
 
         // Deferral patterns like: "hoy mismo te confirmo", "hoy te digo algo"
@@ -27,12 +22,13 @@ public static class SameDayDetector
         if (Regex.IsMatch(t, @"\b(hoy|hoy\s+mismo)\b.*\b(confirm|confirmo|confirmar|aviso|digo|dir[eé]|consult|pregunt|comento|te\s+cuento)\b",
                 RegexOptions.IgnoreCase))
         {
-            // Only allow same-day if it's clearly a booking attempt.
-            if (!HasBookingContext(t))
-                return false;
+            return false;
         }
 
-        // Direct "today" keywords (keep conservative; avoid "hoy mismo" here).
+        // PRIORITY 1: Direct "today" keywords (keep conservative; avoid "hoy mismo" here).
+        // These are EXPLICIT same-day booking requests and should trigger rejection
+        // regardless of whether the user repeats booking intent words in the same message.
+        // Context: User is responding to bot's question about date, so intent is implied.
         var sameDayKeywords = new[]
         {
             "para hoy",
@@ -50,20 +46,28 @@ public static class SameDayDetector
         if (sameDayKeywords.Any(keyword => t.Contains(keyword)))
             return true;
 
-        // Standalone "hoy" with booking context.
+        // PRIORITY 2: Standalone "hoy" responses.
+        // When user responds with just "hoy" or "hoy a las X", it's a same-day booking request.
         if (Regex.IsMatch(t, @"\bhoy\b"))
         {
-            if (HasBookingContext(t))
-                return true;
+            // Exclude statements about existing reservations
+            // "mi reserva es hoy", "tengo reserva hoy", etc. are not new booking requests
+            if (Regex.IsMatch(t, @"\b(mi|tengo|tenemos|la|el)\s+reserva\b"))
+                return false;
 
             // Short answers that mean "today" as the requested date.
             var trimmed = t.Trim();
             if (trimmed == "hoy" || Regex.IsMatch(trimmed, @"^hoy\s*(a\s*las)?\s*\d"))
                 return true;
+
+            // "hoy" with explicit booking context (but not about existing reservations)
+            if (HasBookingContext(t))
+                return true;
         }
 
-        // Check for today's date in dd/MM or dd/MM/yyyy format.
-        // Only trigger if combined with booking intent (already checked above).
+        // PRIORITY 3: Today's date in dd/MM or dd/MM/yyyy format.
+        // Only trigger if combined with booking intent to avoid false positives
+        // when user is just mentioning today's date in another context.
         var today = nowLocal.Date;
         var todayPatterns = new[]
         {
@@ -74,7 +78,11 @@ public static class SameDayDetector
         };
 
         if (todayPatterns.Any(pattern => t.Contains(pattern)))
-            return true;
+        {
+            // Require booking intent for explicit date patterns
+            if (HasBookingOrModificationIntent(t))
+                return true;
+        }
 
         return false;
     }
