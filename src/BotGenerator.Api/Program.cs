@@ -109,6 +109,9 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// Add memory cache for IMemoryCache dependencies (required by AiNaturalLanguageModificationParser)
+builder.Services.AddMemoryCache();
+
 // ========== HTTP Clients ==========
 // Gemini Service - primary AI service
 builder.Services.AddHttpClient<IGeminiService, GeminiService>(client =>
