@@ -54,6 +54,14 @@ public interface IContextBuilderService
         List<BookingRecord>? existingBookings = null,
         RestaurantConfig? restaurantConfig = null,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Adds knowledge base data (policies, rice types, flow steps) to context.
+    /// </summary>
+    Task<Dictionary<string, object>> BuildContextWithKnowledgeAsync(
+        Dictionary<string, object> baseContext,
+        string? userQuery = null,
+        CancellationToken ct = default);
 }
 
 /// <summary>

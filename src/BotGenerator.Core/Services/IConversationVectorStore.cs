@@ -49,6 +49,27 @@ public interface IConversationVectorStore
         int topK = 10,
         string? filterType = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Queries the restaurant knowledge base for relevant information.
+    /// </summary>
+    Task<List<KnowledgeDocument>> QueryKnowledgeAsync(
+        string query,
+        string? documentType = null,
+        int topK = 5,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Upserts a document to the restaurant knowledge base.
+    /// </summary>
+    Task UpsertKnowledgeAsync(
+        KnowledgeDocument document,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Seeds the knowledge base with initial data if empty.
+    /// </summary>
+    Task SeedKnowledgeBaseAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -73,4 +94,23 @@ public class ConversationDocument
     // Query result fields
     public double? Distance { get; set; }
     public Dictionary<string, object?>? Metadata { get; set; }
+}
+
+/// <summary>
+/// Represents a document in the restaurant knowledge base.
+/// </summary>
+public class KnowledgeDocument
+{
+    public string DocumentType { get; set; } = "policy"; // "policy", "rice", "response", "flow_step"
+    public string Key { get; set; } = "";
+    public string Content { get; set; } = "";
+    public List<string> Keywords { get; set; } = new();
+    
+    // Rice-specific fields
+    public decimal? PriceModifier { get; set; }
+    public bool? Available { get; set; }
+    public int? MinServings { get; set; }
+    
+    // Query result fields
+    public double? Distance { get; set; }
 }

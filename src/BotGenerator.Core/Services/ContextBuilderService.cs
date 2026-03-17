@@ -12,6 +12,7 @@ public class ContextBuilderService : IContextBuilderService
 {
     private readonly ILogger<ContextBuilderService> _logger;
     private readonly IOpeningHoursService? _openingHoursService;
+    private readonly RestaurantKnowledgeService? _knowledgeService;
 
     // Spanish day and month names
     private static readonly string[] DaysOfWeek =
@@ -40,10 +41,12 @@ public class ContextBuilderService : IContextBuilderService
 
     public ContextBuilderService(
         ILogger<ContextBuilderService> logger,
-        IOpeningHoursService? openingHoursService = null)
+        IOpeningHoursService? openingHoursService = null,
+        RestaurantKnowledgeService? knowledgeService = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _openingHoursService = openingHoursService;
+        _knowledgeService = knowledgeService;
     }
 
     public Dictionary<string, object> BuildContext(
@@ -171,7 +174,12 @@ public class ContextBuilderService : IContextBuilderService
             ["mentionsModification"] = MentionsModification(message.MessageText),
             ["mentionsCancellation"] = MentionsCancellation(message.MessageText),
             ["asksAboutReservation"] = AsksAboutReservation(message.MessageText),
-            ["providesMultipleFields"] = ProvidesMultipleFields(message.MessageText)
+            ["providesMultipleFields"] = ProvidesMultipleFields(message.MessageText),
+
+            // ========== KNOWLEDGE BASE DATA (async - added in BuildContextWithKnowledgeAsync) ==========
+            ["availableRiceTypes"] = "",
+            ["relevantPolicies"] = "",
+            ["relevantFlowSteps"] = ""
         };
 
         _logger.LogDebug(
@@ -179,6 +187,50 @@ public class ContextBuilderService : IContextBuilderService
             context.Count, message.PushName, existingBookings?.Count > 0);
 
         return context;
+    }
+
+    /// <summary>
+    /// Adds knowledge base data to the context asynchronously.
+    /// </summary>
+    public async Task<Dictionary<string, object>> BuildContextWithKnowledgeAsync(
+        Dictionary<string, object> baseContext,
+        string? userQuery = null,
+        CancellationToken ct = default)
+    {
+        if (_knowledgeService == null)
+        {
+            return baseContext;
+        }
+
+        try
+        {
+            // Get rice types
+            var riceTypes = await _knowledgeService.GetRiceTypesAsync(ct);
+            var riceTypesStr = string.Join(", ", riceTypes);
+            
+            // Get relevant policies based on user query
+            var policies = await _knowledgeService.GetRelevantPoliciesAsync(userQuery, ct);
+            var policiesStr = string.Join("\n- ", policies);
+
+            // Get relevant flow steps
+            var flowSteps = await _knowledgeService.QueryAsync(userQuery ?? "", "flow_step", 3, ct);
+            var flowStepsStr = string.Join("\n", flowSteps.Select(f => f.Content));
+
+            // Update context
+            baseContext["availableRiceTypes"] = riceTypesStr;
+            baseContext["relevantPolicies"] = $"- {policiesStr}";
+            baseContext["relevantFlowSteps"] = flowStepsStr;
+
+            _logger.LogDebug(
+                "Added knowledge base data: {RiceCount} rice types, {PolicyCount} policies",
+                riceTypes.Count, policies.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load knowledge base data");
+        }
+
+        return baseContext;
     }
 
     /// <summary>

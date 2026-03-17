@@ -22,6 +22,8 @@ public sealed class ChromaConversationVectorStore : IConversationVectorStore
     private readonly SemaphoreSlim _collectionLock = new(1, 1);
     private string? _collectionId;
     private bool _collectionResolved;
+    private string? _knowledgeCollectionId;
+    private readonly string _knowledgeCollectionName;
 
     public ChromaConversationVectorStore(
         IConfiguration configuration,
@@ -34,6 +36,7 @@ public sealed class ChromaConversationVectorStore : IConversationVectorStore
         _enabled = configuration.GetValue("Chroma:Enabled", true);
         _apiUrl = configuration["Chroma:ApiUrl"]?.Trim();
         _collectionName = configuration["Chroma:CollectionName"] ?? "bot-conversation-memory";
+        _knowledgeCollectionName = configuration["Chroma:KnowledgeCollectionName"] ?? "restaurant-knowledge";
         _upsertBatchSize = Math.Max(1, configuration.GetValue("Chroma:UpsertBatchSize", 50));
 
         _logger.LogInformation(
@@ -528,6 +531,290 @@ public sealed class ChromaConversationVectorStore : IConversationVectorStore
             return output;
         }
     }
+
+    #region Knowledge Base Methods
+
+    /// <summary>
+    /// Queries the restaurant knowledge base for relevant information.
+    /// </summary>
+    public async Task<List<KnowledgeDocument>> QueryKnowledgeAsync(
+        string query,
+        string? documentType = null,
+        int topK = 5,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsOperational() || string.IsNullOrWhiteSpace(query) || topK <= 0)
+            return new List<KnowledgeDocument>();
+
+        var collectionId = await EnsureKnowledgeCollectionAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(collectionId))
+            return new List<KnowledgeDocument>();
+
+        var where = new Dictionary<string, object>();
+        if (!string.IsNullOrWhiteSpace(documentType))
+        {
+            where["type"] = documentType;
+        }
+
+        var queryPayload = new
+        {
+            query_texts = new[] { query },
+            n_results = topK,
+            where = where.Count > 0 ? where : null,
+            include = new[] { "documents", "metadatas", "distances" }
+        };
+
+        using var client = CreateClient();
+        using var response = await client.PostAsJsonAsync(
+            $"/api/v2/tenants/default_tenant/databases/default_database/collections/{collectionId}/query",
+            queryPayload,
+            cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogWarning(
+                "Chroma knowledge query failed: status={Status}, body={Body}",
+                (int)response.StatusCode,
+                body);
+            return new List<KnowledgeDocument>();
+        }
+
+        var result = await response.Content.ReadFromJsonAsync<ChromaQueryResponse>(cancellationToken: cancellationToken);
+        if (result?.Documents == null || result.Documents.Length == 0)
+            return new List<KnowledgeDocument>();
+
+        var documents = new List<KnowledgeDocument>();
+        for (int i = 0; i < result.Documents.Length; i++)
+        {
+            var doc = new KnowledgeDocument
+            {
+                Content = result.Documents[i],
+                Distance = result.Distances?.Length > i ? result.Distances[i] : null
+            };
+
+            if (result.Metadatas?.Length > i && result.Metadatas[i] != null)
+            {
+                var meta = result.Metadatas[i];
+                if (meta.TryGetValue("type", out var type) && type != null)
+                    doc.DocumentType = type.ToString() ?? "policy";
+                if (meta.TryGetValue("key", out var key) && key != null)
+                    doc.Key = key.ToString() ?? "";
+                if (meta.TryGetValue("keywords", out var kw) && kw != null)
+                    doc.Keywords = kw.ToString()?.Split(',').Select(k => k.Trim()).ToList() ?? new List<string>();
+                if (meta.TryGetValue("price_modifier", out var price) && price != null)
+                    doc.PriceModifier = decimal.TryParse(price.ToString(), out var p) ? p : null;
+                if (meta.TryGetValue("available", out var avail) && avail != null)
+                    doc.Available = bool.TryParse(avail.ToString(), out var a) ? a : null;
+                if (meta.TryGetValue("min_servings", out var minS) && minS != null)
+                    doc.MinServings = int.TryParse(minS.ToString(), out var ms) ? ms : null;
+            }
+
+            documents.Add(doc);
+        }
+
+        return documents;
+    }
+
+    /// <summary>
+    /// Upserts a document to the restaurant knowledge base.
+    /// </summary>
+    public async Task UpsertKnowledgeAsync(
+        KnowledgeDocument document,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsOperational() || document == null || string.IsNullOrWhiteSpace(document.Key))
+            return;
+
+        var collectionId = await EnsureKnowledgeCollectionAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(collectionId))
+            return;
+
+        var docId = $"kb:{document.DocumentType}:{document.Key}";
+
+        var metadata = new Dictionary<string, object?>
+        {
+            ["type"] = document.DocumentType,
+            ["key"] = document.Key,
+            ["timestamp"] = DateTime.UtcNow.ToString("O")
+        };
+
+        if (document.Keywords.Count > 0)
+            metadata["keywords"] = string.Join(",", document.Keywords);
+        if (document.PriceModifier.HasValue)
+            metadata["price_modifier"] = document.PriceModifier.Value.ToString();
+        if (document.Available.HasValue)
+            metadata["available"] = document.Available.Value.ToString();
+        if (document.MinServings.HasValue)
+            metadata["min_servings"] = document.MinServings.Value;
+
+        var payload = new
+        {
+            ids = new[] { docId },
+            documents = new[] { document.Content },
+            embeddings = new[] { Enumerable.Repeat(0.0, 384).Select((v, i) => i == 0 ? document.Key.GetHashCode() * 0.0001 : 0.0).ToArray() },
+            metadatas = new[] { metadata }
+        };
+
+        using var client = CreateClient();
+        using var response = await client.PostAsJsonAsync(
+            $"/api/v2/tenants/default_tenant/databases/default_database/collections/{collectionId}/upsert",
+            payload,
+            cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogWarning(
+                "Chroma knowledge upsert failed: status={Status}, body={Body}",
+                (int)response.StatusCode,
+                body);
+        }
+    }
+
+    /// <summary>
+    /// Seeds the knowledge base with initial data if empty.
+    /// </summary>
+    public async Task SeedKnowledgeBaseAsync(CancellationToken cancellationToken = default)
+    {
+        if (!IsOperational())
+            return;
+
+        // Check if already seeded
+        var existing = await QueryKnowledgeAsync("policy", null, 1, cancellationToken);
+        if (existing.Count > 0)
+        {
+            _logger.LogInformation("Knowledge base already seeded, skipping");
+            return;
+        }
+
+        _logger.LogInformation("Seeding knowledge base with initial data...");
+
+        // Seed policies
+        await UpsertKnowledgeAsync(new KnowledgeDocument
+        {
+            DocumentType = "policy",
+            Key = "no_infant_menu",
+            Content = "No tenemos menú infantil. Todos los comensales deben consumir un menú regular del carta.",
+            Keywords = new List<string> { "menú infantil", "niños", "menu infantil", "niño" }
+        }, cancellationToken);
+
+        await UpsertKnowledgeAsync(new KnowledgeDocument
+        {
+            DocumentType = "policy",
+            Key = "no_terraza",
+            Content = "No disponomos de terraza, solo tenemos espacio interior con aire acondicionado.",
+            Keywords = new List<string> { "terraza", "exterior", "terraza" }
+        }, cancellationToken);
+
+        await UpsertKnowledgeAsync(new KnowledgeDocument
+        {
+            DocumentType = "policy",
+            Key = "opening_hours",
+            Content = "El restaurante abre a las 13:30 y cierra entre 17:00-18:00. No aceptamos reservas para el mismo día.",
+            Keywords = new List<string> { "horario", "abrir", "cerrar", "abertura", "cierre", "13:30" }
+        }, cancellationToken);
+
+        // Seed flow steps
+        await UpsertKnowledgeAsync(new KnowledgeDocument
+        {
+            DocumentType = "flow_step",
+            Key = "hora_validation",
+            Content = "El restaurante abre a las 13:30. Rechaza horas antes de 13:30. Cierra entre 17:00-18:00. Rechaza horas después del cierre.",
+            Keywords = new List<string> { "hora", "horario", "validar", "13:30", "14:00", "15:00" }
+        }, cancellationToken);
+
+        await UpsertKnowledgeAsync(new KnowledgeDocument
+        {
+            DocumentType = "flow_step",
+            Key = "same_day_rejection",
+            Content = "No aceptamos reservas para el mismo día. Para reservas urgentes, el cliente debe llamar al 638 857 294.",
+            Keywords = new List<string> { "hoy", "mismo día", "urgente", "ahora" }
+        }, cancellationToken);
+
+        // Seed common responses
+        await UpsertKnowledgeAsync(new KnowledgeDocument
+        {
+            DocumentType = "response",
+            Key = "greeting",
+            Content = "¡Hola {name}! ¿En qué puedo ayudarte?",
+            Keywords = new List<string> { "hola", "buenas", "saludo", "Buenos días" }
+        }, cancellationToken);
+
+        await UpsertKnowledgeAsync(new KnowledgeDocument
+        {
+            DocumentType = "response",
+            Key = "confirmation",
+            Content = "¡Perfecto!",
+            Keywords = new List<string> { "vale", "ok", "confirmar", "sí", "si" }
+        }, cancellationToken);
+
+        await UpsertKnowledgeAsync(new KnowledgeDocument
+        {
+            DocumentType = "response",
+            Key = "error",
+            Content = "Disculpa, no he entendido bien. ¿Puedes repetirlo? Para más información, llámanos al +34 638 857 294.",
+            Keywords = new List<string> { "error", "repetir", "no entiendo" }
+        }, cancellationToken);
+
+        _logger.LogInformation("Knowledge base seeded successfully");
+    }
+
+    private async Task<string?> EnsureKnowledgeCollectionAsync(CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(_knowledgeCollectionId))
+            return _knowledgeCollectionId;
+
+        var client = CreateClient();
+
+        var createPayload = new
+        {
+            name = _knowledgeCollectionName,
+            get_or_create = true,
+            metadata = new Dictionary<string, object>
+            {
+                ["source"] = "BotGenerator",
+                ["type"] = "knowledge"
+            }
+        };
+
+        using var createResponse = await client.PostAsJsonAsync(
+            "/api/v2/tenants/default_tenant/databases/default_database/collections",
+            createPayload,
+            cancellationToken);
+
+        if (createResponse.IsSuccessStatusCode)
+        {
+            var json = await createResponse.Content.ReadAsStringAsync(cancellationToken);
+            _knowledgeCollectionId = ExtractCollectionId(json) ?? _knowledgeCollectionName;
+            return _knowledgeCollectionId;
+        }
+
+        if (createResponse.StatusCode == HttpStatusCode.Conflict)
+        {
+            using var getResponse = await client.GetAsync(
+                $"/api/v2/tenants/default_tenant/databases/default_database/collections/{Uri.EscapeDataString(_knowledgeCollectionName)}",
+                cancellationToken);
+
+            if (getResponse.IsSuccessStatusCode)
+            {
+                var json = await getResponse.Content.ReadAsStringAsync(cancellationToken);
+                _knowledgeCollectionId = ExtractCollectionId(json) ?? _knowledgeCollectionName;
+                return _knowledgeCollectionId;
+            }
+        }
+
+        var body = await createResponse.Content.ReadAsStringAsync(cancellationToken);
+        _logger.LogWarning(
+            "Unable to resolve Chroma knowledge collection {Collection}. status={Status}, body={Body}",
+            _knowledgeCollectionName,
+            (int)createResponse.StatusCode,
+            body);
+
+        return null;
+    }
+
+    #endregion
 
     private static IEnumerable<List<T>> Batch<T>(List<T> source, int size)
     {

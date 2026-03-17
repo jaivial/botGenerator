@@ -108,6 +108,12 @@ public class MainConversationAgent : IAgent
             // 4. Build context with all dynamic values (including existing bookings)
             var context = _contextBuilder.BuildContext(message, state, history, existingBookings);
 
+            // 4b. Add knowledge base data (policies, rice types, flow steps)
+            context = await _contextBuilder.BuildContextWithKnowledgeAsync(
+                context, 
+                message.MessageText,
+                cancellationToken);
+
             // 4b. Retrieve long-term semantic memory from vector store (isolated by phone)
             if (_vectorStore != null)
             {
