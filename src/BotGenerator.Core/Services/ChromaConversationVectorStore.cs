@@ -89,6 +89,7 @@ public sealed class ChromaConversationVectorStore : IConversationVectorStore
             {
                 ids,
                 documents,
+                embeddings = ids.Select((_, i) => Enumerable.Repeat(0.0, 384).Select((v, j) => j == 0 ? i * 0.0001 : 0.0).ToArray()).ToArray(),
                 metadatas
             };
 
@@ -129,6 +130,7 @@ public sealed class ChromaConversationVectorStore : IConversationVectorStore
             {
                 ids = new[] { bookingId },
                 documents = new[] { bookingDoc },
+                embeddings = new[] { Enumerable.Repeat(0.0, 384).Select((v, i) => i == 0 ? booking.Id * 0.0001 : 0.0).ToArray() },
                 metadatas = new[]
                 {
                     new Dictionary<string, object?>
