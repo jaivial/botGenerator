@@ -102,14 +102,170 @@ public sealed class ChromaConversationVectorStore : IConversationVectorStore
                     body);
                 return;
             }
+                return;
+            }
         }
-    }
 
-    public async Task<List<ChatMessage>> QueryRelevantAsync(
-        string phoneNumber,
-        string query,
-        int topK,
-        CancellationToken cancellationToken = default)
+        /// <summary>
+        /// Upserts a booking record to ChromaDB for semantic search.
+        /// </summary>
+        public async Task UpsertBookingAsync(
+            string phoneNumber,
+            BookingRecord booking,
+            CancellationToken cancellationToken = default)
+        {
+            if (!IsOperational() || booking == null)
+                return;
+
+            var collectionId = await EnsureCollectionAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(collectionId))
+                return;
+
+            var normalizedPhone = NormalizePhone(phoneNumber);
+            var bookingDoc = FormatBookingAsDocument(booking);
+            var bookingId = $"booking:{booking.Id}";
+
+            var payload = new
+            {
+                ids = new[] { bookingId },
+                documents = new[] { bookingDoc },
+                metadatas = new[]
+                {
+                    new Dictionary<string, object?>
+                    {
+                        ["phone"] = normalizedPhone,
+                        ["type"] = "booking",
+                        ["bookingId"] = booking.Id,
+                        ["reservationDate"] = booking.ReservationDate.ToString("yyyy-MM-dd"),
+                        ["reservationTime"] = booking.TimeFormatted,
+                        ["partySize"] = booking.PartySize,
+                        ["timestamp"] = DateTime.UtcNow.ToString("O")
+                    }
+                }
+            };
+
+            using var client = CreateClient();
+            using var response = await client.PostAsJsonAsync(
+                $"/api/v2/tenants/default_tenant/databases/default_database/collections/{collectionId}/upsert",
+                payload,
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogWarning(
+                    "Chroma booking upsert failed: status={Status}, body={Body}",
+                    (int)response.StatusCode,
+                    body);
+            }
+        }
+
+        /// <summary>
+        /// Formats a booking record as a searchable document.
+        /// </summary>
+        private static string FormatBookingAsDocument(BookingRecord booking)
+        {
+            var parts = new List<string>
+            {
+                $"Reserva número {booking.Id}",
+                $"Cliente: {booking.CustomerName}",
+                $"Teléfono: {booking.ContactPhone}",
+                $"Fecha: {booking.ReservationDate:dd/MM/yyyy}",
+                $"Hora: {booking.TimeFormatted}",
+                $"Número de personas: {booking.PartySize}"
+            };
+
+            if (!string.IsNullOrWhiteSpace(booking.ArrozType))
+            {
+                parts.Add($"Tipo de arroz: {booking.ArrozType}");
+            }
+
+            if (booking.ArrozServings.HasValue && booking.ArrozServings > 0)
+            {
+                parts.Add($"Raciones de arroz: {booking.ArrozServings}");
+            }
+
+            return string.Join(". ", parts) + ".";
+        }
+
+        /// <summary>
+        /// Queries both messages and bookings for a specific phone number.
+        /// </summary>
+        public async Task<List<ConversationDocument>> QueryPhoneContextAsync(
+            string phoneNumber,
+            string query,
+            int topK = 10,
+            string? filterType = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (!IsOperational() || string.IsNullOrWhiteSpace(query) || topK <= 0)
+                return new List<ConversationDocument>();
+
+            var collectionId = await EnsureCollectionAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(collectionId))
+                return new List<ConversationDocument>();
+
+            var normalizedPhone = NormalizePhone(phoneNumber);
+
+            // Build where clause for filtering
+            var where = new Dictionary<string, object>
+            {
+                ["phone"] = normalizedPhone
+            };
+
+            if (!string.IsNullOrWhiteSpace(filterType))
+            {
+                where["type"] = filterType;
+            }
+
+            var queryPayload = new
+            {
+                query_texts = new[] { query },
+                n_results = topK,
+                where = where,
+                include = new[] { "documents", "metadatas", "distances" }
+            };
+
+            using var client = CreateClient();
+            using var response = await client.PostAsJsonAsync(
+                $"/api/v2/tenants/default_tenant/databases/default_database/collections/{collectionId}/query",
+                queryPayload,
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogWarning(
+                    "Chroma query failed: status={Status}, body={Body}",
+                    (int)response.StatusCode,
+                    body);
+                return new List<ConversationDocument>();
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<ChromaQueryResponse>(cancellationToken: cancellationToken);
+            if (result?.Documents == null || result.Documents.Length == 0)
+                return new List<ConversationDocument>();
+
+            var documents = new List<ConversationDocument>();
+            for (int i = 0; i < result.Documents.Length; i++)
+            {
+                var doc = new ConversationDocument
+                {
+                    Content = result.Documents[i],
+                    Distance = result.Distances?.Length > i ? result.Distances[i] : null,
+                    Metadata = result.Metadatas?.Length > i ? result.Metadatas[i] : null
+                };
+                documents.Add(doc);
+            }
+
+            return documents;
+        }
+
+        public async Task<List<ChatMessage>> QueryRelevantAsync(
+            string phoneNumber,
+            string query,
+            int topK,
+            CancellationToken cancellationToken = default)
     {
         if (!IsOperational() || string.IsNullOrWhiteSpace(query) || topK <= 0)
             return new List<ChatMessage>();
@@ -178,7 +334,7 @@ public sealed class ChromaConversationVectorStore : IConversationVectorStore
             };
 
             using var createResponse = await client.PostAsJsonAsync(
-                "/api/v1/collections",
+                "/api/v2/tenants/default_tenant/databases/default_database/collections",
                 createPayload,
                 cancellationToken);
 
@@ -193,7 +349,7 @@ public sealed class ChromaConversationVectorStore : IConversationVectorStore
             if (createResponse.StatusCode == HttpStatusCode.Conflict)
             {
                 using var getResponse = await client.GetAsync(
-                    $"/api/v1/collections/{Uri.EscapeDataString(_collectionName)}",
+                    $"/api/v2/tenants/default_tenant/databases/default_database/collections/{Uri.EscapeDataString(_collectionName)}",
                     cancellationToken);
 
                 if (getResponse.IsSuccessStatusCode)
@@ -235,8 +391,8 @@ public sealed class ChromaConversationVectorStore : IConversationVectorStore
 
         var endpoints = new List<string>
         {
-            $"/api/v1/collections/{Uri.EscapeDataString(collectionId)}/{action}",
-            $"/api/v1/collections/{Uri.EscapeDataString(_collectionName)}/{action}"
+            $"/api/v2/tenants/default_tenant/databases/default_database/collections/{Uri.EscapeDataString(collectionId)}/{action}",
+            $"/api/v2/tenants/default_tenant/databases/default_database/collections/{Uri.EscapeDataString(_collectionName)}/{action}"
         };
 
         HttpResponseMessage? fallback = null;
@@ -389,5 +545,16 @@ public sealed class ChromaConversationVectorStore : IConversationVectorStore
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
         var hash = Convert.ToHexString(bytes).ToLowerInvariant();
         return $"{normalizedPhone}:{hash}";
+    }
+
+    /// <summary>
+    /// Response model for ChromaDB query API.
+    /// </summary>
+    private class ChromaQueryResponse
+    {
+        public string[]? Documents { get; set; }
+        public double[]? Distances { get; set; }
+        public Dictionary<string, object?>[]? Metadatas { get; set; }
+        public string[]? Ids { get; set; }
     }
 }

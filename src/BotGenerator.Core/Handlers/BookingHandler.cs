@@ -15,17 +15,20 @@ public class BookingHandler
     private readonly IConfiguration _configuration;
     private readonly IBookingRepository _bookingRepository;
     private readonly IExternalReservationService _externalReservationService;
+    private readonly IConversationVectorStore? _vectorStore;
 
     public BookingHandler(
         ILogger<BookingHandler> logger,
         IConfiguration configuration,
         IBookingRepository bookingRepository,
-        IExternalReservationService externalReservationService)
+        IExternalReservationService externalReservationService,
+        IConversationVectorStore? vectorStore = null)
     {
         _logger = logger;
         _configuration = configuration;
         _bookingRepository = bookingRepository;
         _externalReservationService = externalReservationService;
+        _vectorStore = vectorStore;
     }
 
     public async Task<AgentResponse> CreateBookingAsync(
@@ -43,6 +46,9 @@ public class BookingHandler
 
             if (success && bookingId.HasValue)
             {
+                // Upsert booking to ChromaDB for semantic search
+                await UpsertBookingToVectorStoreAsync(booking, bookingId.Value, cancellationToken);
+
                 // Sync to external PHP system
                 var (externalSuccess, externalMessage) = await _externalReservationService.CreateReservationAsync(
                     booking.Name,
@@ -134,5 +140,40 @@ public class BookingHandler
         sb.AppendLine("¡Te esperamos en Alquería Villa Carmen!");
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Upserts the booking to ChromaDB for semantic search.
+    /// </summary>
+    private async Task UpsertBookingToVectorStoreAsync(
+        BookingData booking,
+        long bookingId,
+        CancellationToken cancellationToken)
+    {
+        if (_vectorStore == null)
+            return;
+
+        try
+        {
+            var bookingRecord = new BookingRecord
+            {
+                Id = (int)bookingId,
+                ContactPhone = booking.Phone,
+                ReservationDate = DateTime.Parse(booking.Date),
+                ReservationTime = TimeSpan.Parse(booking.Time),
+                PartySize = booking.People,
+                ArrozType = booking.ArrozType,
+                ArrozServings = booking.ArrozServings
+            };
+
+            await _vectorStore.UpsertBookingAsync(booking.Phone, bookingRecord, cancellationToken);
+            _logger.LogInformation(
+                "Upserted booking {BookingId} to ChromaDB for phone {Phone}",
+                bookingId, booking.Phone);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to upsert booking {BookingId} to ChromaDB", bookingId);
+        }
     }
 }

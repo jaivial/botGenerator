@@ -28,6 +28,9 @@ public class ConversationHistoryService : IConversationHistoryService
     private readonly Dictionary<string, List<ChatMessage>> _cache = new();
     private readonly Dictionary<string, DateTime> _lastActivity = new();
 
+    private readonly bool _skipWhatsAppSyncWhenChromaActive;
+    private readonly int _recentMessagesLimit;
+
     public ConversationHistoryService(
         IMessageRepository messageRepository,
         IExternalBookingService externalBookingService,
@@ -69,6 +72,8 @@ public class ConversationHistoryService : IConversationHistoryService
         _historySyncPageSize = Math.Clamp(configuration.GetValue("History:SyncPageSize", 100), 1, 500);
         _historySyncMaxPages = Math.Clamp(configuration.GetValue("History:FullSyncMaxPages", 50), 1, 500);
         _incrementalSyncMaxPages = Math.Clamp(configuration.GetValue("History:IncrementalSyncMaxPages", 6), 1, 100);
+        _skipWhatsAppSyncWhenChromaActive = configuration.GetValue("History:SkipWhatsAppSyncWhenChromaActive", true);
+        _recentMessagesLimit = Math.Clamp(configuration.GetValue("History:RecentMessagesLimit", 10), 1, 50);
     }
 
     public async Task<List<ChatMessage>> GetHistoryAsync(
@@ -94,8 +99,26 @@ public class ConversationHistoryService : IConversationHistoryService
         // Fetch from database
         var dbHistory = await _messageRepository.GetMessagesAsync(phoneNumber, cancellationToken);
 
-        // Sync with WhatsApp history when provider is available
-        dbHistory = await SyncWhatsAppHistoryAsync(phoneNumber, dbHistory, cancellationToken);
+        // Skip heavy WhatsApp sync when ChromaDB is active - rely on vector store instead
+        // This dramatically reduces API calls and latency
+        if (_skipWhatsAppSyncWhenChromaActive && _vectorStore != null && _whatsAppService != null)
+        {
+            _logger.LogDebug(
+                "Skipping WhatsApp sync for {Phone} - using ChromaDB vector store instead",
+                phoneNumber);
+
+            // Still ensure we have recent messages in DB for continuity
+            if (dbHistory.Count == 0)
+            {
+                // Try incremental sync only (much lighter than full sync)
+                dbHistory = await SyncWhatsAppHistoryAsync(phoneNumber, dbHistory, cancellationToken, forceIncrementalOnly: true);
+            }
+        }
+        else
+        {
+            // Sync with WhatsApp history when provider is available (legacy behavior)
+            dbHistory = await SyncWhatsAppHistoryAsync(phoneNumber, dbHistory, cancellationToken);
+        }
         
         // If no history exists, try to initialize from external booking
         if (dbHistory.Count == 0)
@@ -201,13 +224,84 @@ public class ConversationHistoryService : IConversationHistoryService
     private async Task<List<ChatMessage>> SyncWhatsAppHistoryAsync(
         string phoneNumber,
         List<ChatMessage> currentHistory,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool forceIncrementalOnly = false)
     {
         if (_whatsAppService == null)
             return currentHistory;
 
         try
         {
+            // When forceIncrementalOnly is true, skip the heavy full history sync
+            // and just do a quick incremental sync
+            if (forceIncrementalOnly)
+            {
+                _logger.LogDebug(
+                    "Performing lightweight incremental sync only for {Phone}",
+                    phoneNumber);
+
+                // Use just a few pages for quick sync
+                var quickSyncMaxPages = Math.Min(_incrementalSyncMaxPages, 2);
+                var quickRecentIds = await _messageRepository.GetRecentMessageIdsAsync(phoneNumber, 100, cancellationToken);
+                var quickKnownIds = quickRecentIds.ToHashSet(StringComparer.Ordinal);
+
+                var quickNewMessages = new List<ChatMessage>();
+                var quickOffset = 0;
+
+                for (var pageIndex = 0; pageIndex < quickSyncMaxPages; pageIndex++)
+                {
+                    var page = await _whatsAppService.GetHistoryPageAsync(
+                        phoneNumber,
+                        _historySyncPageSize,
+                        quickOffset,
+                        cancellationToken);
+
+                    if (page.Messages.Count == 0)
+                        break;
+
+                    foreach (var waMessage in page.Messages)
+                    {
+                        if (!string.IsNullOrWhiteSpace(waMessage.MessageId) && quickKnownIds.Contains(waMessage.MessageId))
+                            continue;
+
+                        var mapped = MapWhatsAppMessage(waMessage);
+                        if (mapped == null)
+                            continue;
+
+                        quickNewMessages.Add(mapped);
+                        if (!string.IsNullOrWhiteSpace(waMessage.MessageId))
+                            quickKnownIds.Add(waMessage.MessageId);
+                    }
+
+                    if (!page.HasMore)
+                        break;
+
+                    var nextOffset = page.NextOffset > quickOffset ? page.NextOffset : quickOffset + page.Messages.Count;
+                    if (nextOffset <= quickOffset)
+                        break;
+                    quickOffset = nextOffset;
+                }
+
+                if (quickNewMessages.Count > 0)
+                {
+                    var orderedQuickMessages = quickNewMessages.OrderBy(ParseMessageTimestamp).ToList();
+                    var quickInserted = await _messageRepository.SaveMessagesDeduplicatedAsync(
+                        phoneNumber, orderedQuickMessages, cancellationToken);
+
+                    if (quickInserted > 0)
+                    {
+                        await UpsertVectorBatchSafeAsync(phoneNumber, orderedQuickMessages, cancellationToken);
+                        _logger.LogInformation(
+                            "Quick sync completed for {Phone}. newMessages={Count}",
+                            phoneNumber, quickInserted);
+                    }
+
+                    return await _messageRepository.GetMessagesAsync(phoneNumber, cancellationToken);
+                }
+
+                return currentHistory;
+            }
+
             if (currentHistory.Count == 0)
             {
                 var fullHistory = await _whatsAppService.GetFullHistoryAsync(
