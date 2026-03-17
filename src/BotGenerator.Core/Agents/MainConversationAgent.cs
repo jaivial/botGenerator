@@ -151,6 +151,18 @@ public class MainConversationAgent : IAgent
                 context["riceValidated"] = "true";
             }
 
+            // Always add available rice types to context for the prompt
+            try
+            {
+                var availableRiceTypes = await _menuRepository.GetActiveRiceTypesAsync(cancellationToken);
+                context["availableRiceTypes"] = string.Join(", ", availableRiceTypes);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to get rice types for context");
+                context["availableRiceTypes"] = "Paella Valenciana, Arroz a banda, Arroz Negro, Arroz del señoret, Arroz de verduras, Arroz meloso de carrillada con boletus, Arroz meloso de pato setas y foie, Arroz meloso de pescado y marisco, Arroz meloso de pulpo y gambones, Arroz meloso de secreto con ajetes, Arroz seco de carrillada con boletus, Arroz seco de pato setas y foie, Arroz seco de secreto con ajetes, Arroz seco o meloso de Bogavante, Fideuá de pato y setas, Fideuá de pescado";
+            }
+
             // 5. Assemble the system prompt from external files
             var systemPrompt = await _promptLoader.AssembleSystemPromptAsync(
                 restaurantId, context);
