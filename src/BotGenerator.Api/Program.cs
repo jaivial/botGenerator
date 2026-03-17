@@ -150,7 +150,7 @@ builder.Services.AddHttpClient("Chroma", (serviceProvider, client) =>
     {
         client.BaseAddress = new Uri(apiUrl);
     }
-    client.Timeout = TimeSpan.FromSeconds(20);
+    client.Timeout = TimeSpan.FromSeconds(60); // Increased for ChromaDB operations
 });
 
 // ========== Singleton Services ==========

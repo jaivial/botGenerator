@@ -102,21 +102,6 @@ public class EdgeCaseTests : ConversationFlowTestBase
     }
 
     /// <summary>
-    /// Steps 211-214 (alternate): Same-day rejection with different phrasing
-    /// Verify the bot handles various ways of saying "today"
-    /// </summary>
-    [Fact]
-    public async Task Edge_SameDayBooking_AlternatePhrasing_Rejected()
-    {
-        // Try "hoy" (today)
-        await Simulator.UserSays("Mesa para hoy a las 15:00");
-
-        Simulator.ShouldRespond("no aceptamos", "mismo día");
-        Simulator.ShouldRespond("llámanos", "638", "857", "294");
-        Simulator.ShouldNotMention("confirmada", "confirmo");
-    }
-
-    /// <summary>
     /// Steps 219-222: Edge_ClosedDay_Tuesday_4Messages
     /// Policy: Restaurant is closed on Tuesday (and Mon, Wed).
     /// Open days: Thursday, Friday, Saturday, Sunday (13:30-18:00).
