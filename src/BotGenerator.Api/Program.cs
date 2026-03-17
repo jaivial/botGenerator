@@ -215,4 +215,22 @@ if (!app.Environment.IsDevelopment())
 app.UseAuthorization();
 app.MapControllers();
 
+// Seed knowledge base on startup
+using (var scope = app.Services.CreateScope())
+{
+    var vectorStore = scope.ServiceProvider.GetService<IConversationVectorStore>();
+    if (vectorStore != null)
+    {
+        try
+        {
+            await vectorStore.SeedKnowledgeBaseAsync();
+            Console.WriteLine("[KNOWLEDGE] Knowledge base seeded successfully");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[KNOWLEDGE] Warning: Failed to seed knowledge base: {ex.Message}");
+        }
+    }
+}
+
 app.Run();
