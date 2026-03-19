@@ -2,6 +2,7 @@ using BotGenerator.Core.Agents;
 using BotGenerator.Core.Models;
 using BotGenerator.Core.Services;
 using Microsoft.Extensions.Logging;
+using System.Collections.Generic;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -2081,10 +2082,14 @@ public class ModificationHandler
                 email: null,
                 cancellationToken: ct);
 
+            var followUp = ResponseVariations.SameDayBookingRejection();
+            await _whatsAppService.SendTextAsync(message.SenderNumber, followUp, ct);
+
             return new AgentResponse
             {
                 Intent = IntentType.Normal,
-                AiResponse = ResponseVariations.SameDayBookingRejection()
+                AiResponse = followUp,
+                Metadata = new Dictionary<string, object> { ["outboundAlreadySent"] = true }
             };
         }
 

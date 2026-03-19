@@ -2,6 +2,7 @@ using BotGenerator.Core.Models;
 using BotGenerator.Core.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace BotGenerator.Core.Agents;
@@ -112,7 +113,7 @@ public class MainConversationAgent : IAgent
             context = await _contextBuilder.BuildContextWithKnowledgeAsync(
                 context, 
                 message.MessageText,
-                cancellationToken);
+                cancellationToken) ?? context;
 
             // 4b. Retrieve long-term semantic memory from vector store (isolated by phone)
             if (_vectorStore != null)
@@ -126,10 +127,33 @@ public class MainConversationAgent : IAgent
                         topK,
                         cancellationToken);
 
+                    var bookingTopK = Math.Max(1, _configuration.GetValue("Chroma:BookingContextTopK", 4));
+                    var bookingDocs = await _vectorStore.QueryPhoneContextAsync(
+                        message.SenderNumber,
+                        message.MessageText,
+                        bookingTopK,
+                        "booking",
+                        cancellationToken);
+
+                    var combined = new StringBuilder();
                     if (semanticMemory.Count > 0)
+                        combined.AppendLine(_contextBuilder.FormatHistory(semanticMemory, topK));
+
+                    if (bookingDocs.Count > 0)
+                    {
+                        combined.AppendLine("Reservas (Chroma, referencia):");
+                        foreach (var doc in bookingDocs)
+                        {
+                            if (!string.IsNullOrWhiteSpace(doc.Content))
+                                combined.AppendLine(doc.Content);
+                        }
+                    }
+
+                    var semanticText = combined.ToString().Trim();
+                    if (semanticText.Length > 0)
                     {
                         context["hasSemanticContext"] = true;
-                        context["semanticContext"] = _contextBuilder.FormatHistory(semanticMemory, topK);
+                        context["semanticContext"] = semanticText;
                     }
                     else
                     {

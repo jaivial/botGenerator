@@ -6,6 +6,7 @@ using BotGenerator.Core.Models;
 using BotGenerator.Core.Services;
 using BotGenerator.Core.Services.TurnAnalysis;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -43,6 +44,8 @@ public class WebhookController : ControllerBase
     private readonly IConfiguration _configuration;
     private readonly IHostEnvironment _environment;
     private readonly ILogger<WebhookController> _logger;
+    private readonly IConversationVectorStore _vectorStore;
+    private readonly IMemoryCache _memoryCache;
 
     public WebhookController(
         MainConversationAgent mainAgent,
@@ -61,7 +64,9 @@ public class WebhookController : ControllerBase
         IGeminiService gemini,
         IConfiguration configuration,
         IHostEnvironment environment,
-        ILogger<WebhookController> logger)
+        ILogger<WebhookController> logger,
+        IConversationVectorStore vectorStore,
+        IMemoryCache memoryCache)
     {
         _mainAgent = mainAgent;
         _intentRouter = intentRouter;
@@ -80,6 +85,8 @@ public class WebhookController : ControllerBase
         _configuration = configuration;
         _environment = environment;
         _logger = logger;
+        _vectorStore = vectorStore;
+        _memoryCache = memoryCache;
     }
 
     /// <summary>
@@ -201,6 +208,25 @@ public class WebhookController : ControllerBase
                     ? message.MessageText[..100] + "..."
                     : message.MessageText);
 
+            // Idempotent webhook handling (provider retries / duplicate deliveries)
+            if (!string.IsNullOrWhiteSpace(message.MessageId))
+            {
+                var dedupeKey = $"webhook:wa:{message.SenderNumber}:{message.MessageId}";
+                if (_memoryCache.TryGetValue(dedupeKey, out _))
+                {
+                    _logger.LogInformation("Duplicate webhook ignored for messageId={MessageId}", message.MessageId);
+                    return Ok(new { processed = true, duplicate = true });
+                }
+
+                _memoryCache.Set(
+                    dedupeKey,
+                    1,
+                    new MemoryCacheEntryOptions
+                    {
+                        AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(1)
+                    });
+            }
+
             // 2. Get conversation history (bot-side memory)
             var history = await _historyService.GetHistoryAsync(
                 message.SenderNumber, cancellationToken);
@@ -215,6 +241,12 @@ public class WebhookController : ControllerBase
             _logger.LogInformation(
                 "Found {Count} existing bookings for {Phone}",
                 existingBookings.Count, message.SenderNumber);
+
+            await SyncBookingsToVectorStoreIfNeededAsync(
+                message.SenderNumber,
+                history,
+                existingBookings,
+                cancellationToken);
 
             // 2b. RICE OFFER RESPONSE (history-aware, deterministic)
             // Handle decline/deferral before AI calls and before same-day guardrails.
@@ -285,7 +317,7 @@ public class WebhookController : ControllerBase
                     "Routing to cancellation flow (activeSession={HasSession}, aiDetected={AiDetected})",
                     cancellationState != null, cancellationState == null && isCancellationIntent);
 
-                var cancellationResponse = await cancellationHandler.ProcessCancellationAsync(
+                var cancellationResponse = await cancellationHandler!.ProcessCancellationAsync(
                     message, cancellationState, cancellationToken);
 
                 // Store in history
@@ -366,10 +398,17 @@ public class WebhookController : ControllerBase
 
                     if (!string.IsNullOrWhiteSpace(modResponse.AiResponse))
                     {
-                        await _whatsApp.SendTextAsync(
-                            message.SenderNumber,
-                            modResponse.AiResponse,
-                            cancellationToken);
+                        var skipSend = modResponse.Metadata != null &&
+                            modResponse.Metadata.TryGetValue("outboundAlreadySent", out var sentObj) &&
+                            sentObj is bool already && already;
+
+                        if (!skipSend)
+                        {
+                            await _whatsApp.SendTextAsync(
+                                message.SenderNumber,
+                                modResponse.AiResponse,
+                                cancellationToken);
+                        }
 
                         await _historyService.AddMessageAsync(
                             message.SenderNumber,
@@ -920,6 +959,39 @@ public class WebhookController : ControllerBase
         return _configuration["Restaurants:Default"] ?? "villacarmen";
     }
 
+    private async Task SyncBookingsToVectorStoreIfNeededAsync(
+        string phoneNumber,
+        List<ChatMessage> history,
+        List<BookingRecord> bookings,
+        CancellationToken cancellationToken)
+    {
+        if (!_configuration.GetValue("Chroma:Enabled", true))
+            return;
+
+        if (bookings.Count == 0)
+            return;
+
+        if (HistoryContainsBookingConfirmation(history))
+            return;
+
+        try
+        {
+            foreach (var b in bookings)
+            {
+                await _vectorStore.UpsertBookingAsync(phoneNumber, b, cancellationToken);
+            }
+
+            _logger.LogInformation(
+                "Synced {Count} booking document(s) to Chroma for {Phone} (no confirmation text in recent history)",
+                bookings.Count,
+                phoneNumber);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to sync bookings to Chroma for {Phone}", phoneNumber);
+        }
+    }
+
     private async Task<(bool Handled, string StoredAssistantText, ConversationState UpdatedState)> TryHandlePreChecksAsync(
         string restaurantId,
         WhatsAppMessage message,
@@ -952,6 +1024,15 @@ public class WebhookController : ControllerBase
         {
             _logger.LogInformation(
                 "Generic rice modification request detected for {Phone}, skipping rice pre-check validation",
+                message.SenderNumber);
+            return (false, "", updatedState);
+        }
+
+        // === EXISTING CUSTOMER: info / small talk (avoid treating stale state as a new slot request) ===
+        if (IsExistingCustomerSupportOrInfoMessage(message.MessageText, existingBookingsCount))
+        {
+            _logger.LogInformation(
+                "Existing-customer info/support message for {Phone}, skipping availability pre-checks",
                 message.SenderNumber);
             return (false, "", updatedState);
         }
@@ -1041,8 +1122,23 @@ public class WebhookController : ControllerBase
         int? effectivePartySize = extractedPartySize ?? state.Personas;
         TimeSpan? effectiveTime = extractedTime ?? (state.Hora != null ? ParseTimeFromState(state.Hora) : null);
 
+        var newBookingSignalsFromMessage = extractedDate.HasValue || extractedPartySize.HasValue || extractedTime.HasValue
+            || MessageLooksLikeNewBookingIntent(message.MessageText);
+        var pendingNewBooking = _pendingBookingStore.Get(message.SenderNumber) != null;
+        var skipSlotPrechecksForReturningCustomer = existingBookingsCount > 0
+            && !pendingNewBooking
+            && !newBookingSignalsFromMessage;
+
+        if (skipSlotPrechecksForReturningCustomer)
+        {
+            _logger.LogDebug(
+                "Skipping date/slot availability pre-checks for {Phone} (returning customer, no new-booking signals in message)",
+                message.SenderNumber);
+        }
+
         // === DATE VALIDATION (when date is mentioned or when party size/time changes for existing date) ===
-        if (effectiveDate.HasValue && effectiveDate.Value > DateTime.Now.Date)
+        if (!skipSlotPrechecksForReturningCustomer &&
+            effectiveDate.HasValue && effectiveDate.Value > DateTime.Now.Date)
         {
             var requestedDate = effectiveDate.Value;
 
@@ -1751,6 +1847,67 @@ public class WebhookController : ControllerBase
         }
 
         return (false, null, null);
+    }
+
+    private static bool HistoryContainsBookingConfirmation(List<ChatMessage> history)
+    {
+        foreach (var m in history.TakeLast(40))
+        {
+            var c = m.Content ?? "";
+            if (IsForwardedConfirmation(c))
+                return true;
+
+            if (c.Contains("Confirmación de Reserva", StringComparison.OrdinalIgnoreCase) ||
+                c.Contains("Confirmacion de Reserva", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            if (c.Contains("Su reserva ha sido confirmada", StringComparison.OrdinalIgnoreCase) ||
+                c.Contains("reserva ha sido confirmada", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool MessageLooksLikeNewBookingIntent(string messageText)
+    {
+        if (string.IsNullOrWhiteSpace(messageText))
+            return false;
+
+        return Regex.IsMatch(
+            messageText.Trim(),
+            @"\b(quiero|quisiera|necesito|podr[ií]a|puedo|vamos\s+a|me\s+gustar[ií]a|hacer|hago|solicito)\s+.*\b(reservar|reserva|mesa|mesas|booking)\b|" +
+            @"\b(nueva\s+reserva|otra\s+reserva|reservar\s+(una\s+)?mesa|mesa\s+para|book(ing)?\s+for)\b|" +
+            @"\b(disponibilidad|hueco|plaza[s]?)\s+para\s+\d+",
+            RegexOptions.IgnoreCase);
+    }
+
+    private static bool IsExistingCustomerSupportOrInfoMessage(string messageText, int existingBookingsCount)
+    {
+        if (existingBookingsCount == 0 || string.IsNullOrWhiteSpace(messageText))
+            return false;
+
+        if (MessageLooksLikeNewBookingIntent(messageText))
+            return false;
+
+        var t = messageText.Trim().ToLowerInvariant();
+
+        if (Regex.IsMatch(t, @"^(hola|hi|hey|buenas|buenos)\b[^a-záéíóúñ]{0,15}$"))
+            return true;
+
+        if (Regex.IsMatch(t, @"\b(una\s+pregunta|tengo\s+una\s+pregunta|solo\s+una\s+pregunta)\b"))
+            return true;
+
+        if (Regex.IsMatch(t, @"\b(tengo|tenemos)\s+(una\s+)?reserva\b"))
+            return true;
+
+        if (Regex.IsMatch(t, @"\b(ten[eé]is|tienen|hay)\s+(men[uú]|menu|carta)\b"))
+            return true;
+
+        if (Regex.IsMatch(t, @"\b(men[uú]|menu|carta|precios?|horario|d[oó]nde\s+est[aá]is|aparcamiento|parking)\b"))
+            return true;
+
+        return false;
     }
 
     /// <summary>

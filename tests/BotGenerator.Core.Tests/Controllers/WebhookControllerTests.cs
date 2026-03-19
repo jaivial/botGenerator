@@ -4,6 +4,7 @@ using BotGenerator.Core.Handlers;
 using BotGenerator.Core.Services;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -29,6 +30,8 @@ public class WebhookControllerTests
     private readonly IConfiguration _configuration;
     private readonly Mock<IHostEnvironment> _environmentMock;
     private readonly Mock<ILogger<WebhookController>> _loggerMock;
+    private readonly Mock<IConversationVectorStore> _vectorStoreMock;
+    private readonly MemoryCache _memoryCache;
     private readonly WebhookController _controller;
 
     public WebhookControllerTests()
@@ -44,10 +47,12 @@ public class WebhookControllerTests
         _riceValidatorMock = new Mock<IRiceValidatorService>();
         _availabilityMock = new Mock<IBookingAvailabilityService>();
         _bookingRepositoryMock = new Mock<IBookingRepository>();
-        _bookingHandlerMock = new Mock<BookingHandler>(MockBehavior.Loose, null!, null!, null!, null!);
+        _bookingHandlerMock = new Mock<BookingHandler>(MockBehavior.Loose, null!, null!, null!, null!, null!);
         _geminiServiceMock = new Mock<IGeminiService>();
         _environmentMock = new Mock<IHostEnvironment>();
         _loggerMock = new Mock<ILogger<WebhookController>>();
+        _vectorStoreMock = new Mock<IConversationVectorStore>();
+        _memoryCache = new MemoryCache(new MemoryCacheOptions());
 
         // Default booking repository behavior - return empty list
         _bookingRepositoryMock
@@ -146,7 +151,9 @@ public class WebhookControllerTests
             _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _vectorStoreMock.Object,
+            _memoryCache);
     }
 
     [Fact]
@@ -257,7 +264,9 @@ public class WebhookControllerTests
             _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _vectorStoreMock.Object,
+            _memoryCache);
 
         var validPayload = """
         {
@@ -381,7 +390,9 @@ public class WebhookControllerTests
             _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _vectorStoreMock.Object,
+            _memoryCache);
 
         // Test with an empty JSON object (missing required 'message' property)
         var invalidPayload = "{}";
@@ -435,7 +446,9 @@ public class WebhookControllerTests
             _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _vectorStoreMock.Object,
+            _memoryCache);
 
         // Payload missing "message" property
         var payloadWithoutMessage = """
@@ -495,7 +508,9 @@ public class WebhookControllerTests
             _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _vectorStoreMock.Object,
+            _memoryCache);
 
         // Message from bot itself (fromMe: true)
         var ownMessagePayload = """
@@ -579,7 +594,9 @@ public class WebhookControllerTests
             _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _vectorStoreMock.Object,
+            _memoryCache);
 
         // Message with empty text
         var emptyTextPayload = """
@@ -663,7 +680,9 @@ public class WebhookControllerTests
             _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _vectorStoreMock.Object,
+            _memoryCache);
 
         // Media message (image) with no text
         var mediaPayload = """
@@ -751,7 +770,9 @@ public class WebhookControllerTests
             _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _vectorStoreMock.Object,
+            _memoryCache);
 
         var validPayload = """
         {
@@ -871,7 +892,9 @@ public class WebhookControllerTests
             _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _vectorStoreMock.Object,
+            _memoryCache);
 
         var payload = """
         {
@@ -986,7 +1009,9 @@ public class WebhookControllerTests
             _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _vectorStoreMock.Object,
+            _memoryCache);
 
         // Button response payload with vote property
         var payload = """
@@ -1103,7 +1128,9 @@ public class WebhookControllerTests
             _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _vectorStoreMock.Object,
+            _memoryCache);
 
         // List response payload with nested content structure
         var payload = """
@@ -1224,7 +1251,9 @@ public class WebhookControllerTests
             _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _vectorStoreMock.Object,
+            _memoryCache);
 
         var payload = """
         {
@@ -1339,7 +1368,9 @@ public class WebhookControllerTests
             _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _vectorStoreMock.Object,
+            _memoryCache);
 
         var expectedTimestamp = 1700000000L;
         var payload = $$$"""
@@ -1459,7 +1490,9 @@ public class WebhookControllerTests
             _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _vectorStoreMock.Object,
+            _memoryCache);
 
         // Button response payload
         var payload = """
@@ -1576,7 +1609,9 @@ public class WebhookControllerTests
             _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _vectorStoreMock.Object,
+            _memoryCache);
 
         // List response payload
         var payload = """
@@ -1697,7 +1732,9 @@ public class WebhookControllerTests
             _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _vectorStoreMock.Object,
+            _memoryCache);
 
         // Button response payload with buttonOrListid
         var payload = """
@@ -1822,7 +1859,9 @@ public class WebhookControllerTests
             _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _vectorStoreMock.Object,
+            _memoryCache);
 
         var payload = """
         {
@@ -1956,7 +1995,9 @@ public class WebhookControllerTests
             _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _vectorStoreMock.Object,
+            _memoryCache);
 
         var payload = """
         {
@@ -2096,7 +2137,9 @@ public class WebhookControllerTests
             _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _vectorStoreMock.Object,
+            _memoryCache);
 
         var payload = """
         {
@@ -2217,7 +2260,9 @@ public class WebhookControllerTests
             _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _vectorStoreMock.Object,
+            _memoryCache);
 
         var payload = """
         {
@@ -2344,7 +2389,9 @@ public class WebhookControllerTests
             _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _vectorStoreMock.Object,
+            _memoryCache);
 
         var payload = """
         {
@@ -2451,7 +2498,9 @@ public class WebhookControllerTests
             _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _vectorStoreMock.Object,
+            _memoryCache);
 
         var payload = """
         {
@@ -2562,7 +2611,9 @@ public class WebhookControllerTests
             _geminiServiceMock.Object,
             _configuration,
             _environmentMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _vectorStoreMock.Object,
+            _memoryCache);
 
         var payload = """
         {
