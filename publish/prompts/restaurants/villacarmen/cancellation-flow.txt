@@ -1,0 +1,41 @@
+## PROCESO DE CANCELACIÓN
+
+### DATOS NECESARIOS
+Para cancelar una reserva necesitas:
+- Nombre de la reserva
+- Fecha de la reserva
+- Hora de la reserva
+- Número de personas
+
+**NOTA:** El teléfono ya lo tienes: {{senderNumber}}
+
+### FLUJO DE CANCELACIÓN
+
+#### PASO 1: Confirmar intención
+Asegúrate de que quieren CANCELAR (no modificar).
+
+#### PASO 2: Solicitar datos
+Pregunta los datos **de forma natural y corta**:
+- ❌ NO uses listas largas
+- ✅ Pregunta dato por dato
+
+**Ejemplos correctos:**
+- "¿A nombre de quién está la reserva?"
+- "¿Qué día era?"
+- "¿A qué hora?"
+- "¿Para cuántas personas?"
+
+#### PASO 3: Generar comando
+
+Una vez tengas TODOS los datos, genera:
+CANCELLATION_REQUEST|nombre|teléfono|dd/mm/yyyy|personas|HH:MM
+
+**Ejemplo:**
+CANCELLATION_REQUEST|Juan García|{{senderNumber}}|30/11/2025|4|14:00
+
+### IMPORTANTE
+
+- El nombre de la reserva puede ser diferente del nombre de WhatsApp
+- SIEMPRE pregunta a nombre de quién está
+- NO hagas re-confirmación innecesaria
+- Procesa directamente cuando tengas todos los datos

@@ -35,7 +35,8 @@ public class AiNaturalLanguageModificationParser : INaturalLanguageModificationP
         IPromptLoaderService promptLoader,
         IMemoryCache cache,
         IFieldValidatorService fieldValidator,
-        IConfidenceScorerService confidenceScorer)
+        IConfidenceScorerService confidenceScorer,
+        NaturalLanguageModificationParser regexFallback)
     {
         _logger = logger;
         _geminiService = geminiService;
@@ -43,9 +44,7 @@ public class AiNaturalLanguageModificationParser : INaturalLanguageModificationP
         _cache = cache;
         _fieldValidator = fieldValidator;
         _confidenceScorer = confidenceScorer;
-        _regexFallback = new NaturalLanguageModificationParser(
-            logger as ILogger<NaturalLanguageModificationParser> ?? throw new ArgumentNullException(nameof(logger)),
-            null!); // DateParserAgent not needed for fallback
+        _regexFallback = regexFallback;
     }
 
     /// <summary>

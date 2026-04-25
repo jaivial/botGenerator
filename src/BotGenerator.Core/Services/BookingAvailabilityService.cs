@@ -71,7 +71,7 @@ public class BookingAvailabilityService : IBookingAvailabilityService
         };
     }
 
-    public async Task<DailyLimitResult> GetDailyLimitAsync(DateTime date, CancellationToken cancellationToken = default)
+    public async Task<DailyLimitResult> GetDailyLimitAsync(DateTime date, int? excludeBookingId = null, CancellationToken cancellationToken = default)
     {
         await using var connection = new MySqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -84,10 +84,10 @@ public class BookingAvailabilityService : IBookingAvailabilityService
             new { Date = dbDate },
             cancellationToken: cancellationToken)) ?? 45;
 
-        // PHP: SUM(party_size) from bookings
+        // PHP: SUM(party_size) from bookings, optionally excluding a specific booking
         var totalPeople = await connection.ExecuteScalarAsync<int?>(new CommandDefinition(
-            "SELECT SUM(party_size) FROM bookings WHERE reservation_date = @Date",
-            new { Date = dbDate },
+            "SELECT SUM(party_size) FROM bookings WHERE reservation_date = @Date AND (@ExcludeBookingId IS NULL OR id != @ExcludeBookingId)",
+            new { Date = dbDate, ExcludeBookingId = excludeBookingId },
             cancellationToken: cancellationToken)) ?? 0;
 
         var free = dailyLimit - totalPeople;
@@ -101,7 +101,7 @@ public class BookingAvailabilityService : IBookingAvailabilityService
         };
     }
 
-    public async Task<HourDataResult> GetHourDataAsync(DateTime date, CancellationToken cancellationToken = default)
+    public async Task<HourDataResult> GetHourDataAsync(DateTime date, int? excludeBookingId = null, CancellationToken cancellationToken = default)
     {
         await using var connection = new MySqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -114,13 +114,13 @@ public class BookingAvailabilityService : IBookingAvailabilityService
             new { Date = dbDate },
             cancellationToken: cancellationToken)) ?? 45;
 
-        // bookings grouped by hour
+        // bookings grouped by hour, optionally excluding a specific booking
         var bookings = await connection.QueryAsync<BookingByHourRow>(new CommandDefinition(
             @"SELECT TIME_FORMAT(reservation_time, '%H:%i') AS hour, SUM(party_size) AS total_people
               FROM bookings
-              WHERE reservation_date = @Date
+              WHERE reservation_date = @Date AND (@ExcludeBookingId IS NULL OR id != @ExcludeBookingId)
               GROUP BY TIME_FORMAT(reservation_time, '%H:%i')",
-            new { Date = dbDate },
+            new { Date = dbDate, ExcludeBookingId = excludeBookingId },
             cancellationToken: cancellationToken));
 
         var bookingsByHour = bookings.ToDictionary(r => r.hour, r => r.total_people);
@@ -230,6 +230,7 @@ public class BookingAvailabilityService : IBookingAvailabilityService
         DateTime date,
         int partySize,
         TimeSpan? time,
+        int? excludeBookingId = null,
         CancellationToken cancellationToken = default)
     {
         if (partySize <= 0)
@@ -283,7 +284,7 @@ public class BookingAvailabilityService : IBookingAvailabilityService
             };
         }
 
-        var daily = await GetDailyLimitAsync(date, cancellationToken);
+        var daily = await GetDailyLimitAsync(date, excludeBookingId, cancellationToken);
         if (daily.FreeBookingSeats < partySize)
         {
             var next = await FindNextDateWithCapacityAsync(date.AddDays(1), partySize, cancellationToken);
@@ -307,7 +308,7 @@ public class BookingAvailabilityService : IBookingAvailabilityService
             };
         }
 
-        var hourData = await GetHourDataAsync(date, cancellationToken);
+        var hourData = await GetHourDataAsync(date, excludeBookingId, cancellationToken);
         var timeKey = $"{time.Value.Hours:D2}:{time.Value.Minutes:D2}";
 
         if (!hourData.HourData.TryGetValue(timeKey, out var slot) || slot.IsClosed)
@@ -441,7 +442,7 @@ public class BookingAvailabilityService : IBookingAvailabilityService
             var status = await CheckDayStatusAsync(date, cancellationToken);
             if (!status.IsOpen) continue;
 
-            var daily = await GetDailyLimitAsync(date, cancellationToken);
+            var daily = await GetDailyLimitAsync(date, null, cancellationToken);
             if (daily.FreeBookingSeats >= partySize) return date;
         }
 
@@ -456,10 +457,10 @@ public class BookingAvailabilityService : IBookingAvailabilityService
             var status = await CheckDayStatusAsync(date, cancellationToken);
             if (!status.IsOpen) continue;
 
-            var daily = await GetDailyLimitAsync(date, cancellationToken);
+            var daily = await GetDailyLimitAsync(date, null, cancellationToken);
             if (daily.FreeBookingSeats < partySize) continue;
 
-            var hours = await GetHourDataAsync(date, cancellationToken);
+            var hours = await GetHourDataAsync(date, null, cancellationToken);
             var any = hours.HourData.Values.Any(s => !s.IsClosed && s.Capacity >= partySize);
             if (any) return date;
         }

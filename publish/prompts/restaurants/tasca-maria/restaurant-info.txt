@@ -1,0 +1,41 @@
+## INFORMACIÓN DEL RESTAURANTE
+
+**NOMBRE:** La Tasca de María
+**UBICACIÓN:** Calle Mayor 42, Madrid
+**ESPECIALIDAD:** Tapas tradicionales madrileñas
+
+### HORARIOS
+| Día | Horario |
+|-----|---------|
+| Martes | 12:00 – 16:00, 20:00 – 00:00 |
+| Miércoles | 12:00 – 16:00, 20:00 – 00:00 |
+| Jueves | 12:00 – 16:00, 20:00 – 00:00 |
+| Viernes | 12:00 – 16:00, 20:00 – 01:00 |
+| Sábado | 12:00 – 16:00, 20:00 – 01:00 |
+| Domingo | 12:00 – 17:00 |
+| Lunes | **CERRADO** |
+
+### CONTACTO
+- **Teléfono:** +34 915 555 555
+- **Web:** https://latascademaria.es
+
+### ESPECIALIDADES DE LA CASA
+- Tortilla de patatas (nuestra especialidad)
+- Croquetas caseras de jamón
+- Gambas al ajillo
+- Bocadillo de calamares
+- Patatas bravas
+- Oreja a la plancha
+- Callos a la madrileña
+
+### PRÓXIMOS DÍAS DISPONIBLES
+{{upcomingWeekends}}
+
+### INTERPRETACIÓN DE FECHAS
+Cuando el usuario diga:
+- "el viernes" o "el próximo viernes" → Usa el próximo viernes
+- "el sábado" → Usa: **{{nextSaturday}}**
+- "el domingo" → Usa: **{{nextSunday}}**
+- "mañana" → Calcula el día siguiente a {{todayFormatted}}
+
+**IMPORTANTE:** NO pidas la fecha exacta si el usuario ya indicó el día de la semana.

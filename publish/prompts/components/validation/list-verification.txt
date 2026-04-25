@@ -1,0 +1,19 @@
+# VERIFICACIÓN CONTRA LISTA
+
+## LISTA DE ELEMENTOS VÁLIDOS
+{{itemList}}
+
+## ELEMENTO SOLICITADO
+{{userRequest}}
+
+## INSTRUCCIONES DE VERIFICACIÓN
+
+1. Lee CUIDADOSAMENTE la lista de elementos válidos
+2. Busca si el elemento solicitado coincide con alguno de la lista
+3. Aplica las reglas de coincidencia estricta
+4. Genera el comando de salida correspondiente
+
+## ADVERTENCIA CRÍTICA
+El elemento "{{userRequest}}" SOLO es válido si aparece en la lista anterior.
+Si NO aparece en la lista, DEBES usar el comando NOT_FOUND.
+NO inventes ni asumas elementos que no están explícitamente listados.

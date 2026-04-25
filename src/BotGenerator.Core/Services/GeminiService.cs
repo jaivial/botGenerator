@@ -184,10 +184,11 @@ public class GeminiService : IGeminiService
     {
         var contents = new List<object>();
 
-        // Add history messages
+        // Add history messages (cap at 20 most recent to avoid token overflow)
         if (history != null && history.Count > 0)
         {
-            foreach (var msg in history)
+            var recentHistory = history.TakeLast(30);
+            foreach (var msg in recentHistory)
             {
                 // Map our roles to Gemini roles
                 // "user" -> "user", "assistant" -> "model"

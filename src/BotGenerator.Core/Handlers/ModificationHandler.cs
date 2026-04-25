@@ -377,6 +377,7 @@ public class ModificationHandler
                 newDate,
                 booking.PartySize,
                 timeToCheck,
+                booking.Id,
                 ct);
 
             if (!decision.IsAvailable)
@@ -441,6 +442,7 @@ public class ModificationHandler
                     dateToCheck,
                     booking.PartySize,
                     time,
+                    booking.Id,
                     ct);
 
                 if (!decision.IsAvailable)
@@ -800,6 +802,7 @@ public class ModificationHandler
             newDate.Value,
             booking.PartySize,
             time,
+            booking.Id,
             ct);
 
         if (!decision.IsAvailable)
@@ -910,6 +913,7 @@ public class ModificationHandler
             booking.ReservationDate,
             booking.PartySize,
             newTime.Value,
+            booking.Id,
             ct);
 
         if (!decision.IsAvailable)
@@ -1024,6 +1028,7 @@ public class ModificationHandler
             booking.ReservationDate,
             newSize,
             booking.ReservationTime,
+            booking.Id,
             ct);
 
         if (!decision.IsAvailable)

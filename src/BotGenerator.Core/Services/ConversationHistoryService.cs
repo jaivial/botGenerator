@@ -99,12 +99,12 @@ public class ConversationHistoryService : IConversationHistoryService
         // Fetch from database
         var dbHistory = await _messageRepository.GetMessagesAsync(phoneNumber, cancellationToken);
 
-        // Skip heavy WhatsApp sync when ChromaDB is active - rely on vector store instead
-        // This dramatically reduces API calls and latency
-        if (_skipWhatsAppSyncWhenChromaActive && _vectorStore != null && _whatsAppService != null)
+        // Skip heavy WhatsApp sync when ChromaDB was active (now kept for backward compat)
+        // ChromaDB vector store is no longer used for conversation storage
+        if (_skipWhatsAppSyncWhenChromaActive && _whatsAppService != null)
         {
             _logger.LogDebug(
-                "Skipping WhatsApp sync for {Phone} - using ChromaDB vector store instead",
+                "Skipping WhatsApp sync for {Phone} - using MySQL conversation store",
                 phoneNumber);
 
             // Still ensure we have recent messages in DB for continuity
@@ -172,18 +172,6 @@ public class ConversationHistoryService : IConversationHistoryService
     {
         // Save to database
         await _messageRepository.SaveMessageAsync(phoneNumber, message, cancellationToken);
-
-        if (_vectorStore != null && !string.IsNullOrWhiteSpace(message.Content))
-        {
-            try
-            {
-                await _vectorStore.UpsertMessageAsync(phoneNumber, message, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to upsert message into vector store for {Phone}", phoneNumber);
-            }
-        }
 
         // Update cache
         if (!_cache.ContainsKey(phoneNumber))
@@ -420,22 +408,13 @@ public class ConversationHistoryService : IConversationHistoryService
         }
     }
 
-    private async Task UpsertVectorBatchSafeAsync(
+    private Task UpsertVectorBatchSafeAsync(
         string phoneNumber,
         List<ChatMessage> messages,
         CancellationToken cancellationToken)
     {
-        if (_vectorStore == null || messages.Count == 0)
-            return;
-
-        try
-        {
-            await _vectorStore.UpsertMessagesAsync(phoneNumber, messages, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to upsert conversation batch into vector store for {Phone}", phoneNumber);
-        }
+        // No-op: ChromaDB conversation upserts disabled (using MySQL only)
+        return Task.CompletedTask;
     }
 
     private static ChatMessage? MapWhatsAppMessage(WhatsAppHistoryMessage input)

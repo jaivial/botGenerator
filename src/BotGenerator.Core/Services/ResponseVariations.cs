@@ -1292,6 +1292,15 @@ public static class ResponseVariations
         "¿Cuántos seréis en total?"
     });
 
+    public static string Acknowledgment() => Pick(new[]
+    {
+        "¡De nada! Si necesitas algo más, aquí estoy.",
+        "¡Gracias a ti! ¿Te ayudo con algo más?",
+        "¡Un placer! Para cualquier cosa, escríbeme.",
+        "Perfecto. ¿Necesitas algo más?",
+        "¡De nada! Aquí estoy si necesitas reservar o tienes alguna pregunta."
+    });
+
     private static string Pick(string[] options) =>
         options[_random.Next(options.Length)];
 }

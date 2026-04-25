@@ -115,64 +115,10 @@ public class MainConversationAgent : IAgent
                 message.MessageText,
                 cancellationToken) ?? context;
 
-            // 4b. Retrieve long-term semantic memory from vector store (isolated by phone)
-            if (_vectorStore != null)
-            {
-                try
-                {
-                    var topK = Math.Max(1, _configuration.GetValue("Chroma:TopK", 6));
-                    var semanticMemory = await _vectorStore.QueryRelevantAsync(
-                        message.SenderNumber,
-                        message.MessageText,
-                        topK,
-                        cancellationToken);
-
-                    var bookingTopK = Math.Max(1, _configuration.GetValue("Chroma:BookingContextTopK", 4));
-                    var bookingDocs = await _vectorStore.QueryPhoneContextAsync(
-                        message.SenderNumber,
-                        message.MessageText,
-                        bookingTopK,
-                        "booking",
-                        cancellationToken);
-
-                    var combined = new StringBuilder();
-                    if (semanticMemory.Count > 0)
-                        combined.AppendLine(_contextBuilder.FormatHistory(semanticMemory, topK));
-
-                    if (bookingDocs.Count > 0)
-                    {
-                        combined.AppendLine("Reservas (Chroma, referencia):");
-                        foreach (var doc in bookingDocs)
-                        {
-                            if (!string.IsNullOrWhiteSpace(doc.Content))
-                                combined.AppendLine(doc.Content);
-                        }
-                    }
-
-                    var semanticText = combined.ToString().Trim();
-                    if (semanticText.Length > 0)
-                    {
-                        context["hasSemanticContext"] = true;
-                        context["semanticContext"] = semanticText;
-                    }
-                    else
-                    {
-                        context["hasSemanticContext"] = false;
-                        context["semanticContext"] = "";
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to retrieve semantic context from vector store");
-                    context["hasSemanticContext"] = false;
-                    context["semanticContext"] = "";
-                }
-            }
-            else
-            {
-                context["hasSemanticContext"] = false;
-                context["semanticContext"] = "";
-            }
+            // 4b. Semantic context from vector store (disabled — ChromaDB used dummy embeddings)
+            // Conversation history is now served directly from MySQL via FormatHistory() and BuildContents()
+            context["hasSemanticContext"] = false;
+            context["semanticContext"] = "";
 
             // Add rice validation result to context if valid
             if (riceValidation.HasRiceRequest && riceValidation.IsValid)

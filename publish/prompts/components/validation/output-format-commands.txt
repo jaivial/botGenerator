@@ -1,0 +1,38 @@
+# FORMATO DE COMANDOS DE SALIDA
+
+## COMANDOS DISPONIBLES
+
+### VALID - Elemento encontrado y único
+```
+{{validCommand}}|[nombre completo del elemento]
+```
+
+### NOT_FOUND - Elemento NO existe en la lista
+```
+{{notFoundCommand}}|[nombre solicitado original]
+```
+
+### MULTIPLE - Múltiples coincidencias posibles
+```
+{{multipleCommand}}|[opción 1] y [opción 2]
+```
+
+## REGLAS DE SALIDA
+
+1. Genera SOLO el comando, sin texto adicional
+2. No incluyas explicaciones ni contexto
+3. El nombre debe ser EXACTAMENTE como aparece en la lista
+4. Para VALID, elimina precios y paréntesis del nombre
+5. Para NOT_FOUND, usa el nombre que el usuario solicitó
+6. Para MULTIPLE, lista las opciones separadas por " y "
+
+## EJEMPLOS
+
+Solicitud: "negro" (existe "Arroz Negro")
+Respuesta: {{validCommand}}|Arroz Negro
+
+Solicitud: "arroz de pollo" (NO existe en la lista)
+Respuesta: {{notFoundCommand}}|arroz de pollo
+
+Solicitud: "carrillada" (existe "meloso" Y "seco")
+Respuesta: {{multipleCommand}}|Arroz meloso de carrillada con boletus y Arroz seco de carrillada con boletus

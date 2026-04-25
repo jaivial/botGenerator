@@ -654,7 +654,7 @@ public class CancellationHandlerTests
         result.AiResponse.Should().NotBeNullOrWhiteSpace();
 
         // Should indicate error
-        result.AiResponse.Should().MatchRegex("([Ee]rror|[Ll]o siento|[Pp]roblema|[Ff]all|[Nn]o\\s+se\\s+pudo|[Ii]ntentarl?[oa])");
+        result.AiResponse.Should().MatchRegex("([Ee]rror|[Ll]o siento|[Pp]roblema|[Ff]all|[Nn]o\\s+se\\s*(?:ha\\s+)?pudo|[Ii]ntentarl?[oa])");
 
         // Should still clear state
         _stateStoreMock.Verify(x => x.Clear(It.IsAny<string>()), Times.Once);

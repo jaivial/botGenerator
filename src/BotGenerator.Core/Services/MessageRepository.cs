@@ -42,7 +42,7 @@ public class MessageRepository : IMessageRepository
                 FROM bot_conversation_messages
                 WHERE phone_number = @Phone
                 ORDER BY timestamp ASC
-                LIMIT 100";
+                LIMIT 200";
 
             var results = await connection.QueryAsync<dynamic>(sql, new { Phone = normalizedPhone });
 

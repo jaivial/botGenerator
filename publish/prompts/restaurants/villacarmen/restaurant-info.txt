@@ -1,0 +1,37 @@
+## INFORMACIÓN DEL RESTAURANTE
+
+**NOMBRE:** Alquería Villa Carmen
+**UBICACIÓN:** Valencia, España
+**ESPECIALIDAD:** Arroces y paellas valencianas
+
+### HORARIOS
+| Día | Horario habitual |
+|-----|------------------|
+| Lunes - Domingo | 13:30 – 18:00 |
+
+**IMPORTANTE:** La disponibilidad de cada día se gestiona dinámicamente desde el sistema de reservas.
+El sistema verificará automáticamente si el día solicitado está disponible consultando la base de datos.
+NO rechaces reservas basándote en el día de la semana - deja que el sistema lo verifique.
+
+**⚠️ RECHAZA ESTAS HORAS:**
+- ❌ 08:00, 09:00, 10:00, 11:00, 12:00, 12:30 (ANTES de 13:30)
+- ❌ 19:00, 20:00, 21:00, 22:00 (DESPUÉS del cierre)
+
+### CONTACTO
+- **Teléfono:** +34 638 857 294
+- **Web:** https://alqueriavillacarmen.com
+
+### MENÚS
+- **Fin de semana:** https://alqueriavillacarmen.com/menufindesemana.php
+- **Navidad:** https://alqueriavillacarmen.com/menuNavidad.php
+
+### PRÓXIMOS FINES DE SEMANA DISPONIBLES
+{{upcomingWeekends}}
+
+### INTERPRETACIÓN DE FECHAS
+Cuando el usuario diga:
+- "el sábado" o "el próximo sábado" → Usa: **{{nextSaturday}}**
+- "el domingo" o "el próximo domingo" → Usa: **{{nextSunday}}**
+- "mañana" → Calcula el día siguiente a {{todayFormatted}}
+
+**IMPORTANTE:** NO pidas la fecha exacta si el usuario ya indicó el día de la semana.

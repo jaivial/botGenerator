@@ -308,7 +308,7 @@ public class IntentRouterService : IIntentRouterService
         // Continue pending booking only for messages that look like booking follow-up data.
         return System.Text.RegularExpressions.Regex.IsMatch(
             userText,
-            @"\b(sí|si|no|vale|ok|perfecto|confirmo|confirmar|personas?|comensales?|trona|tronas|carrito|carritos|arroz|raciones?|sin\s+arroz|a\s+las|\d{1,2}:\d{2}|\d{1,2}/\d{1,2}|lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo|mañana|pasado\s+mañana)\b",
+            @"\b(confirmo|confirmar|personas?|comensales?|trona|tronas|carrito|carritos|arroz|raciones?|sin\s+arroz|a\s+las|\d{1,2}:\d{2}|\d{1,2}/\d{1,2}|lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo|mañana|pasado\s+mañana)\b",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
     }
 
@@ -615,7 +615,7 @@ public class IntentRouterService : IIntentRouterService
             {
                 var availabilityService = _services.GetRequiredService<IBookingAvailabilityService>();
                 var decision = await availabilityService.EvaluateAsync(
-                    date, booking.People, time, cancellationToken);
+                    date, booking.People, time, null, cancellationToken);
 
                 if (!decision.IsAvailable && !string.IsNullOrWhiteSpace(decision.Message))
                 {

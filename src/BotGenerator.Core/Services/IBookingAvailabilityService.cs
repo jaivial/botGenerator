@@ -3,8 +3,8 @@ namespace BotGenerator.Core.Services;
 public interface IBookingAvailabilityService
 {
     Task<DayStatusResult> CheckDayStatusAsync(DateTime date, CancellationToken cancellationToken = default);
-    Task<DailyLimitResult> GetDailyLimitAsync(DateTime date, CancellationToken cancellationToken = default);
-    Task<HourDataResult> GetHourDataAsync(DateTime date, CancellationToken cancellationToken = default);
+    Task<DailyLimitResult> GetDailyLimitAsync(DateTime date, int? excludeBookingId = null, CancellationToken cancellationToken = default);
+    Task<HourDataResult> GetHourDataAsync(DateTime date, int? excludeBookingId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Evaluates whether a booking can be accepted for a given date/time/party size.
@@ -14,6 +14,7 @@ public interface IBookingAvailabilityService
         DateTime date,
         int partySize,
         TimeSpan? time,
+        int? excludeBookingId = null,
         CancellationToken cancellationToken = default);
 }
 

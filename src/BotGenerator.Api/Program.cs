@@ -1,5 +1,6 @@
 using BotGenerator.Core.Agents;
 using BotGenerator.Core.Handlers;
+using BotGenerator.Core.Pipeline;
 using BotGenerator.Core.Services;
 
 // Load environment variables from .env file
@@ -113,8 +114,8 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddMemoryCache();
 
 // ========== HTTP Clients ==========
-// Gemini Service - primary AI service
-builder.Services.AddHttpClient<IGeminiService, GeminiService>(client =>
+// MiniMax Service - primary AI service (Anthropic-compatible endpoint)
+builder.Services.AddHttpClient<IGeminiService, MinimaxService>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(60);
 });
@@ -176,6 +177,7 @@ builder.Services.AddSingleton<IAiStateExtractorService, AiStateExtractorService>
 builder.Services.AddScoped<IFieldAccumulatorService, FieldAccumulatorService>();
 builder.Services.AddScoped<IFieldValidatorService, FieldValidatorService>();
 builder.Services.AddScoped<IConfidenceScorerService, ConfidenceScorerService>();
+builder.Services.AddScoped<NaturalLanguageModificationParser>();
 builder.Services.AddScoped<INaturalLanguageModificationParser, AiNaturalLanguageModificationParser>();
 
 // ========== Agents ==========
@@ -189,6 +191,12 @@ builder.Services.AddScoped<IRiceValidatorService>(sp => sp.GetRequiredService<Ri
 builder.Services.AddScoped<BookingHandler>();
 builder.Services.AddScoped<CancellationHandler>();
 builder.Services.AddScoped<ModificationHandler>();
+
+// ========== Pipeline (new AI-driven architecture) ==========
+builder.Services.AddScoped<ContextAnalyzerNode>();
+builder.Services.AddScoped<ValidationEnrichmentNode>();
+builder.Services.AddScoped<ResponseGeneratorNode>();
+builder.Services.AddScoped<PipelineOrchestrator>();
 
 // ========== Logging ==========
 builder.Services.AddLogging(logging =>

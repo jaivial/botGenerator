@@ -46,8 +46,7 @@ public class BookingHandler
 
             if (success && bookingId.HasValue)
             {
-                // Upsert booking to ChromaDB for semantic search
-                await UpsertBookingToVectorStoreAsync(booking, bookingId.Value, cancellationToken);
+                // ChromaDB upsert disabled — booking data is queried directly from MySQL
 
                 // Sync to external PHP system
                 var (externalSuccess, externalMessage) = await _externalReservationService.CreateReservationAsync(

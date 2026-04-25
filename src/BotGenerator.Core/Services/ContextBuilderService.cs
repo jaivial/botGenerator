@@ -164,6 +164,11 @@ public class ContextBuilderService : IContextBuilderService
             ["nextBookingRice"] = nextBooking?.ArrozType ?? "Sin arroz",
             ["nextBookingRiceServings"] = nextBooking?.ArrozServings ?? 0,
 
+            // ========== BOOKING CONFLICT DETECTION ==========
+            // Check if any existing booking shares the same date as the state Fecha
+            ["hasExistingBookingSameDateTime"] = HasBookingAtSameDateTime(existingBookings, state?.Fecha, state?.Hora),
+            ["existingBookingSameDateTime"] = GetBookingSameDateTimeInfo(existingBookings, state?.Fecha, state?.Hora),
+
             // ========== FIRST MESSAGE DETECTION ==========
             ["isFirstMessage"] = (history?.Count ?? 0) == 0,
             ["isGreeting"] = IsGreetingMessage(message.MessageText),
@@ -337,7 +342,7 @@ public class ContextBuilderService : IContextBuilderService
         return weekends;
     }
 
-    public string FormatHistory(List<ChatMessage>? history, int maxMessages = 10)
+    public string FormatHistory(List<ChatMessage>? history, int maxMessages = 20)
     {
         if (history == null || history.Count == 0)
         {
@@ -346,18 +351,40 @@ public class ContextBuilderService : IContextBuilderService
 
         var recentMessages = history.TakeLast(maxMessages).ToList();
         var sb = new StringBuilder();
+        DateTime? prevTimestamp = null;
 
         foreach (var msg in recentMessages)
         {
             var emoji = msg.Role == "user" ? "👤" : "🤖";
             var name = msg.Role == "user" ? (msg.FromName ?? "Cliente") : "Asistente";
 
-            // Truncate long messages
-            var content = msg.Content.Length > 200
-                ? msg.Content[..200] + "..."
-                : msg.Content;
+            DateTime? msgTime = null;
+            if (!string.IsNullOrEmpty(msg.Timestamp) && DateTime.TryParse(msg.Timestamp, out var ts))
+            {
+                msgTime = ts;
+            }
 
-            sb.AppendLine($"{emoji} {name}: {content}");
+            // Insert session boundary marker when there's a gap > 60 minutes
+            if (prevTimestamp.HasValue && msgTime.HasValue)
+            {
+                var gap = msgTime.Value - prevTimestamp.Value;
+                if (gap.TotalMinutes > 60)
+                {
+                    var gapDesc = gap.TotalHours < 24
+                        ? $"⏱️ --- pausa de {(int)gap.TotalHours}h {gap.Minutes}m ---"
+                        : $"⏱️ --- pausa de {(int)gap.TotalDays}d {(int)(gap.TotalHours % 24)}h ---";
+                    sb.AppendLine(gapDesc);
+                }
+            }
+
+            var timestamp = msgTime.HasValue
+                ? $"[{msgTime.Value:HH:mm dd/MM}] "
+                : "";
+
+            var content = msg.Content;
+
+            sb.AppendLine($"{emoji} {name}: {timestamp}{content}");
+            prevTimestamp = msgTime;
         }
 
         return sb.ToString().TrimEnd();
@@ -563,6 +590,51 @@ public class ContextBuilderService : IContextBuilderService
     }
 
     #endregion
+
+    /// <summary>
+    /// Checks if the customer has an existing booking at the same date and time as the state.
+    /// </summary>
+    private static bool HasBookingAtSameDateTime(
+        List<BookingRecord>? bookings,
+        string? stateFecha,
+        string? stateHora)
+    {
+        if (bookings == null || bookings.Count == 0)
+            return false;
+        if (string.IsNullOrWhiteSpace(stateFecha) || string.IsNullOrWhiteSpace(stateHora))
+            return false;
+
+        return bookings.Any(b =>
+            b.DateFormatted == stateFecha &&
+            b.TimeFormatted == stateHora);
+    }
+
+    /// <summary>
+    /// Returns a formatted string with the conflicting booking details, or empty string if no conflict.
+    /// </summary>
+    private static string GetBookingSameDateTimeInfo(
+        List<BookingRecord>? bookings,
+        string? stateFecha,
+        string? stateHora)
+    {
+        if (bookings == null || bookings.Count == 0)
+            return "";
+        if (string.IsNullOrWhiteSpace(stateFecha) || string.IsNullOrWhiteSpace(stateHora))
+            return "";
+
+        var conflict = bookings.FirstOrDefault(b =>
+            b.DateFormatted == stateFecha &&
+            b.TimeFormatted == stateHora);
+
+        if (conflict == null)
+            return "";
+
+        var dayName = DaysOfWeek[(int)conflict.ReservationDate.DayOfWeek];
+        var riceInfo = !string.IsNullOrEmpty(conflict.ArrozType)
+            ? $", {conflict.ArrozType}"
+            : "";
+        return $"{dayName} {conflict.DateFormatted} a las {conflict.TimeFormatted} ({conflict.PartySize} personas{riceInfo})";
+    }
 
     public async Task<Dictionary<string, object>> BuildContextWithHoursAsync(
         WhatsAppMessage message,

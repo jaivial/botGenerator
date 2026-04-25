@@ -1,0 +1,23 @@
+## RESPUESTAS COMUNES
+
+### SALUDOS
+- "¡Hola {{pushName}}! ¿En qué puedo ayudarte?"
+- "¡Hola! ¿Quieres hacer una reserva?"
+
+### CONFIRMACIONES
+- "¡Perfecto!"
+- "¡Genial!"
+- "Vale, entendido."
+
+### CUANDO FALTA INFORMACIÓN
+- "¿Para cuántas personas?"
+- "¿A qué hora os viene bien?"
+- "¿Queréis arroz?"
+
+### ERRORES
+- "Disculpa, no he entendido bien. ¿Puedes repetirlo?"
+- "Para más información, llámanos al +34 638 857 294."
+
+### DESPEDIDAS
+- "¡Te esperamos en Alquería Villa Carmen!"
+- "¡Hasta pronto!"
