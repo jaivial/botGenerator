@@ -162,7 +162,7 @@ builder.Services.AddSingleton<IMessageRepository, MessageRepository>();
 builder.Services.AddSingleton<IConversationHistoryService, ConversationHistoryService>();
 builder.Services.AddSingleton<IMenuRepository, MenuRepository>();
 builder.Services.AddSingleton<IBookingRepository, BookingRepository>();
-builder.Services.AddSingleton<IBookingAvailabilityService, BookingAvailabilityService>();
+builder.Services.AddHttpClient<IBookingAvailabilityService, BookingAvailabilityService>();
 builder.Services.AddSingleton<IConversationVectorStore, ChromaConversationVectorStore>();
 builder.Services.AddSingleton<RestaurantKnowledgeService>();
 builder.Services.AddSingleton<IPendingBookingStore, PendingBookingStore>();

@@ -14,13 +14,21 @@ namespace BotGenerator.Core.Services;
 /// </summary>
 public class BookingAvailabilityService : IBookingAvailabilityService
 {
+    private readonly HttpClient _httpClient;
     private readonly string _connectionString;
+    private readonly string _apiBaseUrl;
     private readonly ILogger<BookingAvailabilityService> _logger;
 
-    public BookingAvailabilityService(IConfiguration configuration, ILogger<BookingAvailabilityService> logger)
+    public BookingAvailabilityService(
+        HttpClient httpClient,
+        IConfiguration configuration,
+        ILogger<BookingAvailabilityService> logger)
     {
+        _httpClient = httpClient;
         _connectionString = configuration["MySQL:ConnectionString"]
             ?? throw new InvalidOperationException("MySQL:ConnectionString not configured");
+        _apiBaseUrl = configuration["ExternalBooking:ApiUrl"]?.TrimEnd('/')
+            ?? "https://alqueriavillacarmen.com";
         _logger = logger;
     }
 
@@ -86,7 +94,7 @@ public class BookingAvailabilityService : IBookingAvailabilityService
 
         // PHP: SUM(party_size) from bookings, optionally excluding a specific booking
         var totalPeople = await connection.ExecuteScalarAsync<int?>(new CommandDefinition(
-            "SELECT SUM(party_size) FROM bookings WHERE reservation_date = @Date AND (@ExcludeBookingId IS NULL OR id != @ExcludeBookingId)",
+            "SELECT SUM(party_size) FROM bookings WHERE reservation_date = @Date AND status IN ('pending', 'confirmed') AND (@ExcludeBookingId IS NULL OR id != @ExcludeBookingId)",
             new { Date = dbDate, ExcludeBookingId = excludeBookingId },
             cancellationToken: cancellationToken)) ?? 0;
 
@@ -103,22 +111,149 @@ public class BookingAvailabilityService : IBookingAvailabilityService
 
     public async Task<HourDataResult> GetHourDataAsync(DateTime date, int? excludeBookingId = null, CancellationToken cancellationToken = default)
     {
+        // Try the PHP backend API first — it uses the authoritative day_context_build_hour_payload
+        // which correctly queries hour_configuration, openinghours, and bookings with status filtering.
+        try
+        {
+            var dbDate = date.ToString("yyyy-MM-dd");
+            var url = $"{_apiBaseUrl}/api/gethourdata.php?date={dbDate}";
+            var response = await _httpClient.GetAsync(url, cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var json = await response.Content.ReadAsStringAsync(cancellationToken);
+                var apiResult = JsonSerializer.Deserialize<GetHourDataApiResponse>(json,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                if (apiResult?.Success == true && apiResult.HourData != null)
+                {
+                    var hourData = new Dictionary<string, HourSlotData>();
+                    foreach (var (hour, slot) in apiResult.HourData)
+                    {
+                        hourData[hour] = new HourSlotData
+                        {
+                            Status = slot.Status ?? "available",
+                            Capacity = slot.Capacity,
+                            TotalCapacity = slot.TotalCapacity,
+                            Bookings = slot.Bookings,
+                            Percentage = slot.Percentage,
+                            Completion = slot.Completion,
+                            IsClosed = slot.IsClosed
+                        };
+                    }
+
+                    var activeHours = apiResult.ActiveHours ?? hourData.Keys.OrderBy(k => k).ToList();
+                    var totalPeople = hourData.Values.Sum(s => s.Bookings);
+
+                    // If excludeBookingId is set, we need to adjust: the API doesn't exclude it,
+                    // so we look up the excluded booking and subtract its party_size from its hour slot.
+                    if (excludeBookingId.HasValue)
+                    {
+                        var adjusted = await AdjustForExcludedBookingAsync(hourData, activeHours, date, excludeBookingId.Value, cancellationToken);
+                        hourData = adjusted.hourData;
+                        totalPeople = adjusted.totalPeople;
+                    }
+
+                    _logger.LogDebug("Got hour data from API for {Date}: {HourCount} hours", dbDate, hourData.Count);
+
+                    return new HourDataResult
+                    {
+                        Date = date.Date,
+                        IsDefaultData = apiResult.IsDefaultData,
+                        DailyLimit = apiResult.HourData.Values.FirstOrDefault()?.TotalCapacity * activeHours.Count ?? 45,
+                        TotalPeople = totalPeople,
+                        ActiveHours = activeHours,
+                        HourData = hourData
+                    };
+                }
+            }
+
+            _logger.LogWarning("API call to gethourdata.php failed with status {StatusCode}, falling back to direct SQL", response.StatusCode);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to call gethourdata.php API, falling back to direct SQL");
+        }
+
+        // Fallback: direct SQL with status filter
+        return await GetHourDataFromDbAsync(date, excludeBookingId, cancellationToken);
+    }
+
+    private async Task<(Dictionary<string, HourSlotData> hourData, int totalPeople)> AdjustForExcludedBookingAsync(
+        Dictionary<string, HourSlotData> hourData,
+        List<string> activeHours,
+        DateTime date,
+        int excludeBookingId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var connection = new MySqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            var dbDate = date.ToString("yyyy-MM-dd");
+
+            // Find the excluded booking's time and party_size
+            var row = await connection.QueryFirstOrDefaultAsync<(string? time, int partySize)>(new CommandDefinition(
+                "SELECT reservation_time, party_size FROM bookings WHERE id = @Id",
+                new { Id = excludeBookingId },
+                cancellationToken: cancellationToken));
+
+            if (row.time != null)
+            {
+                // Normalize the time key to HH:mm format
+                var timeKey = row.time.Length >= 5 ? row.time.Substring(0, 5) : row.time;
+
+                if (hourData.TryGetValue(timeKey, out var slot))
+                {
+                    // Subtract the excluded booking's party size
+                    var adjustedBookings = Math.Max(0, slot.Bookings - row.partySize);
+                    var adjustedCapacity = slot.TotalCapacity - adjustedBookings;
+                    var adjustedCompletion = slot.TotalCapacity > 0 ? (double)adjustedBookings / slot.TotalCapacity * 100.0 : 0.0;
+
+                    var status = slot.Status;
+                    if (!slot.IsClosed && status != "closed")
+                    {
+                        if (adjustedCompletion > 90) status = "full";
+                        else if (adjustedCompletion > 70) status = "limited";
+                        else status = "available";
+                    }
+
+                    hourData[timeKey] = slot with
+                    {
+                        Bookings = adjustedBookings,
+                        Capacity = adjustedCapacity,
+                        Completion = adjustedCompletion,
+                        Status = status
+                    };
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to adjust hour data for excluded booking {BookingId}", excludeBookingId);
+        }
+
+        var totalPeople = hourData.Values.Sum(s => s.Bookings);
+        return (hourData, totalPeople);
+    }
+
+    private async Task<HourDataResult> GetHourDataFromDbAsync(DateTime date, int? excludeBookingId, CancellationToken cancellationToken)
+    {
         await using var connection = new MySqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
         var dbDate = date.ToString("yyyy-MM-dd");
 
-        // dailyLimit (default 45)
         var dailyLimit = await connection.ExecuteScalarAsync<int?>(new CommandDefinition(
             "SELECT dailyLimit FROM reservation_manager WHERE reservationDate = @Date LIMIT 1",
             new { Date = dbDate },
             cancellationToken: cancellationToken)) ?? 45;
 
-        // bookings grouped by hour, optionally excluding a specific booking
         var bookings = await connection.QueryAsync<BookingByHourRow>(new CommandDefinition(
             @"SELECT TIME_FORMAT(reservation_time, '%H:%i') AS hour, SUM(party_size) AS total_people
               FROM bookings
-              WHERE reservation_date = @Date AND (@ExcludeBookingId IS NULL OR id != @ExcludeBookingId)
+              WHERE reservation_date = @Date AND status IN ('pending', 'confirmed') AND (@ExcludeBookingId IS NULL OR id != @ExcludeBookingId)
               GROUP BY TIME_FORMAT(reservation_time, '%H:%i')",
             new { Date = dbDate, ExcludeBookingId = excludeBookingId },
             cancellationToken: cancellationToken));
@@ -126,7 +261,6 @@ public class BookingAvailabilityService : IBookingAvailabilityService
         var bookingsByHour = bookings.ToDictionary(r => r.hour, r => r.total_people);
         var totalPeople = bookingsByHour.Values.Sum();
 
-        // hour_configuration authoritative if present
         var hourConfigJson = await connection.ExecuteScalarAsync<string?>(new CommandDefinition(
             "SELECT hourData FROM hour_configuration WHERE date = @Date LIMIT 1",
             new { Date = dbDate },
@@ -134,7 +268,6 @@ public class BookingAvailabilityService : IBookingAvailabilityService
 
         if (string.IsNullOrWhiteSpace(hourConfigJson))
         {
-            // Default generation uses openinghours.hoursarray or fallback set
             var activeHours = await GetOpeningHoursAsync(connection, dbDate, cancellationToken);
             if (activeHours.Count == 0)
             {
@@ -179,7 +312,6 @@ public class BookingAvailabilityService : IBookingAvailabilityService
             };
         }
 
-        // Parse existing hour_configuration data
         var parsed = JsonSerializer.Deserialize<Dictionary<string, HourConfigEntry>>(hourConfigJson,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
                      ?? new Dictionary<string, HourConfigEntry>();
@@ -487,6 +619,25 @@ public class BookingAvailabilityService : IBookingAvailabilityService
         public double percentage { get; init; }
         public double completion { get; init; }
         public bool isClosed { get; init; }
+    }
+
+    private sealed class GetHourDataApiResponse
+    {
+        public bool Success { get; init; }
+        public Dictionary<string, ApiHourSlot>? HourData { get; init; }
+        public List<string>? ActiveHours { get; init; }
+        public bool IsDefaultData { get; init; }
+    }
+
+    private sealed class ApiHourSlot
+    {
+        public string? Status { get; init; }
+        public int Capacity { get; init; }
+        public int TotalCapacity { get; init; }
+        public int Bookings { get; init; }
+        public double Percentage { get; init; }
+        public double Completion { get; init; }
+        public bool IsClosed { get; init; }
     }
 }
 

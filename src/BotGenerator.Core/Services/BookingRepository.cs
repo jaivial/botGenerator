@@ -141,7 +141,8 @@ public class BookingRepository : IBookingRepository
                 FROM bookings
                 WHERE reservation_date = @Fecha
                   AND reservation_time = @Hora
-                  AND contact_phone = @Telefono";
+                  AND contact_phone = @Telefono
+                  AND status IN ('pending', 'confirmed')";
 
             var count = await connection.ExecuteScalarAsync<int>(sql, new
             {
@@ -210,6 +211,7 @@ public class BookingRepository : IBookingRepository
                 FROM bookings
                 WHERE contact_phone = @Phone
                   AND reservation_date >= CURDATE()
+                  AND status IN ('pending', 'confirmed')
                 ORDER BY reservation_date ASC, reservation_time ASC";
 
             var results = await connection.QueryAsync<dynamic>(sql, new { Phone = normalizedPhone });
