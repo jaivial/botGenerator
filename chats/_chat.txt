@@ -1,0 +1,172 @@
+[1/24/26, 22:53:01] ~Raúl: ‎Messages and calls are end-to-end encrypted. Only people in this chat can read, listen to, or share them.
+[1/24/26, 22:53:01] ~Raúl:
+[1/24/26, 22:22:38] Alqueria Villa Carmen: *Confirmación de Reserva - Alquería Villa Carmen*
+
+Hola Nani Ramírez Lanza,
+
+Gracias por elegir Alquería Villa Carmen. Su reserva ha sido confirmada:
+
+📅 *Fecha:* 31/01/2026
+🕒 *Hora:* 14:00
+👥 *Personas:* 2
+🍚 *Arroz:* Arroz a banda. x 2
+👶 *Tronas:* 0
+🍼 *Carros de bebé:* 0
+
+Al hacer esta reserva, usted ha confirmado y aceptado las condiciones de reserva y políticas del restaurante, las cuales puede consultar en el botón de abajo.
+[1/29/26, 15:00:05] Alqueria Villa Carmen: 🔔 *Recordatorio de Reserva* 🔔
+
+Hola *Nani Ramírez Lanza*,
+
+Le recordamos que tiene una reserva con nosotros. Por favor, *confirme su asistencia* haciendo clic en el botón de abajo.
+
+*Detalles de su reserva:*
+━━━━━━━━━━━━━━━━━━━━
+📅 *Fecha:* 31/01/2026
+⏰ *Hora:* 14:00
+👥 *Personas:* 2
+🍚 *Arroz:* Arroz a banda. x 2
+━━━━━━━━━━━━━━━━━━━━
+
+¡Esperamos verle pronto! 😊
+[4/23/26, 08:37:34] ~Raúl: Hola bon día el viernes  1 de mayo tendréis abierto? Gracias.
+[4/23/26, 11:09:03] Alqueria Villa Carmen: Puede consultar las fechas disponibles y realizar su reserva en esta página de aquí abajo 👇🏻
+[4/23/26, 11:09:07] Alqueria Villa Carmen: https://alqueriavillacarmen.com/reservas.php
+[4/26/26, 13:29:37] Alqueria Villa Carmen: *Confirmación de Reserva - Alquería Villa Carmen*
+
+Hola Raúl Moreno,
+
+Gracias por elegir Alquería Villa Carmen. Su reserva ha sido confirmada:
+
+📅 *Fecha:* 01/05/2026
+🕒 *Hora:* 13:30
+👥 *Personas:* 4
+🍚 *Arroz:* Fideuá de pescado x 4
+👶 *Tronas:* 0
+🍼 *Carros de bebé:* 0
+
+Al hacer esta reserva, usted ha confirmado y aceptado las condiciones de reserva y políticas del restaurante, las cuales puede consultar en el botón de abajo.
+[4/26/26, 14:05:16] ~Raúl: Hola buenas tardes,podría ser 2raciones de fideuá y  2 raciones de arroz del senyoret?
+[4/26/26, 14:05:23] Alqueria Villa Carmen: Reserva: *viernes 01/05/2026 a las 13:30 para 4 personas*
+Arroz: Fideuá de pescado (4 raciones)
+Tronas: 0, Carritos: 0
+
+Cuéntame, ¿qué quieres cambiar?
+
+Puedes decirme directamente lo que quieres modificar, por ejemplo:
+• "cambiar la fecha" o "para el domingo"
+• "cambiar la hora" o "a las 14:30"
+• "más personas" o "somos 8"
+• "quiero arroz" o "paella para 4"
+
+O elige una opción:
+1️⃣ Fecha
+2️⃣ Hora
+3️⃣ Personas
+4️⃣ Arroz
+5️⃣ Tronas
+6️⃣ Carritos
+
+[4/26/26, 14:05:45] ~Raúl: Arroz
+[4/26/26, 14:05:58] Alqueria Villa Carmen: Actualmente tienes Fideuá de pescado (4 raciones). ¿Qué hacemos con el arroz? ¿Cambio de tipo, raciones, o lo quitamos?
+[4/26/26, 14:06:37] ~Raúl: 2 de fideuá y dos de arroz del señoret
+[4/26/26, 14:07:05] Alqueria Villa Carmen: Vaya, ese arroz no lo servimos. ¿Quieres ver nuestros arroces?
+[4/26/26, 14:07:28] ~Raúl: Está en la carta
+[4/26/26, 14:07:49] Alqueria Villa Carmen: Tienes razón, perdón! El Arroz de señoret sí está disponible.
+
+Pero una limitación: en cada reserva solo podemos poner un tipo de arroz. Así que no puedo combinar fideuá y señoret.
+
+¿Prefieres todo fideuá o todo señoret?
+[4/26/26, 14:08:31] ~Raúl: Todo arroz del señoret
+[4/26/26, 14:08:49] Alqueria Villa Carmen: ✅ Arroz de señoret (+3€) disponible. ¿Cuántas raciones quieres? (mínimo 2, máximo 4)
+[4/26/26, 14:09:01] ~Raúl: 4 raciones
+[4/26/26, 14:09:21] Alqueria Villa Carmen: Perfecto, quedaría así:
+
+📅 *01/05/2026* a las *13:30*
+👥 *4 personas*
+🍚 *Arroz de señoret x 4 (+12€)*
+
+¿Confirmas el cambio?
+[4/26/26, 14:09:32] ~Raúl: Si
+[4/26/26, 14:09:40] Alqueria Villa Carmen: Lo siento, hubo un cambio en la disponibilidad. ¿Quieres probar otra fecha u hora?
+[4/26/26, 14:10:02] ~Raúl: 14:00
+[4/26/26, 14:10:21] Alqueria Villa Carmen: A las 14:00 no hay sitio. Puedo ofrecerte *14:30* o *15:00*, ¿te viene bien alguna?
+[4/26/26, 14:10:41] ~Raúl: 14:30
+[4/26/26, 14:10:59] Alqueria Villa Carmen: Lo siento, a las 14:30 tampoco hay sitio disponible.
+
+¿Podría ser a las *15:00* o *15:30*?
+[4/26/26, 14:13:44] Alqueria Villa Carmen: *Confirmación de Reserva - Alquería Villa Carmen*
+
+Hola Raúl Moreno,
+
+Gracias por elegir Alquería Villa Carmen. Su reserva ha sido confirmada:
+
+📅 *Fecha:* 01/05/2026
+🕒 *Hora:* 13:30
+👥 *Personas:* 4
+🍚 *Arroz:* Arroz de señoret (+3€) x 4
+👶 *Tronas:* 0
+🍼 *Carros de bebé:* 0
+
+Al hacer esta reserva, usted ha confirmado y aceptado las condiciones de reserva y políticas del restaurante, las cuales puede consultar en el botón de abajo.
+[4/26/26, 14:15:18] Alqueria Villa Carmen: ✅ *¡Reserva confirmada!*
+
+📅 *Fecha:* 01/05/2026
+🕐 *Hora:* 14:30
+👥 *Personas:* 4
+👤 *Nombre:* Raúl
+🍚 *Arroz:* Arroz de señoret (+3€)
+   *Raciones:* 4
+
+¡Te esperamos en Alquería Villa Carmen!
+
+[4/26/26, 14:15:19] Alqueria Villa Carmen: ¿Necesitas algo más?
+[4/26/26, 14:16:53] ~Raúl: Cancelar está reserva
+[4/26/26, 14:17:04] Alqueria Villa Carmen: Tienes estas reservas pendientes. ¿Cuál quieres cancelar?
+
+*1.* viernes 01/05/2026 a las 13:30 para 4 personas
+*2.* viernes 01/05/2026 a las 14:30 para 4 personas
+
+¿Cuál quieres cancelar?
+
+[4/26/26, 14:17:27] ~Raúl: La de las 14;30
+[4/26/26, 14:17:35] Alqueria Villa Carmen: Perdona, ¿cuál de las reservas? Indica el número o descríbela.
+[4/26/26, 14:18:18] ~Raúl: Es la misma diferente hora
+[4/26/26, 14:18:32] Alqueria Villa Carmen: No me ha quedado claro. ¿Me dices el número de la reserva o la describes?
+[4/26/26, 14:19:10] ~Raúl: No hay número
+[4/26/26, 14:19:23] Alqueria Villa Carmen: No entendí cuál reserva quieres. Por favor, indica el número (1, 2, 3...) o describe cuál ("la del sábado", "la de 6 personas", etc.)
+[4/26/26, 14:20:17] ~Raúl: La de las 14:30 4 raciones de arroz del señoret
+[4/26/26, 14:20:31] Alqueria Villa Carmen: Vas a cancelar esta reserva:
+
+📅 *01/05/2026* (viernes)
+🕐 *14:30*
+👥 *4 personas*
+
+🍚 Arroz: Arroz de señoret (+3€) (4 raciones)
+
+¿Confirmas la cancelación de esta reserva?
+
+[4/26/26, 14:20:42] ~Raúl: Si
+[4/26/26, 14:20:58] Alqueria Villa Carmen: ❌ *Reserva cancelada.*
+
+📅 *01/05/2026* a las *13:30*
+👥 *4 personas*
+🍚 *Arroz de señoret (+3€)* (4 raciones)
+
+Te esperamos en Alquería Villa Carmen. 😊
+[4/26/26, 14:21:07] ~Raúl: Ok
+[4/26/26, 14:21:15] Alqueria Villa Carmen: Perfecto! Para cualquier cosa, aquí me tienes.
+[4/26/26, 20:24:31] Alqueria Villa Carmen: *Confirmación de Reserva - Alquería Villa Carmen*
+
+Hola Raul Moreno Marchuet,
+
+Gracias por elegir Alquería Villa Carmen. Su reserva ha sido confirmada:
+
+📅 *Fecha:* 01/05/2026
+🕒 *Hora:* 13:30
+👥 *Personas:* 4
+🍚 *Arroz:* Arroz de señoret (+3€) x 4
+👶 *Tronas:* 0
+🍼 *Carros de bebé:* 0
+
+Al hacer esta reserva, usted ha confirmado y aceptado las condiciones de reserva y políticas del restaurante, las cuales puede consultar en el botón de abajo.
