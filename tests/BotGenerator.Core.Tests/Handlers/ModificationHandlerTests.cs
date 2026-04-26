@@ -25,6 +25,10 @@ public class ModificationHandlerTests
     private readonly Mock<IFieldAccumulatorService> _fieldAccumulatorMock;
     private readonly Mock<INaturalLanguageModificationParser> _nlParserMock;
     private readonly Mock<IPendingRiceStore> _pendingRiceStoreMock;
+    private readonly Mock<IAiBookingSelectionService> _bookingSelectionMock;
+    private readonly Mock<IAiFieldSelectionService> _fieldSelectionMock;
+    private readonly Mock<IAiIntentDetectionService> _intentDetectionMock;
+    private readonly Mock<IAiRiceUnderstandingService> _riceUnderstandingMock;
     private readonly ModificationHandler _handler;
 
     public ModificationHandlerTests()
@@ -61,6 +65,24 @@ public class ModificationHandlerTests
             .Setup(x => x.Get(It.IsAny<string>()))
             .Returns((PendingRiceSelection?)null);
 
+        // Setup new AI service mocks
+        _bookingSelectionMock = new Mock<IAiBookingSelectionService>();
+        _fieldSelectionMock = new Mock<IAiFieldSelectionService>();
+        _intentDetectionMock = new Mock<IAiIntentDetectionService>();
+        _riceUnderstandingMock = new Mock<IAiRiceUnderstandingService>();
+
+        _intentDetectionMock
+            .Setup(x => x.DetectIntentAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("none");
+
+        _fieldSelectionMock
+            .Setup(x => x.DetectFieldAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string?)null);
+
+        _riceUnderstandingMock
+            .Setup(x => x.AnalyzeAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RiceUnderstandingResult());
+
         // Create a real RiceValidatorAgent with mocked dependencies
         var riceValidatorAgent = CreateMockRiceValidatorAgent();
 
@@ -75,7 +97,11 @@ public class ModificationHandlerTests
             _externalReservationServiceMock.Object,
             _fieldAccumulatorMock.Object,
             _nlParserMock.Object,
-            _pendingRiceStoreMock.Object);
+            _pendingRiceStoreMock.Object,
+            _bookingSelectionMock.Object,
+            _fieldSelectionMock.Object,
+            _intentDetectionMock.Object,
+            _riceUnderstandingMock.Object);
     }
 
     private RiceValidatorAgent CreateMockRiceValidatorAgent()

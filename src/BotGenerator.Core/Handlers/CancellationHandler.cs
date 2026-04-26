@@ -2,15 +2,13 @@ using BotGenerator.Core.Models;
 using BotGenerator.Core.Services;
 using Microsoft.Extensions.Logging;
 using System.Text;
-using System.Text.Json;
-using System.Text.RegularExpressions;
 
 namespace BotGenerator.Core.Handlers;
 
 /// <summary>
 /// Handler for cancelling bookings.
 /// Manages the multi-turn cancellation conversation flow.
-/// Uses AI agents for human-like conversation understanding.
+/// Uses AI agents for all message understanding.
 /// </summary>
 public class CancellationHandler
 {
@@ -18,32 +16,9 @@ public class CancellationHandler
     private readonly IBookingRepository _bookingRepository;
     private readonly ICancellationStateStore _stateStore;
     private readonly IWhatsAppService _whatsAppService;
-    private readonly IGeminiService _gemini;
+    private readonly IAiBookingSelectionService _bookingSelection;
+    private readonly IAiIntentDetectionService _intentDetection;
     private readonly IExternalReservationService _externalReservationService;
-
-    // Spanish day names for lazy response parsing
-    private static readonly Dictionary<string, DayOfWeek> SpanishDays = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["lunes"] = DayOfWeek.Monday,
-        ["martes"] = DayOfWeek.Tuesday,
-        ["miércoles"] = DayOfWeek.Wednesday,
-        ["miercoles"] = DayOfWeek.Wednesday,
-        ["jueves"] = DayOfWeek.Thursday,
-        ["viernes"] = DayOfWeek.Friday,
-        ["sábado"] = DayOfWeek.Saturday,
-        ["sabado"] = DayOfWeek.Saturday,
-        ["domingo"] = DayOfWeek.Sunday
-    };
-
-    // Ordinal mappings for "la primera", "la segunda", etc.
-    private static readonly Dictionary<string, int> OrdinalMappings = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["primera"] = 0, ["uno"] = 0,
-        ["segunda"] = 1, ["dos"] = 1,
-        ["tercera"] = 2, ["tres"] = 2,
-        ["cuarta"] = 3, ["cuatro"] = 3,
-        ["quinta"] = 4, ["cinco"] = 4
-    };
 
     /// <summary>
     /// Management team phone numbers for cancellation alerts.
@@ -60,14 +35,16 @@ public class CancellationHandler
         IBookingRepository bookingRepository,
         ICancellationStateStore stateStore,
         IWhatsAppService whatsAppService,
-        IGeminiService gemini,
+        IAiBookingSelectionService bookingSelection,
+        IAiIntentDetectionService intentDetection,
         IExternalReservationService externalReservationService)
     {
         _logger = logger;
-        _gemini = gemini;
         _bookingRepository = bookingRepository;
         _stateStore = stateStore;
         _whatsAppService = whatsAppService;
+        _bookingSelection = bookingSelection;
+        _intentDetection = intentDetection;
         _externalReservationService = externalReservationService;
     }
 
@@ -84,7 +61,6 @@ public class CancellationHandler
             message.SenderNumber,
             currentState?.Stage.ToString() ?? "New");
 
-        // Route based on current stage
         return currentState?.Stage switch
         {
             null => await StartCancellationFlowAsync(message, ct),
@@ -105,18 +81,14 @@ public class CancellationHandler
     {
         _logger.LogInformation("Starting cancellation flow for {Phone}", message.SenderNumber);
 
-        // Extract 9-digit phone
         var phone9 = NormalizePhoneTo9Digits(message.SenderNumber);
 
-        // Find bookings in database
         var allBookings = await _bookingRepository.FindBookingsByPhoneAsync(phone9, ct);
 
-        // Filter out same-day bookings - those must be cancelled by phone
         var today = DateTime.Now.Date;
         var bookings = allBookings.Where(b => b.ReservationDate > today).ToList();
         var sameDayBookings = allBookings.Where(b => b.ReservationDate <= today).ToList();
 
-        // If all bookings are same-day, send contact card
         if (bookings.Count == 0 && sameDayBookings.Count > 0)
         {
             _stateStore.Clear(message.SenderNumber);
@@ -153,7 +125,6 @@ public class CancellationHandler
 
         if (bookings.Count == 1)
         {
-            // Auto-select the only booking, go to AwaitingConfirmation
             var state = new CancellationState
             {
                 PhoneNumber = message.SenderNumber,
@@ -166,7 +137,6 @@ public class CancellationHandler
             return BuildConfirmationResponse(bookings[0]);
         }
 
-        // Multiple bookings - ask which one
         var multiState = new CancellationState
         {
             PhoneNumber = message.SenderNumber,
@@ -179,31 +149,27 @@ public class CancellationHandler
     }
 
     /// <summary>
-    /// Step 2: Handle booking selection from multiple bookings.
-    /// Supports lazy answers like "la primera", "la del sábado", etc.
+    /// Step 2: Handle booking selection from multiple bookings using AI.
     /// </summary>
-    private Task<AgentResponse> HandleBookingSelectionAsync(
+    private async Task<AgentResponse> HandleBookingSelectionAsync(
         WhatsAppMessage message,
         CancellationState state,
         CancellationToken ct)
     {
         var bookings = state.FoundBookings ?? new List<BookingRecord>();
-        var text = message.MessageText.ToLowerInvariant().Trim();
 
-        // Try to parse the selection
-        var selected = TryParseBookingSelection(text, bookings);
+        var selected = await _bookingSelection.SelectBookingAsync(
+            message.MessageText, bookings, ct);
 
         if (selected == null)
         {
-            // Couldn't understand, ask again
-            return Task.FromResult(new AgentResponse
+            return new AgentResponse
             {
                 Intent = IntentType.Cancellation,
                 AiResponse = ResponseVariations.BookingSelectionNotUnderstood()
-            });
+            };
         }
 
-        // Update state with selected booking
         var newState = state with
         {
             Stage = CancellationStage.AwaitingConfirmation,
@@ -211,57 +177,78 @@ public class CancellationHandler
         };
         _stateStore.Set(message.SenderNumber, newState);
 
-        return Task.FromResult(BuildConfirmationResponse(selected));
+        return BuildConfirmationResponse(selected);
     }
 
     /// <summary>
-    /// Step 3: Handle confirmation (yes/no) using AI for natural language understanding.
+    /// Step 3: Handle confirmation (yes/no) using AI.
+    /// Includes post-cancellation verification to prevent wrong booking cancellation.
     /// </summary>
     private async Task<AgentResponse> HandleConfirmationAsync(
         WhatsAppMessage message,
         CancellationState state,
         CancellationToken ct)
     {
-        var text = message.MessageText.Trim();
         var booking = state.SelectedBooking!;
 
-        // Use AI to understand the user's intent
-        var userIntent = await AnalyzeConfirmationIntentAsync(text, booking, ct);
+        var userIntent = await _intentDetection.DetectIntentAsync(
+            message.MessageText, "cancellation_confirm", ct);
 
-        _logger.LogDebug("AI analyzed confirmation intent: {Intent}", userIntent);
+        _logger.LogDebug("AI analyzed cancellation confirmation intent: {Intent}", userIntent);
 
-        if (userIntent == "CONFIRM")
+        if (userIntent == "confirm")
         {
+            // VERIFY: Re-fetch booking from DB to ensure it still exists and matches
+            var freshBooking = await _bookingRepository.GetBookingByIdAsync(booking.Id, ct);
+            if (freshBooking == null)
+            {
+                _stateStore.Clear(message.SenderNumber);
+                return new AgentResponse
+                {
+                    Intent = IntentType.Normal,
+                    AiResponse = "Esta reserva ya no existe o ha sido cancelada anteriormente."
+                };
+            }
+
+            _logger.LogWarning(
+                "CANCELLING booking {BookingId}: {Date} {Time} {People}pax for {Phone}",
+                booking.Id, booking.DateFormatted, booking.TimeFormatted,
+                booking.PartySize, message.SenderNumber);
+
             // Archive to cancelled_bookings table
             var archiveSuccess = await _bookingRepository.InsertCancelledBookingAsync(
-                booking,
-                "AI_ASSISTANT",
-                ct);
+                booking, "AI_ASSISTANT", ct);
 
             if (!archiveSuccess)
             {
                 _logger.LogWarning(
-                    "Failed to archive cancelled booking {BookingId} to cancelled_bookings table",
-                    booking.Id);
+                    "Failed to archive cancelled booking {BookingId}", booking.Id);
             }
 
-            // Mark booking as cancelled
             var cancelSuccess = await _bookingRepository.CancelBookingAsync(booking.Id, ct);
 
             _stateStore.Clear(message.SenderNumber);
 
             if (cancelSuccess)
             {
-                // Send notification to restaurant
                 await SendCancellationNotificationAsync(booking, ct);
-
-                // Sync cancellation to external PHP system
                 await _externalReservationService.CancelReservationAsync(booking.Id, ct);
+
+                // Include booking details in success message to verify correct booking was cancelled
+                var successMsg = $"❌ *Reserva cancelada.*\n\n" +
+                                 $"📅 *{booking.DateFormatted}* ({booking.DayName})\n" +
+                                 $"🕐 *{booking.TimeFormatted}*\n" +
+                                 $"👥 *{booking.PartySize} personas*\n";
+
+                if (!string.IsNullOrEmpty(booking.ArrozType))
+                    successMsg += $"🍚 *{booking.ArrozType}* ({booking.ArrozServings} raciones)\n";
+
+                successMsg += "\nTe esperamos en Alquería Villa Carmen. 😊";
 
                 return new AgentResponse
                 {
                     Intent = IntentType.Normal,
-                    AiResponse = ResponseVariations.CancellationSuccess(),
+                    AiResponse = successMsg,
                     Metadata = new Dictionary<string, object>
                     {
                         ["cancelled"] = true,
@@ -269,17 +256,15 @@ public class CancellationHandler
                     }
                 };
             }
-            else
+
+            return new AgentResponse
             {
-                return new AgentResponse
-                {
-                    Intent = IntentType.Normal,
-                    AiResponse = ResponseVariations.CancellationError()
-                };
-            }
+                Intent = IntentType.Normal,
+                AiResponse = ResponseVariations.CancellationError()
+            };
         }
 
-        if (userIntent == "REJECT")
+        if (userIntent == "reject")
         {
             _stateStore.Clear(message.SenderNumber);
             return new AgentResponse
@@ -289,7 +274,6 @@ public class CancellationHandler
             };
         }
 
-        // AI couldn't determine intent clearly, ask again
         return new AgentResponse
         {
             Intent = IntentType.Cancellation,
@@ -297,172 +281,9 @@ public class CancellationHandler
         };
     }
 
-    /// <summary>
-    /// AI agent that analyzes user's confirmation response.
-    /// Uses regex for simple cases, AI for complex natural language variations.
-    /// </summary>
-    private async Task<string> AnalyzeConfirmationIntentAsync(
-        string userMessage,
-        BookingRecord booking,
-        CancellationToken ct)
-    {
-        var lowerText = userMessage.Trim().ToLowerInvariant();
-
-        // FAST PATH: Check simple/obvious cases with regex first (more reliable, saves API calls)
-        // Clear confirmations
-        if (Regex.IsMatch(lowerText, @"^(sí|si|s[ií][ ,]|yes|ok|vale|claro|confirmo|cancelar?|cancela|adelante|por supuesto|afirmativo|correcto|exacto|eso)$", RegexOptions.IgnoreCase))
-        {
-            _logger.LogDebug("Regex matched CONFIRM for: {Message}", userMessage);
-            return "CONFIRM";
-        }
-
-        // Clear rejections
-        if (Regex.IsMatch(lowerText, @"^(no|nop|nope|nel|mejor no|dejalo|déjalo|mantener|nada|no quiero|cancelado no)$", RegexOptions.IgnoreCase))
-        {
-            _logger.LogDebug("Regex matched REJECT for: {Message}", userMessage);
-            return "REJECT";
-        }
-
-        // Partial match for confirmations (not full match, but contains clear intent)
-        if (Regex.IsMatch(lowerText, @"\b(sí|si)\s*(,|por favor|cancel|quiero)?", RegexOptions.IgnoreCase) &&
-            !Regex.IsMatch(lowerText, @"\bno\b", RegexOptions.IgnoreCase))
-        {
-            _logger.LogDebug("Regex partial matched CONFIRM for: {Message}", userMessage);
-            return "CONFIRM";
-        }
-
-        // Partial match for rejections
-        if (Regex.IsMatch(lowerText, @"\b(no|mejor no|déjalo|dejalo|mantener|no cancel)", RegexOptions.IgnoreCase))
-        {
-            _logger.LogDebug("Regex partial matched REJECT for: {Message}", userMessage);
-            return "REJECT";
-        }
-
-        // SLOW PATH: Use AI for complex/ambiguous responses
-        try
-        {
-            _logger.LogDebug("Using AI to analyze confirmation intent for: {Message}", userMessage);
-
-            var systemPrompt = @"Eres un analizador de intenciones. Tu tarea es determinar si el usuario CONFIRMA o RECHAZA la cancelación de una reserva.
-
-Responde SOLO con una palabra: CONFIRM, REJECT o UNCLEAR.
-
-- CONFIRM: sí, confirmo, acepta, quiere cancelar, adelante, ok, vale, claro, por supuesto, dale, hazlo, procede
-- REJECT: no, mejor no, déjalo, no quiero, mantener la reserva, me arrepentí, no canceles
-- UNCLEAR: preguntas, información adicional, respuestas ambiguas";
-
-            var userPrompt = $@"Mensaje del usuario: ""{userMessage}""
-
-Respuesta (solo CONFIRM, REJECT o UNCLEAR):";
-
-            var config = new GeminiGenerationConfig
-            {
-                Temperature = 0.0,
-                MaxOutputTokens = 10
-            };
-
-            var response = await _gemini.GenerateAsync(systemPrompt, userPrompt, null, config, ct);
-            var intent = response.Trim().ToUpperInvariant();
-
-            _logger.LogDebug("AI returned: {Response} for message: {Message}", intent, userMessage);
-
-            // Validate response
-            if (intent.Contains("CONFIRM"))
-                return "CONFIRM";
-            if (intent.Contains("REJECT"))
-                return "REJECT";
-
-            return "UNCLEAR";
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error in AI confirmation analysis for: {Message}", userMessage);
-            return "UNCLEAR";
-        }
-    }
-
     #endregion
 
     #region Helper Methods
-
-    private BookingRecord? TryParseBookingSelection(string text, List<BookingRecord> bookings)
-    {
-        var normalized = text.Trim().ToLowerInvariant();
-
-        // Try plain numeric input: "1", "2".
-        if (int.TryParse(normalized, out var num) && num >= 1 && num <= bookings.Count)
-        {
-            return bookings[num - 1];
-        }
-
-        // Try article + number: "la 1", "el 2".
-        var articleNumberMatch = Regex.Match(normalized, @"^(?:la|el)?\s*(\d+)$", RegexOptions.IgnoreCase);
-        if (articleNumberMatch.Success &&
-            int.TryParse(articleNumberMatch.Groups[1].Value, out var indexedNum) &&
-            indexedNum >= 1 && indexedNum <= bookings.Count)
-        {
-            return bookings[indexedNum - 1];
-        }
-
-        // Try ordinal mapping ("la primera", "1", etc.)
-        foreach (var (key, index) in OrdinalMappings)
-        {
-            if (Regex.IsMatch(normalized, $@"\b{Regex.Escape(key)}\b", RegexOptions.IgnoreCase) && index < bookings.Count)
-            {
-                return bookings[index];
-            }
-        }
-
-        // Try by day name ("la del sábado")
-        foreach (var (dayName, dayOfWeek) in SpanishDays)
-        {
-            if (normalized.Contains(dayName))
-            {
-                var match = bookings.FirstOrDefault(b => b.ReservationDate.DayOfWeek == dayOfWeek);
-                if (match != null) return match;
-            }
-        }
-
-        // Try by time with explicit context ("la de las 14:00" or "14:00").
-        var timeMatch = Regex.Match(normalized, @"(?:a\s+las?\s+)?(\d{1,2}):(\d{2})\b");
-        if (timeMatch.Success)
-        {
-            var hour = int.Parse(timeMatch.Groups[1].Value);
-            var minute = int.Parse(timeMatch.Groups[2].Value);
-            var match = bookings.FirstOrDefault(b => b.ReservationTime.Hours == hour && b.ReservationTime.Minutes == minute);
-            if (match != null) return match;
-        }
-
-        var hourOnlyMatch = Regex.Match(normalized, @"a\s+las?\s+(\d{1,2})\b");
-        if (hourOnlyMatch.Success)
-        {
-            var hour = int.Parse(hourOnlyMatch.Groups[1].Value);
-            var match = bookings.FirstOrDefault(b => b.ReservationTime.Hours == hour && b.ReservationTime.Minutes == 0);
-            if (match != null) return match;
-        }
-
-        // Try by party size ("la de 6 personas")
-        var sizeMatch = Regex.Match(normalized, @"(\d+)\s*personas?");
-        if (sizeMatch.Success)
-        {
-            var size = int.Parse(sizeMatch.Groups[1].Value);
-            var match = bookings.FirstOrDefault(b => b.PartySize == size);
-            if (match != null) return match;
-        }
-
-        // Try by date ("la del 21/12")
-        var dateMatch = Regex.Match(normalized, @"(\d{1,2})[/\-](\d{1,2})");
-        if (dateMatch.Success)
-        {
-            var day = int.Parse(dateMatch.Groups[1].Value);
-            var month = int.Parse(dateMatch.Groups[2].Value);
-            var match = bookings.FirstOrDefault(b =>
-                b.ReservationDate.Day == day && b.ReservationDate.Month == month);
-            if (match != null) return match;
-        }
-
-        return null;
-    }
 
     private static string NormalizePhoneTo9Digits(string phone)
     {
@@ -525,9 +346,6 @@ Respuesta (solo CONFIRM, REJECT o UNCLEAR):";
 
     #region Notifications
 
-    /// <summary>
-    /// Sends a notification to the restaurant when a booking is cancelled.
-    /// </summary>
     private async Task SendCancellationNotificationAsync(
         BookingRecord booking,
         CancellationToken ct)
@@ -544,17 +362,12 @@ Respuesta (solo CONFIRM, REJECT o UNCLEAR):";
             sb.AppendLine($"👥 *Personas:* {booking.PartySize}");
 
             if (!string.IsNullOrEmpty(booking.ArrozType))
-            {
                 sb.AppendLine($"🍚 *Arroz:* {booking.ArrozType} ({booking.ArrozServings} raciones)");
-            }
             else
-            {
                 sb.AppendLine("🍚 *Arroz:* Sin arroz");
-            }
 
             sb.AppendLine($"🪑 *Tronas:* {booking.HighChairs}");
             sb.AppendLine($"🚼 *Carritos:* {booking.BabyStrollers}");
-
             sb.AppendLine();
             sb.AppendLine($"⏰ *Cancelada:* {DateTime.Now:dd/MM/yyyy HH:mm}");
             sb.AppendLine($"🆔 *ID Reserva:* {booking.Id}");
@@ -579,7 +392,6 @@ Respuesta (solo CONFIRM, REJECT o UNCLEAR):";
         }
         catch (Exception ex)
         {
-            // Log but don't fail the cancellation if notification fails
             _logger.LogError(ex,
                 "Failed to send cancellation notification for booking {BookingId}",
                 booking.Id);

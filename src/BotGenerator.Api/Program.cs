@@ -177,7 +177,6 @@ builder.Services.AddSingleton<IAiStateExtractorService, AiStateExtractorService>
 builder.Services.AddScoped<IFieldAccumulatorService, FieldAccumulatorService>();
 builder.Services.AddScoped<IFieldValidatorService, FieldValidatorService>();
 builder.Services.AddScoped<IConfidenceScorerService, ConfidenceScorerService>();
-builder.Services.AddScoped<NaturalLanguageModificationParser>();
 builder.Services.AddScoped<INaturalLanguageModificationParser, AiNaturalLanguageModificationParser>();
 
 // ========== Agents ==========
@@ -197,6 +196,13 @@ builder.Services.AddScoped<ContextAnalyzerNode>();
 builder.Services.AddScoped<ValidationEnrichmentNode>();
 builder.Services.AddScoped<ResponseGeneratorNode>();
 builder.Services.AddScoped<PipelineOrchestrator>();
+builder.Services.AddScoped<StateAwarePreRouter>();
+
+// ========== AI Message Understanding Services ==========
+builder.Services.AddScoped<IAiBookingSelectionService, AiBookingSelectionService>();
+builder.Services.AddScoped<IAiFieldSelectionService, AiFieldSelectionService>();
+builder.Services.AddScoped<IAiIntentDetectionService, AiIntentDetectionService>();
+builder.Services.AddScoped<IAiRiceUnderstandingService, AiRiceUnderstandingService>();
 
 // ========== Logging ==========
 builder.Services.AddLogging(logging =>

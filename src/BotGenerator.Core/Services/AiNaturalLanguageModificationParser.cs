@@ -21,8 +21,7 @@ public class AiNaturalLanguageModificationParser : INaturalLanguageModificationP
     private readonly IMemoryCache _cache;
     private readonly IFieldValidatorService _fieldValidator;
     private readonly IConfidenceScorerService _confidenceScorer;
-    private readonly NaturalLanguageModificationParser _regexFallback;
-    
+
     // Configuration
     private const double ConfidenceThreshold = 0.65;
     private const int CacheDurationMinutes = 5;
@@ -35,8 +34,7 @@ public class AiNaturalLanguageModificationParser : INaturalLanguageModificationP
         IPromptLoaderService promptLoader,
         IMemoryCache cache,
         IFieldValidatorService fieldValidator,
-        IConfidenceScorerService confidenceScorer,
-        NaturalLanguageModificationParser regexFallback)
+        IConfidenceScorerService confidenceScorer)
     {
         _logger = logger;
         _geminiService = geminiService;
@@ -44,7 +42,6 @@ public class AiNaturalLanguageModificationParser : INaturalLanguageModificationP
         _cache = cache;
         _fieldValidator = fieldValidator;
         _confidenceScorer = confidenceScorer;
-        _regexFallback = regexFallback;
     }
 
     /// <summary>
@@ -101,31 +98,28 @@ public class AiNaturalLanguageModificationParser : INaturalLanguageModificationP
                 return result;
             }
 
-            // Low confidence - fall back to regex
+            // Low confidence - return what AI extracted
             _logger.LogWarning(
-                "AI extraction low confidence ({Confidence}) or insufficient fields ({FieldsCount}), falling back to regex",
+                "AI extraction low confidence ({Confidence}) or insufficient fields ({FieldsCount}), returning AI results as-is",
                 confidence,
                 fieldsCount);
-            
-            var fallbackResult = _regexFallback.ExtractFields(userMessage, state);
-            
+
             stopwatch.Stop();
             _logger.LogInformation(
-                "Used regex fallback: {Fields} (latency: {Latency}ms)",
-                string.Join(", ", fallbackResult.Keys),
+                "AI extraction returned: {Fields} (latency: {Latency}ms)",
+                string.Join(", ", result.Keys),
                 stopwatch.ElapsedMilliseconds);
-            
-            return fallbackResult;
+
+            return result;
         }
         catch (Exception ex)
         {
             stopwatch.Stop();
-            _logger.LogError(ex, 
-                "AI extraction failed after {Latency}ms, falling back to regex",
+            _logger.LogError(ex,
+                "AI extraction failed after {Latency}ms",
                 stopwatch.ElapsedMilliseconds);
-            
-            // Fall back to regex parser
-            return _regexFallback.ExtractFields(userMessage, state);
+
+            return new Dictionary<string, object>();
         }
     }
 
@@ -178,8 +172,8 @@ Examples:
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "AI correction detection failed, using regex fallback");
-            return _regexFallback.IsCorrection(userMessage);
+            _logger.LogError(ex, "AI correction detection failed");
+            return false;
         }
     }
 
@@ -245,8 +239,8 @@ Examples:
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "AI goal inference failed, using regex fallback");
-            return _regexFallback.InferUserGoal(userMessage, state);
+            _logger.LogError(ex, "AI goal inference failed");
+            return null;
         }
     }
 

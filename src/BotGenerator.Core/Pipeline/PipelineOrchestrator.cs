@@ -22,6 +22,7 @@ public class PipelineOrchestrator
     private readonly ModificationHandler _modificationHandler;
     private readonly IModificationStateStore _modificationStateStore;
     private readonly IWhatsAppService _whatsApp;
+    private readonly StateAwarePreRouter _preRouter;
     private readonly ILogger<PipelineOrchestrator> _logger;
 
     public PipelineOrchestrator(
@@ -36,6 +37,7 @@ public class PipelineOrchestrator
         ModificationHandler modificationHandler,
         IModificationStateStore modificationStateStore,
         IWhatsAppService whatsApp,
+        StateAwarePreRouter preRouter,
         ILogger<PipelineOrchestrator> logger)
     {
         _analyzer = analyzer;
@@ -49,6 +51,7 @@ public class PipelineOrchestrator
         _modificationHandler = modificationHandler;
         _modificationStateStore = modificationStateStore;
         _whatsApp = whatsApp;
+        _preRouter = preRouter;
         _logger = logger;
     }
 
@@ -60,8 +63,15 @@ public class PipelineOrchestrator
             "Pipeline processing message from {Phone}: '{Message}'",
             phone, context.Message.MessageText);
 
-        // === NODE 1: AI Context Analysis ===
-        var analysis = await _analyzer.ProcessAsync(context, ct);
+        // === NODE 0: State-aware pre-router (before AI analysis) ===
+        var stateDescription = _preRouter.GetStateDescription(phone);
+        if (stateDescription != null)
+        {
+            _logger.LogInformation("StateAwarePreRouter active state: {State}", stateDescription);
+        }
+
+        // === NODE 1: AI Context Analysis (with state injection) ===
+        var analysis = await _analyzer.ProcessAsync(context, stateDescription, ct);
 
         _logger.LogInformation(
             "ContextAnalyzer result: Intent={Intent}, Confidence={Confidence}, Reasoning={Reasoning}",
@@ -239,6 +249,28 @@ public class PipelineOrchestrator
     {
         var pending = context.PendingBooking!;
         var phone = context.Message.SenderNumber;
+
+        // Duplicate booking prevention: check if user already has a booking for same date
+        var sameDateBookings = context.ExistingBookings
+            .Where(b => b.DateFormatted == pending.Date).ToList();
+
+        if (sameDateBookings.Count > 0)
+        {
+            _logger.LogWarning(
+                "Duplicate booking prevention: user {Phone} already has {Count} booking(s) for {Date}",
+                phone, sameDateBookings.Count, pending.Date);
+
+            var existingInfo = string.Join(", ", sameDateBookings.Select(b =>
+                $"las {b.TimeFormatted} ({b.PartySize} personas)"));
+
+            return new PipelineResult
+            {
+                Intent = PipelineIntent.NewBooking,
+                ResponseText = $"Ya tienes una reserva para el {pending.Date}: {existingInfo}. " +
+                               "¿Quieres modificar esa reserva o es para un horario diferente?",
+                ShouldClearPending = true
+            };
+        }
 
         // Final availability check before creating booking
         if (validation != null && !validation.IsAvailable)

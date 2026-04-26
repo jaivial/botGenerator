@@ -2,9 +2,7 @@ using BotGenerator.Core.Agents;
 using BotGenerator.Core.Models;
 using BotGenerator.Core.Services;
 using Microsoft.Extensions.Logging;
-using System.Collections.Generic;
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace BotGenerator.Core.Handlers;
 
@@ -25,30 +23,10 @@ public class ModificationHandler
     private readonly IFieldAccumulatorService _fieldAccumulator;
     private readonly INaturalLanguageModificationParser _nlParser;
     private readonly IPendingRiceStore _pendingRiceStore;
-
-    // Spanish day names for lazy response parsing
-    private static readonly Dictionary<string, DayOfWeek> SpanishDays = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["lunes"] = DayOfWeek.Monday,
-        ["martes"] = DayOfWeek.Tuesday,
-        ["miércoles"] = DayOfWeek.Wednesday,
-        ["miercoles"] = DayOfWeek.Wednesday,
-        ["jueves"] = DayOfWeek.Thursday,
-        ["viernes"] = DayOfWeek.Friday,
-        ["sábado"] = DayOfWeek.Saturday,
-        ["sabado"] = DayOfWeek.Saturday,
-        ["domingo"] = DayOfWeek.Sunday
-    };
-
-    // Ordinal mappings for "la primera", "la segunda", etc.
-    private static readonly Dictionary<string, int> OrdinalMappings = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["primera"] = 0, ["uno"] = 0,
-        ["segunda"] = 1, ["dos"] = 1,
-        ["tercera"] = 2, ["tres"] = 2,
-        ["cuarta"] = 3, ["cuatro"] = 3,
-        ["quinta"] = 4, ["cinco"] = 4
-    };
+    private readonly IAiBookingSelectionService _bookingSelection;
+    private readonly IAiFieldSelectionService _fieldSelection;
+    private readonly IAiIntentDetectionService _intentDetection;
+    private readonly IAiRiceUnderstandingService _riceUnderstanding;
 
     public ModificationHandler(
         ILogger<ModificationHandler> logger,
@@ -61,7 +39,11 @@ public class ModificationHandler
         IExternalReservationService externalReservationService,
         IFieldAccumulatorService fieldAccumulator,
         INaturalLanguageModificationParser nlParser,
-        IPendingRiceStore pendingRiceStore)
+        IPendingRiceStore pendingRiceStore,
+        IAiBookingSelectionService bookingSelection,
+        IAiFieldSelectionService fieldSelection,
+        IAiIntentDetectionService intentDetection,
+        IAiRiceUnderstandingService riceUnderstanding)
     {
         _logger = logger;
         _bookingRepository = bookingRepository;
@@ -74,6 +56,10 @@ public class ModificationHandler
         _fieldAccumulator = fieldAccumulator;
         _nlParser = nlParser;
         _pendingRiceStore = pendingRiceStore;
+        _bookingSelection = bookingSelection;
+        _fieldSelection = fieldSelection;
+        _intentDetection = intentDetection;
+        _riceUnderstanding = riceUnderstanding;
     }
 
     /// <summary>
@@ -162,8 +148,7 @@ public class ModificationHandler
     }
 
     /// <summary>
-    /// Step 2: Handle booking selection from multiple bookings.
-    /// Supports lazy answers like "la primera", "la del sábado", etc.
+    /// Step 2: Handle booking selection from multiple bookings using AI.
     /// </summary>
     private async Task<AgentResponse> HandleBookingSelectionAsync(
         WhatsAppMessage message,
@@ -171,16 +156,12 @@ public class ModificationHandler
         CancellationToken ct)
     {
         var bookings = state.FoundBookings ?? new List<BookingRecord>();
-        var text = message.MessageText.ToLowerInvariant().Trim();
 
-        BookingRecord? selected = null;
-
-        // Try to parse the selection
-        selected = TryParseBookingSelection(text, bookings);
+        var selected = await _bookingSelection.SelectBookingAsync(
+            message.MessageText, bookings, ct);
 
         if (selected == null)
         {
-            // Couldn't understand, ask again
             return new AgentResponse
             {
                 Intent = IntentType.Modification,
@@ -228,17 +209,18 @@ public class ModificationHandler
 
     /// <summary>
     /// Step 3: Handle field selection (what to modify).
-    /// Enhanced with natural language understanding to extract multiple fields at once.
+    /// Uses AI for field detection and natural language extraction.
     /// </summary>
     private async Task<AgentResponse> HandleFieldSelectionAsync(
         WhatsAppMessage message,
         ModificationState state,
         CancellationToken ct)
     {
-        var text = message.MessageText.ToLowerInvariant().Trim();
-        
-        // Check for exit/cancel intent FIRST - user wants to leave without modifying
-        if (IsExitIntent(text))
+        // Check for exit/cancel intent using AI
+        var exitIntent = await _intentDetection.DetectIntentAsync(
+            message.MessageText, "modification_exit", ct);
+
+        if (exitIntent == "exit")
         {
             _logger.LogInformation("User wants to exit modification flow without changes");
             _stateStore.Clear(message.SenderNumber);
@@ -248,10 +230,10 @@ public class ModificationHandler
                 AiResponse = ResponseVariations.ModificationExitConfirmation()
             };
         }
-        
-        // NEW: Use natural language parser to extract all possible fields
+
+        // Use natural language parser to extract all possible fields
         var extractedFields = _nlParser.ExtractFields(message.MessageText, state);
-        
+
         _logger.LogInformation(
             "Extracted {Count} fields from message: {Fields}",
             extractedFields.Count,
@@ -263,46 +245,21 @@ public class ModificationHandler
             return await HandleMultiFieldModificationAsync(message, state, extractedFields, ct);
         }
 
-        // Single field or no fields - fall back to original logic
-        string? field = null;
+        // Use AI field selection service
+        var booking = state.SelectedBooking!;
+        var bookingSummary = $"{booking.DateFormatted} ({booking.DayName}) a las {booking.TimeFormatted}, {booking.PartySize} personas";
 
-        // Parse which field to modify (original logic)
-        if (Regex.IsMatch(text, @"\b(fecha|día|dia)\b"))
-            field = "date";
-        else if (Regex.IsMatch(text, @"\b(hora|horario)\b"))
-            field = "time";
-        else if (Regex.IsMatch(text, @"\b(personas?|comensales?|gente)\b") || text == "3")
-            field = "party_size";
-        else if (Regex.IsMatch(text, @"\b(arroz|paella|raciones?)\b") || text == "4")
-            field = "rice";
-        else if (Regex.IsMatch(text, @"\b(tronas?|sillas?)\b") || text == "5")
-            field = "tronas";
-        else if (Regex.IsMatch(text, @"\b(carritos?|cochecitos?)\b") || text == "6")
-            field = "carritos";
-        else if (text == "1")
-            field = "date";
-        else if (text == "2")
-            field = "time";
+        string? field = await _fieldSelection.DetectFieldAsync(
+            message.MessageText, bookingSummary, ct);
 
-        // Balanced guardrail relaxation: infer field directly from value if user skips menu index.
-        if (field == null)
+        // Fallback: use extracted fields from parser
+        if (field == null && extractedFields.Count > 0)
         {
-            // NEW: Use extracted fields from parser
-            if (extractedFields.ContainsKey("date"))
-                field = "date";
-            else if (extractedFields.ContainsKey("time"))
-                field = "time";
-            else if (ParseDate(text) != null)
-                field = "date";
-            else if (ParseTime(text) != null || Regex.IsMatch(text, @"\b(a\s+las|sobre\s+las)\b"))
-                field = "time";
-            else if (Regex.IsMatch(text, @"\b(arroz|paella|fideu[aá]?|raci[oó]n|raciones)\b"))
-                field = "rice";
+            field = extractedFields.Keys.First();
         }
 
         if (field == null)
         {
-            // Couldn't understand, ask again
             return new AgentResponse
             {
                 Intent = IntentType.Modification,
@@ -697,17 +654,19 @@ public class ModificationHandler
     }
 
     /// <summary>
-    /// Step 5: Handle confirmation (yes/no).
+    /// Step 5: Handle confirmation (yes/no) using AI intent detection.
     /// </summary>
     private async Task<AgentResponse> HandleConfirmationAsync(
         WhatsAppMessage message,
         ModificationState state,
         CancellationToken ct)
     {
-        var text = message.MessageText.ToLowerInvariant().Trim();
+        var userIntent = await _intentDetection.DetectIntentAsync(
+            message.MessageText, "modification_confirm", ct);
 
-        // Check for confirmation (allow words anywhere in the message)
-        if (Regex.IsMatch(text, @"\b(sí|si|yes|confirmo|vale|ok|perfecto|de acuerdo)\b"))
+        _logger.LogDebug("AI analyzed modification confirmation intent: {Intent}", userIntent);
+
+        if (userIntent == "confirm")
         {
             var originalBooking = state.SelectedBooking!;
             var pendingChanges = state.PendingChanges!;
@@ -752,8 +711,7 @@ public class ModificationHandler
             }
         }
 
-        // Check for cancellation (allow words anywhere in the message)
-        if (Regex.IsMatch(text, @"\b(no|cancelar|nada|dejalo|déjalo)\b"))
+        if (userIntent == "reject")
         {
             _stateStore.Clear(message.SenderNumber);
             return new AgentResponse
@@ -783,8 +741,12 @@ public class ModificationHandler
         var booking = state.SelectedBooking!;
         var text = message.MessageText.Trim();
 
-        // Parse the new date
-        var newDate = ParseDate(text);
+        // Use AI-based parser to extract the date
+        var extractedFields = _nlParser.ExtractFields(text, state);
+        DateTime? newDate = extractedFields.TryGetValue("date", out var dateObj) && dateObj is DateTime dt
+            ? dt
+            : null;
+
         if (newDate == null)
         {
             return new AgentResponse
@@ -897,8 +859,12 @@ public class ModificationHandler
         var booking = state.SelectedBooking!;
         var text = message.MessageText.Trim();
 
-        // Parse the new time
-        var newTime = ParseTime(text);
+        // Use AI-based parser to extract the time
+        var extractedFields = _nlParser.ExtractFields(text, state);
+        TimeSpan? newTime = extractedFields.TryGetValue("time", out var timeObj) && timeObj is TimeSpan ts
+            ? ts
+            : null;
+
         if (newTime == null)
         {
             return new AgentResponse
@@ -988,9 +954,21 @@ public class ModificationHandler
         var booking = state.SelectedBooking!;
         var text = message.MessageText.Trim();
 
-        // Parse the new party size
-        var match = Regex.Match(text, @"(\d+)");
-        if (!match.Success || !int.TryParse(match.Groups[1].Value, out var newSize) || newSize <= 0)
+        // Use AI-based parser to extract party size
+        var extractedFields = _nlParser.ExtractFields(text, state);
+        int? newSize = extractedFields.TryGetValue("party_size", out var sizeObj) && sizeObj is int s
+            ? s
+            : null;
+
+        // Fallback: simple digit extraction for straightforward cases like "8" or "8 personas"
+        if (newSize == null)
+        {
+            var digits = new string(text.Where(char.IsDigit).ToArray());
+            if (int.TryParse(digits, out var fallbackSize) && fallbackSize > 0)
+                newSize = fallbackSize;
+        }
+
+        if (newSize == null || newSize <= 0)
         {
             return new AgentResponse
             {
@@ -1000,7 +978,7 @@ public class ModificationHandler
         }
 
         // Check if >10 people
-        if (newSize > 10)
+        if (newSize.Value > 10)
         {
             await _whatsAppService.SendTextAsync(
                 message.SenderNumber,
@@ -1026,7 +1004,7 @@ public class ModificationHandler
         // Check availability for new party size
         var decision = await _availabilityService.EvaluateAsync(
             booking.ReservationDate,
-            newSize,
+            newSize.Value,
             booking.ReservationTime,
             booking.Id,
             ct);
@@ -1090,15 +1068,24 @@ public class ModificationHandler
         CancellationToken ct)
     {
         var booking = state.SelectedBooking!;
-        var text = message.MessageText.ToLowerInvariant().Trim();
+        var text = message.MessageText.Trim();
         var pendingRiceType = state.PendingChanges?.ArrozType;
-        var isAwaitingServingsForValidatedRice = !string.IsNullOrWhiteSpace(pendingRiceType);
+        var bookingSummary = $"{booking.DateFormatted} ({booking.DayName}) a las {booking.TimeFormatted}, {booking.PartySize} personas";
+
+        // Use AI rice understanding for comprehensive analysis
+        var riceAnalysis = await _riceUnderstanding.AnalyzeAsync(text, bookingSummary, ct);
+
+        _logger.LogInformation(
+            "AiRiceUnderstanding for '{Message}': GenericRef={Generic}, WantsCancel={Cancel}, RiceType={Type}, Servings={Servings}, ServingsOnly={ServingsOnly}",
+            text, riceAnalysis.IsGenericReference, riceAnalysis.WantsCancel,
+            riceAnalysis.RiceTypeMentioned, riceAnalysis.ServingsMentioned, riceAnalysis.IsServingsOnly);
 
         // PRIORITY 0: Check if user is selecting from pending rice options (numbered list)
         var pendingRiceSelection = _pendingRiceStore.Get(message.SenderNumber);
         if (pendingRiceSelection?.Options != null && pendingRiceSelection.Options.Count > 0)
         {
-            var selectedRice = TryParseRiceSelection(text, pendingRiceSelection.Options);
+            // Use AI to select from numbered rice options
+            var selectedRice = await SelectRiceOptionAsync(text, pendingRiceSelection.Options, ct);
             if (!string.IsNullOrEmpty(selectedRice))
             {
                 _logger.LogInformation(
@@ -1106,14 +1093,12 @@ public class ModificationHandler
                     selectedRice,
                     pendingRiceSelection.Options.Count);
 
-                // Clear pending rice options
                 _pendingRiceStore.Clear(message.SenderNumber);
 
                 // Check if servings were also mentioned
-                var pendingServingsMatch = Regex.Match(text, @"(\d+)\s*(raciones?)?");
-                if (pendingServingsMatch.Success)
+                if (riceAnalysis.ServingsMentioned.HasValue)
                 {
-                    var pendingServings = int.Parse(pendingServingsMatch.Groups[1].Value);
+                    var pendingServings = riceAnalysis.ServingsMentioned.Value;
                     if (pendingServings < 2)
                     {
                         return new AgentResponse
@@ -1132,7 +1117,6 @@ public class ModificationHandler
                         };
                     }
 
-                    // Have both rice type and servings - go to confirmation
                     var pendingChanges = new BookingUpdateData
                     {
                         ArrozType = selectedRice,
@@ -1168,7 +1152,6 @@ public class ModificationHandler
             }
             else
             {
-                // User didn't select a valid option, ask again
                 _logger.LogInformation("Could not parse rice selection from: {Message}", text);
                 var formattedOptions = string.Join("\n", pendingRiceSelection.Options.Select((r, i) => $"{i + 1}. {r}"));
                 var retryMsg = $"No he entendido tu elección. Por favor, dime el número de la opción que prefieres:\n\n{formattedOptions}";
@@ -1180,8 +1163,9 @@ public class ModificationHandler
             }
         }
 
-        // Check if canceling rice
-        if (Regex.IsMatch(text, @"(cancelar|quitar|sin|no|nada|eliminar)\s*(el\s+)?(arroz)?"))
+        // Check if canceling rice using AI intent detection
+        var riceCancelIntent = await _intentDetection.DetectIntentAsync(text, "rice_cancel", ct);
+        if (riceCancelIntent == "cancel_rice" || riceAnalysis.WantsCancel)
         {
             var pendingChanges = new BookingUpdateData { ClearRice = true };
             var newState = state with
@@ -1199,16 +1183,10 @@ public class ModificationHandler
             };
         }
 
-        // Check if changing servings only (including short numeric reply when bot asked servings)
-        var servingsMatch = Regex.Match(text, @"(\d+)\s*(raciones?)?");
-        var hasRiceKeyword = Regex.IsMatch(text, @"(arroz|paella|fideu[aá]?)");
-        var isNumericOnly = Regex.IsMatch(text, @"^\d+$");
-        var looksLikeServingsOnly = servingsMatch.Success && !hasRiceKeyword &&
-                                    (Regex.IsMatch(text, @"raciones?") || isNumericOnly || isAwaitingServingsForValidatedRice);
-
-        if (looksLikeServingsOnly)
+        // Check if changing servings only
+        if (riceAnalysis.IsServingsOnly && riceAnalysis.ServingsMentioned.HasValue)
         {
-            var newServings = int.Parse(servingsMatch.Groups[1].Value);
+            var newServings = riceAnalysis.ServingsMentioned.Value;
 
             if (newServings < 2)
             {
@@ -1250,7 +1228,8 @@ public class ModificationHandler
             };
         }
 
-        if (IsGenericRiceReference(text))
+        // Check for generic rice reference (user says "arroz" without specific type)
+        if (riceAnalysis.IsGenericReference)
         {
             var stateAskRiceType = state with
             {
@@ -1271,8 +1250,9 @@ public class ModificationHandler
             };
         }
 
-        // Changing rice type - validate it
-        var validation = await _riceValidator.ValidateAsync(text, "villacarmen", ct);
+        // If a specific rice type was mentioned, validate it
+        var riceTextToValidate = riceAnalysis.RiceTypeMentioned ?? text;
+        var validation = await _riceValidator.ValidateAsync(riceTextToValidate, "villacarmen", ct);
 
         if (!validation.IsValid)
         {
@@ -1283,60 +1263,59 @@ public class ModificationHandler
             };
         }
 
-        // Ask for servings if not provided
-        if (!servingsMatch.Success)
+        // Check if servings were also provided
+        if (riceAnalysis.ServingsMentioned.HasValue)
         {
-            // Store the rice type and ask for servings
-            var tempState = state with
+            var servings = riceAnalysis.ServingsMentioned.Value;
+            if (servings < 2)
             {
-                PendingChanges = new BookingUpdateData { ArrozType = validation.RiceName }
+                return new AgentResponse
+                {
+                    Intent = IntentType.Modification,
+                    AiResponse = ResponseVariations.MinRicePortions()
+                };
+            }
+
+            if (servings > booking.PartySize)
+            {
+                return new AgentResponse
+                {
+                    Intent = IntentType.Modification,
+                    AiResponse = ResponseVariations.RiceServingsExceedPartySize(booking.PartySize)
+                };
+            }
+
+            var changes = new BookingUpdateData
+            {
+                ArrozType = validation.RiceName,
+                ArrozServings = servings
             };
-            _stateStore.Set(message.SenderNumber, tempState);
+            var finalState = state with
+            {
+                Stage = ModificationStage.AwaitingConfirmation,
+                PendingChanges = changes,
+                ChangeDescription = $"cambiar a {validation.RiceName} ({servings} raciones)"
+            };
+            _stateStore.Set(message.SenderNumber, finalState);
 
             return new AgentResponse
             {
                 Intent = IntentType.Modification,
-                AiResponse = $"✅ {validation.RiceName} disponible. ¿Cuántas raciones quieres? (mínimo 2, máximo {booking.PartySize})"
+                AiResponse = $"Vas a {finalState.ChangeDescription}. ¿Confirmas? (Sí/No)"
             };
         }
 
-        // Have both rice type and servings
-        var servings = int.Parse(servingsMatch.Groups[1].Value);
-        if (servings < 2)
+        // Valid rice but no servings - ask for servings
+        var tempState2 = state with
         {
-            return new AgentResponse
-            {
-                Intent = IntentType.Modification,
-                AiResponse = ResponseVariations.MinRicePortions()
-            };
-        }
-
-        if (servings > booking.PartySize)
-        {
-            return new AgentResponse
-            {
-                Intent = IntentType.Modification,
-                AiResponse = ResponseVariations.RiceServingsExceedPartySize(booking.PartySize)
-            };
-        }
-
-        var changes = new BookingUpdateData
-        {
-            ArrozType = validation.RiceName,
-            ArrozServings = servings
+            PendingChanges = new BookingUpdateData { ArrozType = validation.RiceName }
         };
-        var finalState = state with
-        {
-            Stage = ModificationStage.AwaitingConfirmation,
-            PendingChanges = changes,
-            ChangeDescription = $"cambiar a {validation.RiceName} ({servings} raciones)"
-        };
-        _stateStore.Set(message.SenderNumber, finalState);
+        _stateStore.Set(message.SenderNumber, tempState2);
 
         return new AgentResponse
         {
             Intent = IntentType.Modification,
-            AiResponse = $"Vas a {finalState.ChangeDescription}. ¿Confirmas? (Sí/No)"
+            AiResponse = $"✅ {validation.RiceName} disponible. ¿Cuántas raciones quieres? (mínimo 2, máximo {booking.PartySize})"
         };
     }
 
@@ -1346,9 +1325,9 @@ public class ModificationHandler
         CancellationToken ct)
     {
         var text = message.MessageText.Trim();
-        var match = Regex.Match(text, @"(\d+)");
+        var digits = new string(text.Where(char.IsDigit).ToArray());
 
-        if (!match.Success || !int.TryParse(match.Groups[1].Value, out var newCount))
+        if (!int.TryParse(digits, out var newCount) || newCount < 0)
         {
             return Task.FromResult(new AgentResponse
             {
@@ -1388,9 +1367,9 @@ public class ModificationHandler
         CancellationToken ct)
     {
         var text = message.MessageText.Trim();
-        var match = Regex.Match(text, @"(\d+)");
+        var digits = new string(text.Where(char.IsDigit).ToArray());
 
-        if (!match.Success || !int.TryParse(match.Groups[1].Value, out var newCount))
+        if (!int.TryParse(digits, out var newCount) || newCount < 0)
         {
             return Task.FromResult(new AgentResponse
             {
@@ -1459,204 +1438,6 @@ public class ModificationHandler
         };
     }
 
-    private BookingRecord? TryParseBookingSelection(string text, List<BookingRecord> bookings)
-    {
-        var normalized = text.Trim().ToLowerInvariant();
-
-        // Try plain numeric input: "1", "2".
-        if (int.TryParse(normalized, out var num) && num >= 1 && num <= bookings.Count)
-        {
-            return bookings[num - 1];
-        }
-
-        // Try article + number: "la 1", "el 2".
-        var articleNumberMatch = Regex.Match(normalized, @"^(?:la|el)?\s*(\d+)$", RegexOptions.IgnoreCase);
-        if (articleNumberMatch.Success &&
-            int.TryParse(articleNumberMatch.Groups[1].Value, out var indexedNum) &&
-            indexedNum >= 1 && indexedNum <= bookings.Count)
-        {
-            return bookings[indexedNum - 1];
-        }
-
-        // Try ordinal mapping ("la primera", "1", etc.)
-        foreach (var (key, index) in OrdinalMappings)
-        {
-            if (Regex.IsMatch(normalized, $@"\b{Regex.Escape(key)}\b", RegexOptions.IgnoreCase) && index < bookings.Count)
-            {
-                return bookings[index];
-            }
-        }
-
-        // Try by day name ("la del sábado")
-        foreach (var (dayName, dayOfWeek) in SpanishDays)
-        {
-            if (normalized.Contains(dayName))
-            {
-                var match = bookings.FirstOrDefault(b => b.ReservationDate.DayOfWeek == dayOfWeek);
-                if (match != null) return match;
-            }
-        }
-
-        // Try by time with explicit context ("la de las 14:00" or "14:00").
-        var timeMatch = Regex.Match(normalized, @"(?:a\s+las?\s+)?(\d{1,2}):(\d{2})\b");
-        if (timeMatch.Success)
-        {
-            var hour = int.Parse(timeMatch.Groups[1].Value);
-            var minute = int.Parse(timeMatch.Groups[2].Value);
-            var match = bookings.FirstOrDefault(b => b.ReservationTime.Hours == hour && b.ReservationTime.Minutes == minute);
-            if (match != null) return match;
-        }
-
-        var hourOnlyMatch = Regex.Match(normalized, @"a\s+las?\s+(\d{1,2})\b");
-        if (hourOnlyMatch.Success)
-        {
-            var hour = int.Parse(hourOnlyMatch.Groups[1].Value);
-            var match = bookings.FirstOrDefault(b => b.ReservationTime.Hours == hour && b.ReservationTime.Minutes == 0);
-            if (match != null) return match;
-        }
-
-        // Try by party size ("la de 6 personas")
-        var sizeMatch = Regex.Match(normalized, @"(\d+)\s*personas?");
-        if (sizeMatch.Success)
-        {
-            var size = int.Parse(sizeMatch.Groups[1].Value);
-            var match = bookings.FirstOrDefault(b => b.PartySize == size);
-            if (match != null) return match;
-        }
-
-        // Try by date ("la del 21/12")
-        var dateMatch = Regex.Match(normalized, @"(\d{1,2})[/\-](\d{1,2})");
-        if (dateMatch.Success)
-        {
-            var day = int.Parse(dateMatch.Groups[1].Value);
-            var month = int.Parse(dateMatch.Groups[2].Value);
-            var match = bookings.FirstOrDefault(b =>
-                b.ReservationDate.Day == day && b.ReservationDate.Month == month);
-            if (match != null) return match;
-        }
-
-        return null;
-    }
-
-    private DateTime? ParseDate(string text)
-    {
-        text = text.ToLowerInvariant();
-
-        // Try day name ("el sábado", "domingo") with optional day number ("viernes día 6")
-        foreach (var (dayName, dayOfWeek) in SpanishDays)
-        {
-            if (text.Contains(dayName))
-            {
-                // Check if user also mentioned a specific day number ("viernes día 6", "el viernes 6")
-                var dayNumMatch = Regex.Match(text, @"(?:día|dia)?\s*(\d{1,2})");
-                if (dayNumMatch.Success)
-                {
-                    var requestedDayNum = int.Parse(dayNumMatch.Groups[1].Value);
-                    
-                    // Search for a date that matches both the day of week AND day number
-                    // within the next 60 days (covers about 2 months)
-                    var today = DateTime.Today;
-                    for (int i = 0; i <= 60; i++)
-                    {
-                        var candidateDate = today.AddDays(i);
-                        if (candidateDate.DayOfWeek == dayOfWeek && candidateDate.Day == requestedDayNum)
-                        {
-                            return candidateDate;
-                        }
-                    }
-                    
-                    // If no match found with day number constraint, fall through to simple day-of-week logic
-                }
-                
-                // Simple case: just day name without specific day number
-                // Find the next occurrence of this day
-                var today2 = DateTime.Today;
-                var daysUntil = ((int)dayOfWeek - (int)today2.DayOfWeek + 7) % 7;
-                if (daysUntil == 0) daysUntil = 7; // Next week if today
-                return today2.AddDays(daysUntil);
-            }
-        }
-
-        // Try explicit date (21/12, 21-12, 21/12/2025)
-        var match = Regex.Match(text, @"(\d{1,2})[/\-](\d{1,2})(?:[/\-](\d{2,4}))?");
-        if (match.Success)
-        {
-            var day = int.Parse(match.Groups[1].Value);
-            var month = int.Parse(match.Groups[2].Value);
-            var year = match.Groups[3].Success
-                ? int.Parse(match.Groups[3].Value)
-                : DateTime.Today.Year;
-            if (year < 100) year += 2000;
-
-            try
-            {
-                return new DateTime(year, month, day);
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        // Try "21 de diciembre"
-        var months = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["enero"] = 1, ["febrero"] = 2, ["marzo"] = 3, ["abril"] = 4,
-            ["mayo"] = 5, ["junio"] = 6, ["julio"] = 7, ["agosto"] = 8,
-            ["septiembre"] = 9, ["octubre"] = 10, ["noviembre"] = 11, ["diciembre"] = 12
-        };
-
-        foreach (var (monthName, monthNum) in months)
-        {
-            if (text.Contains(monthName))
-            {
-                var dayMatch = Regex.Match(text, @"(\d{1,2})");
-                if (dayMatch.Success)
-                {
-                    var day = int.Parse(dayMatch.Groups[1].Value);
-                    try
-                    {
-                        return new DateTime(DateTime.Today.Year, monthNum, day);
-                    }
-                    catch
-                    {
-                        return null;
-                    }
-                }
-            }
-        }
-
-        return null;
-    }
-
-    private TimeSpan? ParseTime(string text)
-    {
-        // Try HH:mm pattern
-        var match = Regex.Match(text, @"(\d{1,2}):(\d{2})");
-        if (match.Success)
-        {
-            var hours = int.Parse(match.Groups[1].Value);
-            var minutes = int.Parse(match.Groups[2].Value);
-            if (hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60)
-            {
-                return new TimeSpan(hours, minutes, 0);
-            }
-        }
-
-        // Try "a las N"
-        match = Regex.Match(text, @"a\s+las?\s+(\d{1,2})");
-        if (match.Success)
-        {
-            var hours = int.Parse(match.Groups[1].Value);
-            if (hours >= 0 && hours < 24)
-            {
-                return new TimeSpan(hours, 0, 0);
-            }
-        }
-
-        return null;
-    }
-
     private static string NormalizePhoneTo9Digits(string phone)
     {
         var digits = new string(phone.Where(char.IsDigit).ToArray());
@@ -1664,61 +1445,65 @@ public class ModificationHandler
     }
 
     /// <summary>
-    /// Checks if the user's message indicates they want to exit the modification flow.
+    /// Uses AI to select a rice option from a numbered list.
+    /// Replaces regex-based TryParseRiceSelection.
     /// </summary>
-    private static bool IsExitIntent(string text)
+    private async Task<string?> SelectRiceOptionAsync(
+        string userMessage,
+        List<string> options,
+        CancellationToken ct)
     {
-        // Exact matches for simple exit words
-        if (Regex.IsMatch(text, @"^(no|nada|ninguno|ninguna|cancelar|salir|dejalo|déjalo|no\s*gracias|todo\s*bien|está\s*bien|esta\s*bien)$"))
-            return true;
+        try
+        {
+            // Use AI booking selection service pattern for rice option selection
+            var text = userMessage.Trim().ToLowerInvariant();
 
-        // Phrases indicating no modification wanted
-        if (Regex.IsMatch(text, @"\b(no\s+(quiero|necesito|hay\s+que)\s+(modificar|cambiar)(\s+nada)?)\b"))
-            return true;
+            // Simple number selection: "1", "2"
+            if (int.TryParse(text, out var num) && num >= 1 && num <= options.Count)
+                return options[num - 1];
 
-        // "nada" or "ninguna" with optional "gracias" or "todo bien"
-        if (Regex.IsMatch(text, @"^(nada|ninguno|ninguna)(\s*,?\s*(gracias|todo\s*bien))?$"))
-            return true;
+            // Use AI rice understanding to check if user mentioned a specific rice type
+            var bookingSummary = "selección de arroz en reserva";
+            var analysis = await _riceUnderstanding.AnalyzeAsync(userMessage, bookingSummary, ct);
 
-        // "no cambies nada", "no toques nada", "no modifiques nada"
-        if (Regex.IsMatch(text, @"\b(no\s+(cambies|toques|modifiques)\s+nada)\b"))
-            return true;
+            // If AI identified a rice type, match it against options
+            if (!string.IsNullOrEmpty(analysis.RiceTypeMentioned))
+            {
+                var mentioned = analysis.RiceTypeMentioned.ToLowerInvariant();
+                foreach (var option in options)
+                {
+                    if (option.ToLowerInvariant().Contains(mentioned) || mentioned.Contains(option.ToLowerInvariant()))
+                        return option;
+                }
+            }
 
-        // "todo está bien", "todo bien", "así está bien"
-        if (Regex.IsMatch(text, @"\b(todo\s+(está|esta)\s+bien|así\s+(está|esta)\s+bien)\b"))
-            return true;
+            // Partial name matching as fallback
+            foreach (var option in options)
+            {
+                var optionLower = option.ToLowerInvariant();
+                if (optionLower.Contains(text) || text.Contains(optionLower))
+                    return option;
+            }
 
-        return false;
-    }
+            // Check key words
+            var words = text.Split(new[] { ' ', ',', '.' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var option in options)
+            {
+                var optionLower = option.ToLowerInvariant();
+                foreach (var word in words)
+                {
+                    if (word.Length >= 3 && optionLower.Contains(word))
+                        return option;
+                }
+            }
 
-    private static bool IsGenericRiceReference(string text)
-    {
-        var normalized = Regex.Replace(text.ToLowerInvariant(), @"\s+", " ").Trim();
-
-        if (!Regex.IsMatch(normalized, @"\b(arroz|paella|fideu[aá]?)\b"))
-            return false;
-
-        if (Regex.IsMatch(normalized, @"\b\d+\s*raciones?\b"))
-            return false;
-
-        return !ContainsSpecificRiceDescriptor(normalized);
-    }
-
-    private static bool ContainsSpecificRiceDescriptor(string text)
-    {
-        var hasNamedRice = Regex.IsMatch(
-            text,
-            @"\b(arroz|paella|fideu[aá]?)\s+(a\s+la|al|del?|de|con)?\s*[a-záéíóúñ]{3,}\b");
-
-        var isReservationReference = Regex.IsMatch(
-            text,
-            @"\b(arroz|paella|fideu[aá]?)\s+(de\s+)?(mi|la|esta)\s+reserva\b");
-
-        var hasKnownStyleKeyword = Regex.IsMatch(
-            text,
-            @"\b(a\s*banda|señoret|señorito|negro|valencian[oa]?|bogavante|marisco|mixto|meloso|caldoso|abanda)\b");
-
-        return (hasNamedRice && !isReservationReference) || hasKnownStyleKeyword;
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "SelectRiceOptionAsync failed for message: '{Message}'", userMessage);
+            return null;
+        }
     }
 
     private AgentResponse BuildSelectBookingResponse(List<BookingRecord> bookings)
@@ -2055,9 +1840,12 @@ public class ModificationHandler
         int? preExtractedServings,
         CancellationToken ct = default)
     {
-        if (!string.IsNullOrWhiteSpace(preExtractedRiceType) && IsGenericRiceReference(preExtractedRiceType))
+        if (!string.IsNullOrWhiteSpace(preExtractedRiceType))
         {
-            preExtractedRiceType = null;
+            var bookingSummary = $"{booking.DateFormatted} ({booking.DayName}) a las {booking.TimeFormatted}, {booking.PartySize} personas";
+            var riceCheck = await _riceUnderstanding.AnalyzeAsync(preExtractedRiceType, bookingSummary, ct);
+            if (riceCheck.IsGenericReference)
+                preExtractedRiceType = null;
         }
 
         _logger.LogInformation(
@@ -2237,17 +2025,25 @@ public class ModificationHandler
     /// Starts a rice modification flow when user has multiple bookings.
     /// Asks which booking to modify first, storing the pre-extracted rice info.
     /// </summary>
-    public Task<AgentResponse> StartRiceModificationWithSelectionAsync(
+    public async Task<AgentResponse> StartRiceModificationWithSelectionAsync(
         WhatsAppMessage message,
         List<BookingRecord> bookings,
         string? preExtractedRiceType,
         int? preExtractedServings,
         CancellationToken ct = default)
     {
-        if (!string.IsNullOrWhiteSpace(preExtractedRiceType) && IsGenericRiceReference(preExtractedRiceType))
+        if (!string.IsNullOrWhiteSpace(preExtractedRiceType))
         {
-            preExtractedRiceType = null;
-            preExtractedServings = null;
+            var firstBooking = bookings.FirstOrDefault();
+            var bookingSummary = firstBooking != null
+                ? $"{firstBooking.DateFormatted} ({firstBooking.DayName}) a las {firstBooking.TimeFormatted}, {firstBooking.PartySize} personas"
+                : "reserva de restaurante";
+            var riceCheck = await _riceUnderstanding.AnalyzeAsync(preExtractedRiceType, bookingSummary, ct);
+            if (riceCheck.IsGenericReference)
+            {
+                preExtractedRiceType = null;
+                preExtractedServings = null;
+            }
         }
 
         _logger.LogInformation(
@@ -2289,63 +2085,11 @@ public class ModificationHandler
         sb.AppendLine();
         sb.Append("Responde con el número o di algo como \"la del sábado\"");
 
-        return Task.FromResult(new AgentResponse
+        return new AgentResponse
         {
             Intent = IntentType.Modification,
             AiResponse = sb.ToString()
-        });
-    }
-
-    #endregion
-
-    #region Helper Methods
-
-    /// <summary>
-    /// Tries to parse user's rice selection from their message.
-    /// Supports: numbers (1, 2), ordinals (la primera, la segunda), partial names.
-    /// </summary>
-    private static string? TryParseRiceSelection(string userMessage, List<string> options)
-    {
-        var text = userMessage.Trim().ToLowerInvariant();
-
-        // Direct number selection: "1", "2", etc.
-        if (int.TryParse(text, out var num) && num >= 1 && num <= options.Count)
-        {
-            return options[num - 1];
-        }
-
-        // Ordinal selection: "la primera", "el segundo", "la tercera opción"
-        foreach (var (ordinal, index) in OrdinalMappings)
-        {
-            if (text.Contains(ordinal) && index < options.Count)
-            {
-                return options[index];
-            }
-        }
-
-        // Partial name match (case-insensitive)
-        foreach (var option in options)
-        {
-            var optionLower = option.ToLowerInvariant();
-            
-            // Check if user message contains the rice name or vice versa
-            if (optionLower.Contains(text) || text.Contains(optionLower))
-            {
-                return option;
-            }
-
-            // Check for key words (e.g., "valenciana" matches "Paella Valenciana")
-            var words = text.Split(new[] { ' ', ',', '.' }, StringSplitOptions.RemoveEmptyEntries);
-            foreach (var word in words)
-            {
-                if (word.Length >= 3 && optionLower.Contains(word))
-                {
-                    return option;
-                }
-            }
-        }
-
-        return null;
+        };
     }
 
     #endregion

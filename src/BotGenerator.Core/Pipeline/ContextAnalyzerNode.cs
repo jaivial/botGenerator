@@ -22,6 +22,24 @@ Given the conversation history with timestamps and the current message, classify
 ## CURRENT STATE
 Today: {todayES} ({todayFormatted})
 
+## ACTIVE CONVERSATION STATE
+{activeState}
+
+### STATE-AWARE RULES (HIGHEST PRIORITY):
+- If ACTIVE_MODIFICATION_FLOW exists and the user responds to a question about what to change or provides a new value → MODIFICATION
+- If ACTIVE_MODIFICATION_FLOW at AwaitingConfirmation and user says si/no → MODIFICATION (the handler manages confirm/reject)
+- If ACTIVE_CANCELLATION_FLOW exists and the user responds to any question → CANCELLATION
+- If ACTIVE_CANCELLATION_FLOW at AwaitingConfirmation and user says si/no → CANCELLATION (the handler manages confirm/reject)
+- If ACTIVE_BOOKING_FLOW exists and user provides missing data → CONTINUE_BOOKING
+- If ACTIVE_BOOKING_FLOW with SummaryShown=true and user says si/ok/vale → CONFIRM_BOOKING
+- These state-aware rules OVERRIDE all other classification rules
+
+## USER'S MESSAGE
+Given the conversation history with timestamps and the current message, classify the intent and extract any structured data.
+
+## CURRENT STATE
+Today: {todayES} ({todayFormatted})
+
 ## USER'S MESSAGE
 PushName: {pushName}
 Message: ""{messageText}""
@@ -101,9 +119,19 @@ Respond with ONLY a JSON object on ONE line, no other text. Keep reasoning under
 
     public async Task<ContextAnalysisResult> ProcessAsync(PipelineContext context, CancellationToken ct)
     {
+        return await ProcessAsync(context, null, ct);
+    }
+
+    public async Task<ContextAnalysisResult> ProcessAsync(PipelineContext context, string? activeStateDescription, CancellationToken ct)
+    {
+        var stateDesc = string.IsNullOrEmpty(activeStateDescription)
+            ? "No active flows."
+            : activeStateDescription;
+
         var prompt = SystemPrompt
             .Replace("{todayES}", context.TodayES)
             .Replace("{todayFormatted}", context.TodayFormatted)
+            .Replace("{activeState}", stateDesc)
             .Replace("{pushName}", context.PushName)
             .Replace("{messageText}", context.Message.MessageText)
             .Replace("{pendingBookingState}", FormatPendingBooking(context.PendingBooking))
