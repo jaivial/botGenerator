@@ -89,7 +89,8 @@ public record BookingData
     }
 
     /// <summary>
-    /// Converts date from dd/MM/yyyy to yyyy-MM-dd for database storage.
+    /// Converts date to yyyy-MM-dd for database storage.
+    /// Handles both dd/MM/yyyy and yyyy-MM-dd formats.
     /// </summary>
     public string? DateForDatabase
     {
@@ -97,10 +98,27 @@ public record BookingData
         {
             if (string.IsNullOrWhiteSpace(Date)) return null;
 
+            // Try dd/MM/yyyy format first
             var parts = Date.Split('/');
-            if (parts.Length != 3) return null;
+            if (parts.Length == 3)
+            {
+                return $"{parts[2]}-{parts[1].PadLeft(2, '0')}-{parts[0].PadLeft(2, '0')}";
+            }
 
-            return $"{parts[2]}-{parts[1].PadLeft(2, '0')}-{parts[0].PadLeft(2, '0')}";
+            // Try yyyy-MM-dd format (already correct)
+            parts = Date.Split('-');
+            if (parts.Length == 3)
+            {
+                return $"{parts[0]}-{parts[1].PadLeft(2, '0')}-{parts[2].PadLeft(2, '0')}";
+            }
+
+            // Last resort: try to parse as DateTime
+            if (DateTime.TryParse(Date, out var dt))
+            {
+                return dt.ToString("yyyy-MM-dd");
+            }
+
+            return null;
         }
     }
 }
