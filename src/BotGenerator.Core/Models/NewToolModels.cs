@@ -88,3 +88,37 @@ public record AvailabilityForPartyResult
     public int FreeSeats { get; init; }
     public string Message { get; init; } = "";
 }
+
+/// <summary>
+/// Rice menu item from FINDE table.
+/// </summary>
+public record RiceMenuItem
+{
+    public int Id { get; init; }
+    public string Descripcion { get; init; } = "";
+    public string Tipo { get; init; } = "";
+    public bool Active { get; init; }
+}
+
+/// <summary>
+/// Result of getting available rice types.
+/// </summary>
+public record RiceMenuResult
+{
+    public bool Success { get; init; }
+    public List<RiceMenuItem> Arroces { get; init; } = new();
+    public int TotalCount { get; init; }
+}
+
+/// <summary>
+/// Result of checking if a specific rice is available.
+/// </summary>
+public record RiceAvailabilityResult
+{
+    public bool Success { get; init; }
+    public bool Available { get; init; }
+    public string RequestedRice { get; init; } = "";
+    public string? MatchedRice { get; init; }
+    public int? RiceId { get; init; }
+    public string Message { get; init; } = "";
+}

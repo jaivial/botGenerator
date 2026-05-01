@@ -159,6 +159,7 @@ builder.Services.AddSingleton<IMessageRepository, MessageRepository>();
 builder.Services.AddSingleton<IMenuRepository, MenuRepository>();
 builder.Services.AddSingleton<IBookingRepository, BookingRepository>();
 builder.Services.AddSingleton<IRestaurantConfigRepository, RestaurantConfigRepository>();
+builder.Services.AddSingleton<IRiceMenuService, RiceMenuService>();
 builder.Services.AddSingleton<IToolExecutor, ToolExecutor>();
 builder.Services.AddHttpClient<IBookingAvailabilityService, BookingAvailabilityService>();
 builder.Services.AddSingleton<IPendingBookingStore, PendingBookingStore>();

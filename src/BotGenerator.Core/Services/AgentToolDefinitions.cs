@@ -20,6 +20,7 @@ public static class AgentToolDefinitions
         // Restaurant info
         GetRestaurantInfoTool(),
         GetRiceMenuTool(),
+        GetCheckRiceAvailabilityTool(),
         
         // Availability checking (simplified agent tools)
         GetCheckFutureBookingTool(),
@@ -99,10 +100,30 @@ public static class AgentToolDefinitions
     public static ToolDefinition GetRiceMenuTool() => new()
     {
         Name = "get_rice_menu",
-        Description = "Obtiene los tipos de arroz disponibles en el menú actual del restaurante.",
+        Description = "Obtiene los tipos de arroz disponibles en el menú actual del restaurante. USA ESTA HERRAMIENTA cuando el usuario pregunte por los tipos de arroz disponibles.",
         InputSchema = JsonDocument.Parse(@"{
             ""type"": ""object"",
             ""properties"": {}
+        }").RootElement
+    };
+
+    /// <summary>
+    /// Tool for checking if a specific rice type is available.
+    /// </summary>
+    public static ToolDefinition GetCheckRiceAvailabilityTool() => new()
+    {
+        Name = "check_rice_availability",
+        Description = "Verifica si un tipo de arroz específico está disponible en el menú. Úsala cuando el cliente mencione un arroz concreto para verificar si lo tenemos y está activo.",
+        InputSchema = JsonDocument.Parse(@"{
+            ""type"": ""object"",
+            ""properties"": {
+                ""rice_type"": {
+                    ""type"": ""string"",
+                    ""description"": ""Tipo de arroz a verificar. Ejemplo: Paella Valenciana, Arroz Negro, Arroz a Banda""
+                }
+            },
+            ""required"": [""rice_type""
+            ]
         }").RootElement
     };
 

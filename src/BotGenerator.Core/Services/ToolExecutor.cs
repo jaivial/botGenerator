@@ -67,6 +67,7 @@ public class ToolExecutor : IToolExecutor
                 "check_hour_capacity" => await ExecuteCheckHourCapacity(input, ct),
                 "check_day_capacity" => await ExecuteCheckDayCapacity(input, ct),
                 "check_availability_for_party" => await ExecuteCheckAvailabilityForParty(input, ct),
+                "check_rice_availability" => await ExecuteCheckRiceAvailability(input, ct),
                 _ => new ToolResult { IsError = true, Content = $"Unknown tool: {toolName}" }
             };
         }
@@ -152,6 +153,90 @@ public class ToolExecutor : IToolExecutor
         {
             Content = JsonSerializer.Serialize(new { riceTypes })
         };
+    }
+
+    // === check_rice_availability ===
+    private async Task<ToolResult> ExecuteCheckRiceAvailability(JsonElement input, CancellationToken ct)
+    {
+        var riceType = input.TryGetProperty("rice_type", out var r) && r.ValueKind == JsonValueKind.String
+            ? r.GetString() : null;
+
+        if (string.IsNullOrWhiteSpace(riceType))
+        {
+            return new ToolResult
+            {
+                IsError = true,
+                Content = JsonSerializer.Serialize(new { error = "No se proporciono tipo de arroz" })
+            };
+        }
+
+        try
+        {
+            await using var connection = new MySqlConnection(_connectionString);
+            await connection.OpenAsync(ct);
+
+            // Get all active arroces for matching
+            const string sql = @"
+                SELECT NUM as Id, DESCRIPCION as Descripcion
+                FROM FINDE 
+                WHERE TIPO = 'ARROZ' AND active = 1
+                ORDER BY NUM";
+
+            var arroces = await connection.QueryAsync<dynamic>(sql);
+            var arrozList = arroces.ToList();
+
+            // Normalize search term
+            var searchNormalized = riceType.ToLowerInvariant().Trim();
+
+            // Try to find a match
+            dynamic? matched = null;
+            foreach (var a in arrozList)
+            {
+                var descNormalized = ((string)a.Descripcion).ToLowerInvariant();
+                if (descNormalized.Contains(searchNormalized) ||
+                    searchNormalized.Contains(descNormalized.Split(' ')[0]))
+                {
+                    matched = a;
+                    break;
+                }
+            }
+
+            if (matched != null)
+            {
+                return new ToolResult
+                {
+                    Content = JsonSerializer.Serialize(new
+                    {
+                        available = true,
+                        requested = riceType,
+                        matched = (string)matched.Descripcion,
+                        id = (int)matched.Id
+                    })
+                };
+            }
+
+            // No match - return available options
+            var availableArroces = arrozList.Select(a => (string)a.Descripcion).ToList();
+            return new ToolResult
+            {
+                Content = JsonSerializer.Serialize(new
+                {
+                    available = false,
+                    requested = riceType,
+                    matched = (string?)null,
+                    availableOptions = availableArroces
+                })
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error checking rice availability for: {Rice}", riceType);
+            return new ToolResult
+            {
+                IsError = true,
+                Content = JsonSerializer.Serialize(new { error = "Error al verificar disponibilidad del arroz" })
+            };
+        }
     }
 
     // === check_availability ===
