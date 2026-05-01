@@ -13,7 +13,7 @@ namespace BotGenerator.Api.Controllers;
 /// Replaces the legacy multi-node pipeline approach.
 /// </summary>
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/bot")]
 public class WebhookController : ControllerBase
 {
     private static readonly string[] ManagementPhones =
@@ -84,7 +84,7 @@ public class WebhookController : ControllerBase
     /// Main webhook endpoint - uses single AI agent with tool calls.
     /// The AI handles all conversation flow through tool calls.
     /// </summary>
-    [HttpPost("webhook")]
+    [HttpPost("whatsapp-webhook")]
     public async Task<IActionResult> HandleWebhook(
         [FromBody] JsonElement body,
         CancellationToken cancellationToken)
@@ -185,7 +185,7 @@ public class WebhookController : ControllerBase
                 message.SenderNumber,
                 message.MessageText,
                 message.PushName,
-                FormatSpanishDate(DateTime.Now),
+                FormatSpanishDate(TimeZoneInfo.ConvertTimeBySystemTimeZoneId(DateTime.UtcNow, "Central European Standard Time")),
                 restaurantInfo,
                 cancellationToken);
 
