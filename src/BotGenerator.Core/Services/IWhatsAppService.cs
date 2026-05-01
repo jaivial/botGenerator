@@ -88,6 +88,28 @@ public interface IWhatsAppService
         string phoneNumber,
         string? callId = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sends a reaction (emoji) to acknowledge a specific message.
+    /// This can help trigger read receipts in some WhatsApp configurations.
+    /// </summary>
+    Task<bool> SendReactionAsync(
+        string phoneNumber,
+        string messageId,
+        string emoji = "👀",
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Acknowledges an incoming message by sending a reaction emoji.
+    /// This simulates marking the message as "read" and may help trigger
+    /// read receipts (2 checkmarks) for bot-sent messages.
+    /// Note: UAZAPI's /chat/read endpoint marks as "unread", so we use
+    /// SendReactionAsync instead to acknowledge receipt.
+    /// </summary>
+    Task<bool> MarkAsReadAsync(
+        string phoneNumber,
+        string messageId,
+        CancellationToken cancellationToken = default);
 }
 
 public record ButtonOption(string Id, string Text, string? Description = null);

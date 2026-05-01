@@ -9,40 +9,40 @@ public record BookingUpdateData
     /// <summary>
     /// New reservation date (yyyy-MM-dd format for database).
     /// </summary>
-    public string? ReservationDate { get; init; }
+    public string? ReservationDate { get; set; }
 
     /// <summary>
     /// New reservation time (HH:mm:ss format for database).
     /// </summary>
-    public string? ReservationTime { get; init; }
+    public string? ReservationTime { get; set; }
 
     /// <summary>
     /// New party size.
     /// </summary>
-    public int? PartySize { get; init; }
+    public int? PartySize { get; set; }
 
     /// <summary>
     /// New rice type. Use empty string to explicitly remove rice.
     /// </summary>
-    public string? ArrozType { get; init; }
+    public string? ArrozType { get; set; }
 
     /// <summary>
     /// New rice servings. Should be null if ArrozType is null/empty.
     /// </summary>
-    public int? ArrozServings { get; init; }
+    public int? ArrozServings { get; set; }
 
     /// <summary>
     /// New number of high chairs.
     /// </summary>
-    public int? HighChairs { get; init; }
+    public int? HighChairs { get; set; }
 
     /// <summary>
     /// New number of baby strollers.
     /// </summary>
-    public int? BabyStrollers { get; init; }
+    public int? BabyStrollers { get; set; }
 
     /// <summary>
     /// Whether to clear rice (set both arroz_type and arroz_servings to NULL).
     /// </summary>
-    public bool ClearRice { get; init; }
+    public bool ClearRice { get; set; }
 }

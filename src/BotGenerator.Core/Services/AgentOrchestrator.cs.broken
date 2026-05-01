@@ -1,0 +1,604 @@
+using System.Text.Json;
+using BotGenerator.Core.Models;
+using Microsoft.Extensions.Logging;
+
+namespace BotGenerator.Core.Services;
+
+/// <summary>
+/// AI Agent that processes messages using Anthropic-style tool calls.
+/// This replaces the hardcoded response logic with a pure AI-driven approach.
+/// </summary>
+public class AgentOrchestrator : IAgentOrchestrator
+{
+    private readonly IGeminiService _ai;
+    private readonly IToolExecutor _toolExecutor;
+    private readonly ILogger<AgentOrchestrator> _logger;
+    private readonly int _maxIterations;
+    private readonly Dictionary<string, ToolResult> _toolResultsById = new();
+
+    public AgentOrchestrator(
+        IGeminiService ai,
+        IToolExecutor toolExecutor,
+        ILogger<AgentOrchestrator> logger,
+        int maxIterations = 15)
+    {
+        _ai = ai;
+        _toolExecutor = toolExecutor;
+        _logger = logger;
+        _maxIterations = maxIterations;
+    }
+
+    /// <summary>
+    /// Run the agent to handle a user message.
+    /// This is the main entry point for the single-agent architecture.
+    /// </summary>
+    public async Task<AgentResult> RunAsync(
+        string userMessage,
+        string phoneNumber,
+        PipelineIntent intent,
+        Dictionary<string, object>? extractedInfo,
+        string conversationHistory,
+        CancellationToken ct = default)
+    {
+        _logger.LogInformation("[AGENT] Starting agent for {Phone}", phoneNumber);
+
+        try
+        {
+            // Build restaurant info
+            var restaurantInfo = BuildRestaurantInfo();
+
+            // Use the existing ProcessAsync method
+            var result = await ProcessAsync(
+                phoneNumber,
+                userMessage,
+                "Cliente", // TODO: Get from conversation history
+                DateTime.Now.ToString("dddd dd 'de' MMMM 'de' yyyy", new System.Globalization.CultureInfo("es-ES")),
+                restaurantInfo,
+                ct);
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[AGENT] Error running agent for {Phone}", phoneNumber);
+            return new AgentResult
+            {
+                Success = false,
+                Error = ex.Message
+            };
+        }
+    }
+
+    private static string BuildRestaurantInfo()
+    {
+        return @"RESTAURANTE: Alquería Villa Carmen
+TIPO: Arroces tradicionales valencianos
+DIRECCIÓN: Valencia, España
+TELÉFONO: +34 600 000 000
+HORARIO: 13:30 a 18:00 (cocina hasta las 15:30)
+MESA MÍNIMA: 4 personas para paella (2 para otros arroces)
+RESERVAS: Obligatorias
+NOTAS: Cocktails, eventos, menus corporativos";
+    }
+
+    /// <summary>
+    /// Process a user message using the AI Agent with tool calls.
+    /// All user-facing messages are sent via the send_message tool.
+    /// </summary>
+    public async Task<AgentResult> ProcessAsync(
+        string phoneNumber,
+        string userMessage,
+        string pushName,
+        string todayES,
+        string restaurantInfo,
+        CancellationToken ct = default)
+    {
+        _logger.LogInformation(
+            "[AGENT] Starting processing for {Phone}: '{Message}'",
+            phoneNumber, userMessage);
+
+        // Clear tool results from previous calls
+        _toolResultsById.Clear();
+
+        // Build the agent system prompt
+        var systemPrompt = BuildSystemPrompt(pushName, todayES, restaurantInfo);
+
+        // Build initial messages for the conversation (Anthropic format)
+        // Each message has role and content (which can be string or array of blocks)
+        var messages = new List<object>
+        {
+            // Initial user message - simple text
+            new Dictionary<string, object>
+            {
+                ["role"] = "user",
+                ["content"] = userMessage
+            }
+        };
+
+        var tools = AgentToolDefinitions.GetAllTools();
+        var iteration = 0;
+        var retryCount = 0;
+        var sentMessages = new List<string>();
+        var toolCalls = new List<string>();
+
+        _logger.LogInformation("[AGENT] Initializing agent loop for {Phone}", phoneNumber);
+
+        // Agent loop: AI → tool calls → execute → AI → ... → final
+        while (iteration < _maxIterations)
+        {
+            iteration++;
+            _logger.LogDebug("[AGENT] Iteration {Iteration}/{Max} for {Phone}", iteration, _maxIterations, phoneNumber);
+
+            try
+            {
+                // Call the AI with current messages and tools
+                _logger.LogDebug("[AGENT] Calling AI API with {ToolCount} tools, {MsgCount} messages",
+                    tools.Count, messages.Count);
+
+                var response = await _ai.ContinueWithToolResultAsync(
+                    systemPrompt,
+                    messages,
+                    tools,
+                    config: new GeminiGenerationConfig
+                    {
+                        Temperature = 0.7,
+                        MaxOutputTokens = 2048
+                    },
+                    cancellationToken: ct);
+
+                var hasContent = false;
+                var hasToolCalls = false;
+
+                foreach (var block in response.Content)
+                {
+                    if (block is TextBlock textBlock)
+                    {
+                        hasContent = true;
+                        // AI returned text - this might happen at the end or if it forgets to use tools
+                        if (!string.IsNullOrWhiteSpace(textBlock.Text))
+                        {
+                            _logger.LogWarning(
+                                "[AGENT] WARNING: AI returned plain text instead of using send_message: {Text}",
+                                textBlock.Text.Length > 300 ? textBlock.Text[..300] + "..." : textBlock.Text);
+                        }
+                    }
+                    else if (block is ToolUseBlock toolBlock)
+                    {
+                        hasContent = true;
+                        hasToolCalls = true;
+                        var toolName = toolBlock.Name;
+                        var toolId = toolBlock.Id;
+                        var toolInput = toolBlock.Input;
+
+                        _logger.LogInformation(
+                            "[AGENT] >>> TOOL CALL: {Tool} (id={Id}) for {Phone} in iteration {Iteration}",
+                            toolName, toolId, phoneNumber, iteration);
+
+                        toolCalls.Add(toolName);
+
+                        // Execute the tool ONCE and store the result
+                        var toolResult = await _toolExecutor.ExecuteAsync(toolName, toolInput, phoneNumber, ct);
+
+                        // Store result keyed by tool ID for later use in the second loop
+                        _toolResultsById[toolId] = toolResult;
+
+                        // Log tool execution result
+                        if (toolResult.IsError)
+                        {
+                            _logger.LogError("[AGENT] Tool {Tool} failed: {Error}", toolName, toolResult.Content);
+                        }
+                        else
+                        {
+                            _logger.LogInformation("[AGENT] Tool {Tool} executed successfully", toolName);
+                        }
+
+                        // Track sent messages for the result
+                        if (toolName == "send_message")
+                        {
+                            var msgText = toolInput.TryGetProperty("message", out var m)
+                                ? m.GetString() ?? ""
+                                : "";
+                            if (!string.IsNullOrEmpty(msgText))
+                            {
+                                sentMessages.Add(msgText);
+                                _logger.LogInformation(
+                                    "[AGENT] >>> MESSAGE SENT to {Phone}: {Preview}...",
+                                    phoneNumber,
+                                    msgText.Length > 100 ? msgText[..100] : msgText);
+                            }
+                        }
+                    }
+                }
+
+                // If we got tool calls, we need to add them to messages and continue
+                if (hasToolCalls)
+                {
+                    // The response content should be added as an assistant message
+                    // But first, we need to collect all tool_use blocks from the response
+                    var assistantContent = new List<object>();
+                    foreach (var block in response.Content)
+                    {
+                        if (block is ToolUseBlock toolBlock)
+                        {
+                            var toolInputDict = JsonSerializer.Deserialize<Dictionary<string, object>>(
+                                toolBlock.Input.GetRawText()) ?? new Dictionary<string, object>();
+                            
+                            assistantContent.Add(new Dictionary<string, object>
+                            {
+                                ["type"] = "tool_use",
+                                ["id"] = toolBlock.Id,
+                                ["name"] = toolBlock.Name,
+                                ["input"] = toolInputDict
+                            });
+                        }
+                        else if (block is TextBlock textBlock)
+                        {
+                            assistantContent.Add(new Dictionary<string, object>
+                            {
+                                ["type"] = "text",
+                                ["text"] = textBlock.Text
+                            });
+                        }
+                    }
+
+                    // Add assistant message with tool calls
+                    messages.Add(new Dictionary<string, object>
+                    {
+                        ["role"] = "assistant",
+                        ["content"] = assistantContent
+                    });
+
+                    // Now add user message(s) with tool results
+                    // Each tool result should be in a separate content block
+                    // IMPORTANT: Use stored results from _toolResultsById to avoid duplicate tool calls
+                    foreach (var block in response.Content)
+                    {
+                        if (block is ToolUseBlock toolBlock)
+                        {
+                            // Get the stored result from the first execution
+                            var storedResult = _toolResultsById.TryGetValue(toolBlock.Id, out var result)
+                                ? result
+                                : new ToolResult { IsError = true, Content = "Tool result not found" };
+
+                            var resultContent = storedResult.IsError
+                                ? $"Error: {storedResult.Content}"
+                                : storedResult.Content ?? "Tool executed successfully";
+
+                            // Add user message with tool result
+                            messages.Add(new Dictionary<string, object>
+                            {
+                                ["role"] = "user",
+                                ["content"] = new List<object>
+                                {
+                                    new Dictionary<string, object>
+                                    {
+                                        ["type"] = "tool_result",
+                                        ["tool_use_id"] = toolBlock.Id,
+                                        ["content"] = resultContent
+                                    }
+                                }
+                            });
+                        }
+                    }
+                }
+
+                // If we got content but no tool calls, the AI has finished (end_turn)
+                // But we still need to send the message! Use fallback if text was returned.
+                if (hasContent && !hasToolCalls)
+                {
+                    // Find the text block
+                    string? plainText = null;
+                    foreach (var block in response.Content)
+                    {
+                        if (block is TextBlock textBlock && !string.IsNullOrWhiteSpace(textBlock.Text))
+                        {
+                            plainText = textBlock.Text.Trim();
+                            break;
+                        }
+                    }
+                    
+                    // If we have text but no message was sent, use fallback send_message
+                    if (!string.IsNullOrWhiteSpace(plainText) && sentMessages.Count == 0)
+                    {
+                        _logger.LogWarning(
+                            "[AGENT] WARNING: AI returned plain text without using send_message. Using fallback.");
+                        
+                        // Send via tool as fallback
+                        var fallbackInput = JsonDocument.Parse($@"{{""message"": ""{EscapeJson(plainText)}""}}").RootElement;
+                        var fallbackResult = await _toolExecutor.ExecuteAsync("send_message", fallbackInput, phoneNumber, ct);
+                        
+                        if (fallbackResult.Success)
+                        {
+                            sentMessages.Add(plainText);
+                            _logger.LogInformation(
+                                "[AGENT] >>> MESSAGE SENT (fallback) to {Phone}: {Preview}...",
+                                phoneNumber,
+                                plainText.Length > 100 ? plainText[..100] : plainText);
+                        }
+                    }
+                    
+                    if (response.StopReason == "end_turn")
+                    {
+                        _logger.LogInformation(
+                            "[AGENT] Agent completed after {Iterations} iterations for {Phone}. " +
+                            "Sent {MsgCount} messages, used tools: {Tools}",
+                            iteration, phoneNumber, sentMessages.Count,
+                            toolCalls.Count > 0 ? string.Join(", ", toolCalls) : "none");
+                        break;
+                    }
+                }
+
+                // If no content at all, something went wrong
+                if (!hasContent)
+                {
+                    _logger.LogWarning("[AGENT] No content from AI in iteration {Iteration}", iteration);
+                    break;
+                }
+
+                // If no tool calls, continue (might get more in next iteration)
+                if (!hasToolCalls)
+                {
+                    _logger.LogDebug("[AGENT] No tool calls in iteration {Iteration}, continuing", iteration);
+                    continue;
+                }
+
+                // Continue loop for next iteration
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[AGENT] Error in agent loop iteration {Iteration} for {Phone}",
+                    iteration, phoneNumber);
+                
+                // Check if we should retry (for timeout/network errors)
+                if (ex is TaskCanceledException or OperationCanceledException)
+                {
+                    _logger.LogWarning("[AGENT] Request was cancelled (timeout or network issue). Retrying...");
+                    if (retryCount < 2)
+                    {
+                        retryCount++;
+                        await Task.Delay(1000 * retryCount, ct); // Exponential backoff
+                        continue;
+                    }
+                }
+                break;
+            }
+        }
+
+        if (iteration >= _maxIterations)
+        {
+            _logger.LogWarning(
+                "[AGENT] Agent reached max iterations ({Max}) for {Phone}. Sent {Count} messages",
+                _maxIterations, phoneNumber, sentMessages.Count);
+        }
+
+        var agentResult = new AgentResult
+        {
+            Success = sentMessages.Count > 0,
+            SentMessages = sentMessages,
+            ToolCalls = toolCalls,
+            Iterations = iteration,
+            Error = iteration >= _maxIterations ? "Max iterations reached" : null
+        };
+
+        _logger.LogInformation(
+            "[AGENT] Final result for {Phone}: Success={Success}, MessagesSent={MsgCount}, Iterations={Iter}",
+            phoneNumber, agentResult.Success, agentResult.SentMessages.Count, agentResult.Iterations);
+
+        return agentResult;
+    }
+
+    private static string BuildSystemPrompt(string pushName, string todayES, string restaurantInfo)
+    {
+        return $@"Eres el asistente virtual de WhatsApp del restaurante Alquería Villa Carmen (Valencia, España).
+
+## IDENTIDAD
+- Nombre: Asistente de Alquería Villa Carmen
+- Restaurante: Alquería Villa Carmen
+- Especialidad: Arroces tradicionales valencianos
+- Teléfono: +34 638 857 294
+- Web: https://alqueriavillacarmen.com
+
+## FECHA ACTUAL
+{todayES}
+
+## TU NOMBRE DE USUARIO
+{pushName}
+
+## HORARIO DEL RESTAURANTE (INFORMACIÓN OFICIAL)
+**HORARIO GENERAL:** Estamos abiertos de 13:30 a 18:00 (hora de España, UTC+2 en verano, UTC+1 en invierno).
+Este es el horario para consultas generales sobre cuándo está abierto el restaurante.
+
+## INFORMACIÓN DEL RESTAURANTE
+{restaurantInfo}
+
+## REGLAS DE COMUNICACIÓN (CRÍTICAS)
+
+### HORARIOS - REGLAS ESPECIALES (CRÍTICAS)
+1. **HORARIO GENERAL**: Si el usuario pregunta ""¿a qué hora abrís?"", ""¿cuándo están abiertos?"", ""¿qué horario tienen?"", ""a qué hora abren el restaurante?"", responde que estamos abiertos de 13:30 a 18:00.
+2. **HORARIO PARA UNA FECHA CONCRETA**: Si pregunta ""¿qué horas hay disponibles para el [día]?"", USA SIEMPRE el tool `check_day_capacity` o `get_opening_hours_with_capacity` para consultar la base de datos.
+3. **PARA PREGUNTAS DE HORARIO: NO LLAMES A fetch_whatsapp_history**. El historial de conversación puede tener mensajes de prueba que confunden. Usa únicamente la información oficial.
+4. **INFORMACIÓN OFICIAL DEL HORARIO**: Estamos abiertos de 13:30 a 18:00 (hora de España).
+5. **IGNORE LOS MENSAJES DE PRUEBA DEL HISTORIAL**: Si ves ""✅"", ""test"", ""prueba"" en el historial, IGNORALOS. El usuario actual NO está haciendo una prueba.
+6. **EL USUARIO ACTUAL PREGUNTA SOBRE HORARIO REAL**: Responde con el horario oficial (13:30-18:00) o consulta la base de datos.
+
+### SIEMPRE USA LA HERRAMIENTA send_message
+**ESTÁ TOTALMENTE PROHIBIDO** responder con texto plano.
+**SIEMPRE** debes usar la herramienta `send_message` para comunicarte con el usuario.
+Si intentas responder sin usar la herramienta, el sistema fallará y el usuario no recibirá respuesta.
+
+## FLUJOS DE TRABAJO COMPLETOS
+
+### 1. CREAR RESERVA (Reservations)
+Cuando el usuario quiere hacer una RESERVA nueva:
+
+**Paso 1:** Consultar disponibilidad
+- Si el usuario da fecha, hora y personas: usar `check_availability_for_party` o `get_opening_hours_with_capacity`
+- Si solo da fecha y personas: usar `check_day_capacity` para ver si hay sitio
+
+**Paso 2:** Si hay disponibilidad, CONFIRMAR con el usuario
+- Preguntar: fecha, hora, personas, tipo de arroz (opcional), nombre (opcional)
+
+- Mostrar resumen y pedir confirmación
+
+**Paso 3:** Crear la reserva
+- Usar `create_booking` con:
+  - date: fecha en formato YYYY-MM-DD
+  - time: hora en formato HH:MM
+  - people: número de personas
+  - rice_type: tipo de arroz (opcional)
+  - name: nombre del cliente (opcional)
+  - confirmed: TRUE (solo cuando el usuario confirme)
+
+
+**IMPORTANTE:** El tool `create_booking` VALIDARÁ automáticamente:
+- Que el día no esté cerrado
+- Que haya capacidad suficiente para el número de personas
+- Que la hora esté dentro de los horarios disponibles
+- Que la hora específica tenga capacidad (si hay configuración por hora)
+
+
+### 2. MODIFICAR RESERVA (Modifications)
+Cuando el usuario quiere MODIFICAR una reserva existente:
+
+**Paso 1:** Obtener las reservas del usuario
+- Usar `get_bookings` para ver sus reservas activas
+
+**Paso 2:** Mostrar las reservas y preguntar cuál quiere modificar
+- El usuario debe especificar qué reserva y qué quiere cambiar
+
+**Paso 3:** Modificar la reserva
+- Usar `modify_booking` con:
+  - booking_id: ID de la reserva
+  - date: nueva fecha (opcional)
+  - time: nueva hora (opcional)
+  - people: nuevo número de personas (opcional)
+  - rice_type: nuevo tipo de arroz (opcional)
+  - confirmed: TRUE (solo cuando el usuario confirme)
+
+**VALIDACIONES AUTOMÁTICAS:**
+- No puede modificar si la reserva es para hoy o mañana
+- No puede modificar si quedan menos de 24 horas
+- Máximo 3 modificaciones por reserva
+- Si cambia fecha, valida capacidad para esa fecha
+
+### 3. CANCELAR RESERVA (Cancellations)
+Cuando el usuario quiere CANCELAR una reserva:
+
+**Paso 1:** Obtener las reservas del usuario
+- Usar `get_bookings` para ver sus reservas activas
+
+**Paso 2:** Confirmar qué reserva quiere cancelar
+- Mostrar los datos de la reserva
+- Confirmar con el usuario
+
+**Paso 3:** Cancelar la reserva
+- Usar `cancel_booking` con:
+  - booking_id: ID de la reserva
+  - confirmed: TRUE (solo cuando el usuario confirme)
+
+### 4. CONSULTAR MIS RESERVAS
+Cuando el usuario pregunta por sus reservas:
+- Usar `get_bookings`
+- Mostrar todas las reservas activas con fecha, hora y personas
+
+### 5. CONSULTAR DISPONIBILIDAD
+Cuando el usuario pregunta si hay sitio para una fecha:
+- `check_day_capacity`: Saber si el día está abierto, lleno o cerrado
+- `check_availability_for_party`: Saber si cabe X personas en un día
+- `get_opening_hours_with_capacity`: Ver horas disponibles con capacidad detallada
+
+## HERRAMIENTAS DISPONIBLES (TODAS)
+
+### Mensajería (SIEMPRE USAR para responder)
+- `send_message`: Envía mensaje de WhatsApp al usuario (OBLIGATORIO para responder)
+
+### Historial
+- `fetch_whatsapp_history`: Obtiene historial de conversación (limit: 5-100 mensajes)
+
+### Información del Restaurante
+- `get_restaurant_info`: Info general (teléfono, dirección, web)
+- `get_rice_menu`: Tipos de arroz disponibles
+
+### Disponibilidad (NUEVAS)
+- `check_future_booking`: ¿El usuario tiene reservas futuras?
+- `check_day_capacity`: ¿El día está abierto/lleno/cerrado?
+- `check_availability_for_party`: ¿Cabe X personas en un día?
+- `get_opening_hours_with_capacity`: Horas disponibles con capacidad por hora
+- `check_hour_capacity`: Configuración de capacidad por hora
+
+### Disponibilidad (Legacy)
+- `check_availability`: Disponibilidad completa (fecha, hora, personas)
+- `get_opening_hours`: Horarios para una fecha
+- `get_hour_data`: Datos detallados por hora
+- `get_day_status`: Estado del día (abierto/cerrado)
+
+### Reservas
+- `get_bookings`: Reservas del usuario
+- `create_booking`: Crear reserva NUEVA (con validaciones automáticas)
+- `modify_booking`: Modificar reserva EXISTENTE (con validaciones automáticas)
+- `cancel_booking`: Cancelar reserva EXISTENTE
+
+## REGLAS DE RESPUESTA
+- Responde SIEMPRE en español
+- Usa emojis apropiados para restaurantes (🍚, 📅, 👥, ✅, ❌, 🔥, etc.)
+- Sé amable, profesional y conciso
+- Para reservas: solicita fecha, hora y número de personas
+- Para modificar/cancelar: confirma los datos antes de actuar
+- Para información: proporciona datos precisos y útiles
+- Para horarios: usa la información oficial o consulta la base de datos
+
+## EJEMPLOS DE FLUJOS COMPLETOS
+
+### CREAR RESERVA:
+Usuario: ""Quiero reservar para mañana a las 14:00 para 4 personas""
+1. `check_day_capacity`(date="02/05/2026") → abierto, 20 plazas libres
+2. `get_opening_hours_with_capacity`(date="02/05/2026", party_size=4) → 14:00 disponible
+3. send_message → ""¡Perfecto! Tenemos sitio para 4 personas mañana a las 14:00. ¿Queréis paella? ¿Cómo os llamáis?""
+Usuario: ""Sí, paella Valenciana. Soy María""
+4. `create_booking`(date=""2026-05-02"", time=""14:00"", people=4, rice_type=""Paella Valenciana"", name=""María"", confirmed=true)
+5. El sistema envía confirmación automática por WhatsApp con ID de reserva
+6. send_message → ""¡Reserva confirmada! Te he enviado los detalles por WhatsApp.""
+
+### MODIFICAR RESERVA:
+Usuario: ""Quiero cambiar mi reserva del viernes""
+1. `get_bookings` → Lista de reservas del usuario
+2. send_message → ""Tienes estas reservas:\n1. Viernes 3/05 a las 14:00 para 4 personas\n¿Cuál quieres modificar?""
+Usuario: ""La del viernes, quiero cambiar a 6 personas""
+3. `modify_booking`(booking_id="1234", people=6, confirmed=true)
+4. El sistema valida y envía confirmación automática
+5. send_message → ""¡Reserva modificada! Ahora tienes 6 personas para el viernes a las 14:00.""
+
+### CANCELAR RESERVA:
+Usuario: ""Quiero cancelar mi reserva""
+1. `get_bookings` → Lista de reservas
+2. send_message → ""¿Cuál reserva quieres cancelar?\n1. Viernes 3/05 a las 14:00 para 4 personas""
+Usuario: ""La del viernes""
+3. `cancel_booking`(booking_id="1234", confirmed=true)
+4. send_message → ""¡Reserva cancelada! Si necesitas algo más, aquí estoy."
+
+¡ADELANTE! El usuario está esperando tu respuesta.";
+    }
+    private static string EscapeJson(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return "";
+        return text
+            .Replace("\\", "\\\\")
+            .Replace("\"", "\\\"")
+            .Replace("\n", "\\n")
+            .Replace("\r", "\\r")
+            .Replace("\t", "\\t");
+    }
+}
+
+/// <summary>
+/// Result of the agent processing.
+/// </summary>
+public class AgentResult
+{
+    public bool Success { get; init; }
+    public List<string> SentMessages { get; init; } = new();
+    public List<string> ToolCalls { get; init; } = new();
+    public int Iterations { get; init; }
+    public string? Error { get; init; }
+}

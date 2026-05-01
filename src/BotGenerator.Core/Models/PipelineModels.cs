@@ -47,6 +47,7 @@ public class PipelineContext
     public string FormattedHistory { get; init; } = "";
     public string TodayES { get; init; } = "";
     public string TodayFormatted { get; init; } = "";
+    public RestaurantConfig? RestaurantConfig { get; init; }
 }
 
 /// <summary>
@@ -73,6 +74,9 @@ public class ContextAnalysisResult
 
     // Off-topic handling
     public string? OffTopicSubject { get; init; }
+
+    // History fetched by AI tool call (Node 1 agentic loop)
+    public List<ChatMessage> FetchedHistory { get; set; } = new();
 }
 
 /// <summary>
@@ -112,4 +116,8 @@ public class PipelineResult
     public long? CreatedBookingId { get; init; }
     public ModificationState? ModificationState { get; init; }
     public CancellationState? CancellationState { get; init; }
+
+    // Agent-related properties for AI-driven responses
+    public bool AgentHandled { get; init; }
+    public List<string> AgentToolCalls { get; init; } = new();
 }

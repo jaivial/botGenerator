@@ -1,6 +1,3 @@
-using BotGenerator.Core.Agents;
-using BotGenerator.Core.Handlers;
-using BotGenerator.Core.Pipeline;
 using BotGenerator.Core.Services;
 
 // Load environment variables from .env file
@@ -110,14 +107,14 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Add memory cache for IMemoryCache dependencies (required by AiNaturalLanguageModificationParser)
+// Add memory cache for IMemoryCache dependencies
 builder.Services.AddMemoryCache();
 
 // ========== HTTP Clients ==========
 // MiniMax Service - primary AI service (Anthropic-compatible endpoint)
 builder.Services.AddHttpClient<IGeminiService, MinimaxService>(client =>
 {
-    client.Timeout = TimeSpan.FromSeconds(60);
+    client.Timeout = TimeSpan.FromSeconds(120); // Increased from 60s to handle large prompts with history
 });
 
 // External Booking Service
@@ -159,44 +156,20 @@ builder.Services.AddSingleton<IPromptLoaderService, PromptLoaderService>();
 builder.Services.AddSingleton<IOpeningHoursService, OpeningHoursService>();
 builder.Services.AddSingleton<IContextBuilderService, ContextBuilderService>();
 builder.Services.AddSingleton<IMessageRepository, MessageRepository>();
-builder.Services.AddSingleton<IConversationHistoryService, ConversationHistoryService>();
 builder.Services.AddSingleton<IMenuRepository, MenuRepository>();
 builder.Services.AddSingleton<IBookingRepository, BookingRepository>();
+builder.Services.AddSingleton<IRestaurantConfigRepository, RestaurantConfigRepository>();
+builder.Services.AddSingleton<IToolExecutor, ToolExecutor>();
 builder.Services.AddHttpClient<IBookingAvailabilityService, BookingAvailabilityService>();
-builder.Services.AddSingleton<IConversationVectorStore, ChromaConversationVectorStore>();
-builder.Services.AddSingleton<RestaurantKnowledgeService>();
 builder.Services.AddSingleton<IPendingBookingStore, PendingBookingStore>();
-builder.Services.AddSingleton<IModificationStateStore, ModificationStateStore>();
-builder.Services.AddSingleton<ICancellationStateStore, CancellationStateStore>();
-builder.Services.AddSingleton<IPendingRiceStore, PendingRiceStore>();
 builder.Services.AddSingleton<ICallAutoReplyStore, CallAutoReplyStore>();
 
-// ========== Scoped Services ==========
-builder.Services.AddScoped<IIntentRouterService, IntentRouterService>();
+// ========== Singleton Services ==========
 builder.Services.AddSingleton<IAiStateExtractorService, AiStateExtractorService>();
-builder.Services.AddScoped<IFieldAccumulatorService, FieldAccumulatorService>();
-builder.Services.AddScoped<IFieldValidatorService, FieldValidatorService>();
-builder.Services.AddScoped<IConfidenceScorerService, ConfidenceScorerService>();
-builder.Services.AddScoped<INaturalLanguageModificationParser, AiNaturalLanguageModificationParser>();
 
-// ========== Agents ==========
-builder.Services.AddScoped<MainConversationAgent>();
-builder.Services.AddScoped<RiceValidatorAgent>();
-builder.Services.AddScoped<DateParserAgent>();
-builder.Services.AddScoped<AvailabilityCheckerAgent>();
-builder.Services.AddScoped<IRiceValidatorService>(sp => sp.GetRequiredService<RiceValidatorAgent>());
-
-// ========== Handlers ==========
-builder.Services.AddScoped<BookingHandler>();
-builder.Services.AddScoped<CancellationHandler>();
-builder.Services.AddScoped<ModificationHandler>();
-
-// ========== Pipeline (new AI-driven architecture) ==========
-builder.Services.AddScoped<ContextAnalyzerNode>();
-builder.Services.AddScoped<ValidationEnrichmentNode>();
-builder.Services.AddScoped<ResponseGeneratorNode>();
-builder.Services.AddScoped<PipelineOrchestrator>();
-builder.Services.AddScoped<StateAwarePreRouter>();
+// ========== Agent (single AI-driven with tool calls) ==========
+builder.Services.AddScoped<IAgentOrchestrator, AgentOrchestrator>();
+builder.Services.AddScoped<AgentOrchestrator>();
 
 // ========== AI Message Understanding Services ==========
 builder.Services.AddScoped<IAiBookingSelectionService, AiBookingSelectionService>();
@@ -228,23 +201,5 @@ if (!app.Environment.IsDevelopment())
 
 app.UseAuthorization();
 app.MapControllers();
-
-// Seed knowledge base on startup
-using (var scope = app.Services.CreateScope())
-{
-    var vectorStore = scope.ServiceProvider.GetService<IConversationVectorStore>();
-    if (vectorStore != null)
-    {
-        try
-        {
-            await vectorStore.SeedKnowledgeBaseAsync();
-            Console.WriteLine("[KNOWLEDGE] Knowledge base seeded successfully");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[KNOWLEDGE] Warning: Failed to seed knowledge base: {ex.Message}");
-        }
-    }
-}
 
 app.Run();

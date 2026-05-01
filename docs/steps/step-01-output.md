@@ -98,7 +98,7 @@ tests/
 
 **WebhookController** (/home/jaime/Documents/projects/botGenerator/src/BotGenerator.Api/Controllers/WebhookController.cs):
 - Health check endpoint: `GET /api/webhook/health`
-- WhatsApp webhook placeholder: `POST /api/webhook/whatsapp-webhook`
+- WhatsApp webhook endpoint: `POST /api/webhook/webhook`
 - Basic logging implementation
 
 ### 1.9 Verification ✅

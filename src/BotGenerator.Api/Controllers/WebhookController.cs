@@ -1,6 +1,5 @@
 using System.Text.Json;
 using BotGenerator.Core.Models;
-using BotGenerator.Core.Pipeline;
 using BotGenerator.Core.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
@@ -9,6 +8,10 @@ using Microsoft.Extensions.Hosting;
 
 namespace BotGenerator.Api.Controllers;
 
+/// <summary>
+/// Simplified webhook controller using single AI agent with tool calls.
+/// Replaces the legacy multi-node pipeline approach.
+/// </summary>
 [ApiController]
 [Route("api/[controller]")]
 public class WebhookController : ControllerBase
@@ -20,9 +23,7 @@ public class WebhookController : ControllerBase
         "34686969914"
     };
 
-    private readonly PipelineOrchestrator _pipeline;
-    private readonly IConversationHistoryService _historyService;
-    private readonly IContextBuilderService _contextBuilder;
+    private readonly AgentOrchestrator _agentOrchestrator;
     private readonly IBookingRepository _bookingRepository;
     private readonly IPendingBookingStore _pendingBookingStore;
     private readonly ICallAutoReplyStore _callAutoReplyStore;
@@ -30,13 +31,11 @@ public class WebhookController : ControllerBase
     private readonly IConfiguration _configuration;
     private readonly IHostEnvironment _environment;
     private readonly ILogger<WebhookController> _logger;
-    private readonly IConversationVectorStore _vectorStore;
     private readonly IMemoryCache _memoryCache;
+    private readonly IRestaurantConfigRepository _restaurantConfigRepo;
 
     public WebhookController(
-        PipelineOrchestrator pipeline,
-        IConversationHistoryService historyService,
-        IContextBuilderService contextBuilder,
+        AgentOrchestrator agentOrchestrator,
         IBookingRepository bookingRepository,
         IPendingBookingStore pendingBookingStore,
         ICallAutoReplyStore callAutoReplyStore,
@@ -44,12 +43,10 @@ public class WebhookController : ControllerBase
         IConfiguration configuration,
         IHostEnvironment environment,
         ILogger<WebhookController> logger,
-        IConversationVectorStore vectorStore,
-        IMemoryCache memoryCache)
+        IMemoryCache memoryCache,
+        IRestaurantConfigRepository restaurantConfigRepo)
     {
-        _pipeline = pipeline;
-        _historyService = historyService;
-        _contextBuilder = contextBuilder;
+        _agentOrchestrator = agentOrchestrator;
         _bookingRepository = bookingRepository;
         _pendingBookingStore = pendingBookingStore;
         _callAutoReplyStore = callAutoReplyStore;
@@ -57,13 +54,13 @@ public class WebhookController : ControllerBase
         _configuration = configuration;
         _environment = environment;
         _logger = logger;
-        _vectorStore = vectorStore;
         _memoryCache = memoryCache;
+        _restaurantConfigRepo = restaurantConfigRepo;
     }
 
     [HttpGet("health")]
     public IActionResult Health() =>
-        Ok(new { status = "healthy", timestamp = DateTime.UtcNow, version = "2.0.0-pipeline" });
+        Ok(new { status = "healthy", timestamp = DateTime.UtcNow, version = "3.0.0-simplified-agent" });
 
     [HttpPost("test/clear-state")]
     public async Task<IActionResult> ClearTestState(
@@ -78,14 +75,17 @@ public class WebhookController : ControllerBase
         if (string.IsNullOrWhiteSpace(normalized))
             return BadRequest(new { error = "Invalid phone" });
 
-        await _historyService.ClearHistoryAsync(normalized, cancellationToken);
         _pendingBookingStore.Clear(normalized);
 
         return Ok(new { cleared = true, phone = normalized });
     }
 
-    [HttpPost("whatsapp-webhook")]
-    public async Task<IActionResult> HandleWhatsAppWebhook(
+    /// <summary>
+    /// Main webhook endpoint - uses single AI agent with tool calls.
+    /// The AI handles all conversation flow through tool calls.
+    /// </summary>
+    [HttpPost("webhook")]
+    public async Task<IActionResult> HandleWebhook(
         [FromBody] JsonElement body,
         CancellationToken cancellationToken)
     {
@@ -136,7 +136,7 @@ public class WebhookController : ControllerBase
             }
 
             _logger.LogInformation(
-                "Processing message from {Sender} ({Phone}): {Text}",
+                "[AGENT] Processing message from {Sender} ({Phone}): {Text}",
                 message.PushName, message.SenderNumber,
                 message.MessageText.Length > 100
                     ? message.MessageText[..100] + "..."
@@ -145,7 +145,7 @@ public class WebhookController : ControllerBase
             // Dedup
             if (!string.IsNullOrWhiteSpace(message.MessageId))
             {
-                var dedupeKey = $"webhook:wa:{message.SenderNumber}:{message.MessageId}";
+                var dedupeKey = $"agent:wa:{message.SenderNumber}:{message.MessageId}";
                 if (_memoryCache.TryGetValue(dedupeKey, out _))
                 {
                     _logger.LogInformation("Duplicate webhook ignored for messageId={MessageId}", message.MessageId);
@@ -155,73 +155,63 @@ public class WebhookController : ControllerBase
                     new MemoryCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(1) });
             }
 
-            // Load context
-            var history = await _historyService.GetHistoryAsync(message.SenderNumber, cancellationToken);
-            var existingBookings = await _bookingRepository.FindBookingsByPhoneAsync(
-                message.SenderNumber, cancellationToken);
-            var pendingBooking = _pendingBookingStore.Get(message.SenderNumber);
-
-            var now = DateTime.Now;
-            var formattedHistory = _contextBuilder.FormatHistory(history);
-            var restaurantId = GetRestaurantId(message.SenderNumber);
-
-            // Build pipeline context
-            var pipelineContext = new PipelineContext
+            // Acknowledge the user's message by sending a reaction
+            if (!string.IsNullOrWhiteSpace(message.MessageId))
             {
-                Message = message,
-                History = history,
-                ExistingBookings = existingBookings,
-                PendingBooking = pendingBooking,
-                RestaurantId = restaurantId,
-                PushName = message.PushName,
-                FormattedHistory = formattedHistory,
-                TodayES = FormatSpanishDate(now),
-                TodayFormatted = now.ToString("dd/MM/yyyy")
-            };
-
-            // Run pipeline
-            var result = await _pipeline.ProcessAsync(pipelineContext, cancellationToken);
-
-            // Save user message to history
-            await _historyService.AddMessageAsync(
-                message.SenderNumber,
-                ChatMessage.FromUser(message.MessageText, message.PushName, message.MessageId, message.Timestamp),
-                cancellationToken);
-
-            // Send response
-            if (!string.IsNullOrEmpty(result.ResponseText))
-            {
-                if (result.Intent == PipelineIntent.ConfirmBooking && result.BookingToCreate != null)
+                try
                 {
-                    // Send confirmation with buttons
-                    await SendBookingConfirmationAsync(
+                    await _whatsApp.SendReactionAsync(
                         message.SenderNumber,
-                        result.ResponseText,
-                        result.CreatedBookingId,
+                        message.MessageId,
+                        "👀",
                         cancellationToken);
                 }
-                else
+                catch (Exception ex)
                 {
-                    await _whatsApp.SendTextAsync(
-                        message.SenderNumber, result.ResponseText, cancellationToken);
+                    _logger.LogWarning(ex, "Failed to send reaction for message {MessageId}", message.MessageId);
                 }
-
-                // Save bot response to history
-                await _historyService.AddMessageAsync(
-                    message.SenderNumber,
-                    ChatMessage.FromAssistant(result.ResponseText),
-                    cancellationToken);
             }
 
-            // Clear pending booking if needed
-            if (result.ShouldClearPending)
-                _pendingBookingStore.Clear(message.SenderNumber);
+            // Get restaurant info for the agent
+            var restaurantId = GetRestaurantId(message.SenderNumber);
+            var restaurantConfig = await _restaurantConfigRepo.GetBySlugAsync(restaurantId, cancellationToken);
 
-            // Notify management for new bookings
-            if (result.ShouldNotifyManagement)
-                await NotifyManagementAsync(result, message, cancellationToken);
+            var restaurantInfo = restaurantConfig != null
+                ? $"Teléfono: {restaurantConfig.ContactPhone}\nEmail: {restaurantConfig.ContactEmail}\nDirección: {restaurantConfig.Location}\nWeb: {restaurantConfig.WebsiteUrl}"
+                : "Información del restaurante no disponible.";
 
-            return Ok(new { processed = true, intent = result.Intent.ToString() });
+            // Run the AI Agent with tool calls
+            var agentResult = await _agentOrchestrator.ProcessAsync(
+                message.SenderNumber,
+                message.MessageText,
+                message.PushName,
+                FormatSpanishDate(DateTime.Now),
+                restaurantInfo,
+                cancellationToken);
+
+            _logger.LogInformation(
+                "[AGENT] Result for {Phone}: Success={Success}, MessagesSent={MsgCount}, ToolCalls={Tools}, Iterations={Iterations}",
+                message.SenderNumber,
+                agentResult.Success,
+                agentResult.SentMessages.Count,
+                string.Join(", ", agentResult.ToolCalls),
+                agentResult.Iterations);
+
+            if (!agentResult.Success && agentResult.Error != null)
+            {
+                _logger.LogWarning("[AGENT] Error for {Phone}: {Error}", message.SenderNumber, agentResult.Error);
+            }
+
+            return Ok(new
+            {
+                processed = true,
+                agent = true,
+                success = agentResult.Success,
+                messagesSent = agentResult.SentMessages.Count,
+                toolCalls = agentResult.ToolCalls,
+                iterations = agentResult.Iterations,
+                error = agentResult.Error
+            });
         }
         catch (Exception ex)
         {
@@ -230,7 +220,7 @@ public class WebhookController : ControllerBase
         }
     }
 
-    // === CALL HANDLING (unchanged) ===
+    // === CALL HANDLING ===
 
     private async Task<IActionResult> HandleCallWebhookAsync(JsonElement body, CancellationToken ct)
     {
@@ -269,59 +259,7 @@ public class WebhookController : ControllerBase
         return Ok(new { processed = true, call = true, replied = true });
     }
 
-    // === NOTIFICATION HELPERS ===
-
-    private async Task SendBookingConfirmationAsync(
-        string phone, string confirmationText, long? bookingId,
-        CancellationToken ct)
-    {
-        await _whatsApp.SendTextAsync(phone, confirmationText, ct);
-
-        var buttons = new List<LinkButtonOption>();
-
-        if (bookingId.HasValue)
-        {
-            var baseUrl = _configuration["ExternalBooking:BaseUrl"]
-                          ?? "https://alqueriavillacarmen.com";
-            buttons.Add(new LinkButtonOption(
-                "Ver condiciones",
-                $"{baseUrl}/conditions.php?id={bookingId.Value}"));
-            buttons.Add(new LinkButtonOption(
-                "Cancelar reserva",
-                $"{baseUrl}/cancel.php?id={bookingId.Value}"));
-        }
-
-        if (buttons.Count > 0)
-        {
-            await _whatsApp.SendLinkButtonsAsync(
-                phone,
-                "¿Necesitas algo más?",
-                buttons,
-                ct);
-        }
-    }
-
-    private async Task NotifyManagementAsync(
-        PipelineResult result, WhatsAppMessage message,
-        CancellationToken ct)
-    {
-        var booking = result.BookingToCreate;
-        if (booking == null) return;
-
-        var notificationText = $"🆕 *Nueva reserva*\n" +
-                               $"👤 {booking.Name} ({message.SenderNumber})\n" +
-                               $"📅 {booking.Date} a las {booking.Time}\n" +
-                               $"👥 {booking.People} personas" +
-                               (string.IsNullOrEmpty(booking.ArrozType) ? "" : $"\n🍚 {booking.ArrozType}");
-
-        foreach (var phone in ManagementPhones)
-        {
-            try { await _whatsApp.SendTextAsync(phone, notificationText, ct); }
-            catch (Exception ex) { _logger.LogWarning(ex, "Failed to notify {Phone}", phone); }
-        }
-    }
-
-    // === MESSAGE EXTRACTION (unchanged) ===
+    // === MESSAGE EXTRACTION ===
 
     private WhatsAppMessage ExtractMessage(JsonElement body)
     {

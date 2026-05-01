@@ -259,6 +259,29 @@ public class GeminiService : IGeminiService
             throw new GeminiApiException("Unexpected response structure from Gemini API");
         }
     }
+
+    public Task<AnthropicResponse> GenerateWithToolsAsync(
+        string systemPrompt,
+        string userMessage,
+        List<ChatMessage>? history,
+        List<ToolDefinition> tools,
+        ToolChoiceConfig? toolChoice = null,
+        GeminiGenerationConfig? config = null,
+        CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("GeminiService does not support tool calling. Use MinimaxService instead.");
+    }
+
+    public Task<AnthropicResponse> ContinueWithToolResultAsync(
+        string systemPrompt,
+        List<object> messages,
+        List<ToolDefinition> tools,
+        ToolChoiceConfig? toolChoice = null,
+        GeminiGenerationConfig? config = null,
+        CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("GeminiService does not support tool calling. Use MinimaxService instead.");
+    }
 }
 
 /// <summary>

@@ -311,8 +311,8 @@ public class WebhookController : ControllerBase
         return Ok(new { status = "healthy", timestamp = DateTime.UtcNow });
     }
 
-    [HttpPost("whatsapp-webhook")]
-    public IActionResult HandleWhatsAppWebhook([FromBody] object body)
+    [HttpPost("webhook")]
+    public async Task<IActionResult> HandleWebhook([FromBody] object body)
     {
         _logger.LogInformation("Received webhook: {Body}", body);
 

@@ -28,6 +28,11 @@ public record RestaurantConfig
     public string ContactPhone { get; init; } = "";
 
     /// <summary>
+    /// Contact email for customers.
+    /// </summary>
+    public string ContactEmail { get; init; } = "";
+
+    /// <summary>
     /// Restaurant's website URL.
     /// </summary>
     public string? WebsiteUrl { get; init; }

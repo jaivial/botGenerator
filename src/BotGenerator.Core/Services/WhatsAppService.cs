@@ -701,4 +701,78 @@ public class WhatsAppService : IWhatsAppService
             return false;
         }
     }
+
+    public async Task<bool> SendReactionAsync(
+        string phoneNumber,
+        string messageId,
+        string emoji = "👀",
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedNumber = NormalizeRecipientNumber(phoneNumber);
+
+        _logger.LogInformation(
+            "Sending reaction '{Emoji}' to message {MessageId} for {Phone}",
+            emoji,
+            messageId,
+            normalizedNumber);
+
+        var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/message/react?token={Uri.EscapeDataString(_token)}");
+
+        request.Headers.Add("token", _token);
+
+        // UAZAPI reaction format: id is the message ID being reacted to
+        request.Content = JsonContent.Create(new
+        {
+            id = messageId,
+            reaction = emoji,
+            number = normalizedNumber
+        });
+
+        try
+        {
+            var response = await _httpClient.SendAsync(request, cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogWarning(
+                    "Failed to send reaction for {Phone}. Status: {Status}, Error: {Error}",
+                    normalizedNumber, (int)response.StatusCode, error);
+                return false;
+            }
+
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogDebug("Reaction sent: {Response}", responseBody);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error sending reaction to {Phone}", normalizedNumber);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Acknowledges an incoming message by sending a reaction emoji.
+    /// This tells WhatsApp that the message has been "seen", which may help
+    /// trigger read receipts (2 checkmarks) for bot-sent messages.
+    /// </summary>
+    public async Task<bool> MarkAsReadAsync(
+        string phoneNumber,
+        string messageId,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedNumber = NormalizeRecipientNumber(phoneNumber);
+
+        _logger.LogInformation(
+            "Marking message {MessageId} as read for {Phone}",
+            messageId,
+            normalizedNumber);
+
+        // Send a subtle reaction emoji to acknowledge the message was read.
+        // This is more reliable than UAZAPI's /chat/read which marks as UNREAD.
+        return await SendReactionAsync(normalizedNumber, messageId, "👀", cancellationToken);
+    }
 }

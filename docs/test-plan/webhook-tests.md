@@ -1,3 +1,11 @@
+# Webhook & Infrastructure Tests (Legacy - v2)
+
+> ⚠️ **DEPRECATED**: This documentation describes the legacy v2 architecture.
+> The current version (v3.0.0) uses a simplified single-agent architecture.
+> See [API_DOCUMENTATION.md](../API_DOCUMENTATION.md) for current documentation.
+
+---
+
 # Webhook & Infrastructure Tests (Steps 1-25)
 
 ## Overview

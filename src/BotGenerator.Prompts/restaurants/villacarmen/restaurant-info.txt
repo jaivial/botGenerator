@@ -1,7 +1,7 @@
 ## INFORMACIÓN DEL RESTAURANTE
 
 **NOMBRE:** Alquería Villa Carmen
-**UBICACIÓN:** Valencia, España
+**UBICACIÓN:** Carrer Sequia Rascanya 2, Catarroja 46470 Valencia
 **ESPECIALIDAD:** Arroces y paellas valencianas
 
 ### HORARIOS
@@ -19,6 +19,7 @@ NO rechaces reservas basándote en el día de la semana - deja que el sistema lo
 
 ### CONTACTO
 - **Teléfono:** +34 638 857 294
+- **Email:** reservas@alqueriavillacarmen.com
 - **Web:** https://alqueriavillacarmen.com
 
 ### MENÚS

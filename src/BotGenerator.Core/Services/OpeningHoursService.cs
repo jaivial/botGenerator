@@ -123,11 +123,11 @@ public class OpeningHoursService : IOpeningHoursService
 
         // Both lunch and dinner available - show based on current time
         var currentTime = DateTime.Now.TimeOfDay;
-        var cutoffTime = new TimeSpan(17, 0, 0); // 17:00 is the cutoff
+        var cutoffTime = new TimeSpan(15, 30, 0); // 15:30 is the cutoff for kitchen
 
         if (currentTime < cutoffTime)
         {
-            // Before 17:00 - show lunch hours
+            // Before 15:30 - show lunch hours
             var lunchSlots = fullHours.AvailableSlots
                 .Where(s => TimeSpan.TryParse(s, out var t) && t.Hours < 20)
                 .ToList();
@@ -141,7 +141,7 @@ public class OpeningHoursService : IOpeningHoursService
         }
         else
         {
-            // After 17:00 - show dinner hours
+            // After 15:30 - no more service (kitchen closed)
             var dinnerSlots = fullHours.AvailableSlots
                 .Where(s => TimeSpan.TryParse(s, out var t) && t.Hours >= 20)
                 .ToList();

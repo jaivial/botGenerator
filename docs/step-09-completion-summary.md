@@ -31,7 +31,7 @@ Successfully implemented the webhook endpoint and WhatsApp integration service f
 - **Purpose**: Main webhook endpoint for receiving WhatsApp messages
 - **Features**:
   - Health check endpoint (`GET /api/webhook/health`)
-  - WhatsApp webhook endpoint (`POST /api/webhook/whatsapp-webhook`)
+  - WhatsApp webhook endpoint (`POST /api/webhook/webhook`)
   - Message extraction from UAZAPI payload
   - Support for text, button, and list responses
   - Integration with MainConversationAgent
