@@ -103,15 +103,34 @@ NOTAS: Cocktails, eventos, menus corporativos";
         // Build the agent system prompt
         var systemPrompt = BuildSystemPrompt(pushName, todayES, restaurantInfo);
 
+        // AUTOMATICALLY FETCH WHATSAPP HISTORY for context
+        // This is critical for understanding references like "el anterior domingo" or "como te dije antes"
+        string historyContext = "";
+        try
+        {
+            var historyInput = JsonDocument.Parse(@"{""limit"": 30}").RootElement;
+            var historyResult = await _toolExecutor.ExecuteAsync("fetch_whatsapp_history", historyInput, phoneNumber, ct);
+            if (historyResult.Success && !string.IsNullOrEmpty(historyResult.Content))
+            {
+                historyContext = $"\n\n## CONTEXTO DE LA CONVERSACION (ULTIMOS 30 MENSAJES):\n{historyResult.Content}\n\n";
+                _logger.LogInformation("[AGENT] Fetched WhatsApp history for context, length: {Len}", historyResult.Content.Length);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[AGENT] Failed to fetch WhatsApp history, continuing without context");
+        }
+
         // Build initial messages for the conversation (Anthropic format)
         // Each message has role and content (which can be string or array of blocks)
+        // Include history context with the user message
         var messages = new List<object>
         {
-            // Initial user message - simple text
+            // Initial user message - with conversation context
             new Dictionary<string, object>
             {
                 ["role"] = "user",
-                ["content"] = userMessage
+                ["content"] = historyContext + $"## NUEVO MENSAJE:\n{userMessage}"
             }
         };
 
@@ -404,9 +423,11 @@ NOTAS: Cocktails, eventos, menus corporativos";
         sb.AppendLine();
         sb.AppendLine($"## TU NOMBRE: {pushName}");
         sb.AppendLine();
-        sb.AppendLine("## CALCULO DE FECHAS");
+        sb.AppendLine("## CALCULO DE FECHAS (CRITICO)");
         sb.AppendLine("- Si el usuario dice 'este sabado' o 'sabado que viene', es el sabado MAS CERCANO");
         sb.AppendLine("- Si el usuario dice 'el otro sabado', es el sabado SIGUIENTE al mas cercano");
+        sb.AppendLine("- Si el usuario dice 'el domingo anterior' o 'el anterior domingo', se refiere al domingo ANTERIOR a una fecha mencionada en la conversacion");
+        sb.AppendLine("- Ejemplo: si se hablo del 'domingo 17 de mayo', 'el anterior' es 'domingo 10 de mayo'");
         sb.AppendLine("- Usa SIEMPRE la fecha actual proporcionada para calcular, no la adivines");
         sb.AppendLine();
         sb.AppendLine("## HORARIO: 13:30 a 18:00");
@@ -418,6 +439,7 @@ NOTAS: Cocktails, eventos, menus corporativos";
         sb.AppendLine("2. Para reservas: solicita fecha, hora y numero de personas");
         sb.AppendLine("3. Para modificar/cancelar: confirma datos antes de actuar");
         sb.AppendLine("4. IMPORTANTE: Cuando menciones fechas, USA EXACTAMENTE la fecha calculada");
+        sb.AppendLine("5. IMPORTANTE: El HISTORIAL de conversacion esta en el mensaje del usuario - usalo para entender referencias como 'el domingo anterior', 'como te dije antes', 'la fecha que mencionaste'");
         sb.AppendLine();
         sb.AppendLine("## FLUJO CREAR RESERVA");
         sb.AppendLine("1. check_day_capacity o get_opening_hours_with_capacity");
