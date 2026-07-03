@@ -112,9 +112,11 @@ builder.Services.AddMemoryCache();
 
 // ========== HTTP Clients ==========
 // MiniMax Service - primary AI service (Anthropic-compatible endpoint)
+// ClaudeService uses Anthropic SDK via IChatClient adapter (AIFunctionFactory.Create for tools).
+// The SDK manages its own HttpClient; no AddHttpClient needed.
 builder.Services.AddHttpClient<IGeminiService, MinimaxService>(client =>
 {
-    client.Timeout = TimeSpan.FromSeconds(120); // Increased from 60s to handle large prompts with history
+    client.Timeout = TimeSpan.FromSeconds(120);
 });
 
 // External Booking Service
