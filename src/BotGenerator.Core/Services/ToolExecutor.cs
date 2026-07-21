@@ -558,6 +558,70 @@ public class ToolExecutor : IToolExecutor
 
     // === modify_booking ===
 
+    /// <summary>
+    /// Detects rice type, rice servings, high chair, baby stroller and clear-rice
+    /// modifications from a modify_booking tool call. Populates <paramref name="updateData"/>
+    /// with the fields that actually differ from the current booking and returns a
+    /// human-readable list of the changes applied.
+    ///
+    /// A servings-only change (e.g. keeping the same rice type but going 2 -> 4
+    /// portions) is a real modification and MUST be reported here; otherwise the
+    /// caller wrongly reports "no change specified" (regression from chat-16166).
+    /// </summary>
+    public static List<string> CollectRiceAndExtrasChanges(
+        JsonElement input, BookingRecord booking, BookingUpdateData updateData)
+    {
+        var changes = new List<string>();
+
+        if (input.TryGetProperty("rice_type", out var riceEl) && riceEl.ValueKind == JsonValueKind.String)
+        {
+            var riceType = riceEl.GetString();
+            if (!string.IsNullOrEmpty(riceType) && riceType != booking.ArrozType)
+            {
+                updateData.ArrozType = riceType;
+                changes.Add($"arroz: {(booking.ArrozType ?? "Ninguno")} → {riceType}");
+            }
+        }
+
+        if (input.TryGetProperty("rice_servings", out var servingsEl) && servingsEl.ValueKind == JsonValueKind.Number)
+        {
+            var newServings = servingsEl.GetInt32();
+            if (newServings != booking.ArrozServings)
+            {
+                updateData.ArrozServings = newServings;
+                changes.Add($"raciones de arroz: {(booking.ArrozServings?.ToString() ?? "0")} → {newServings}");
+            }
+        }
+
+        if (input.TryGetProperty("high_chairs", out var chairsEl) && chairsEl.ValueKind == JsonValueKind.Number)
+        {
+            var chairs = chairsEl.GetInt32();
+            if (chairs != booking.HighChairs)
+            {
+                updateData.HighChairs = chairs;
+                changes.Add($"tronas: {booking.HighChairs} → {chairs}");
+            }
+        }
+
+        if (input.TryGetProperty("baby_strollers", out var strollersEl) && strollersEl.ValueKind == JsonValueKind.Number)
+        {
+            var strollers = strollersEl.GetInt32();
+            if (strollers != booking.BabyStrollers)
+            {
+                updateData.BabyStrollers = strollers;
+                changes.Add($"carros: {booking.BabyStrollers} → {strollers}");
+            }
+        }
+
+        if (input.TryGetProperty("clear_rice", out var clearEl) && clearEl.ValueKind == JsonValueKind.True)
+        {
+            updateData.ClearRice = true;
+            changes.Add("arroz: eliminado");
+        }
+
+        return changes;
+    }
+
     private async Task<ToolResult> ExecuteModifyBooking(JsonElement input, string phoneNumber, CancellationToken ct)
     {
         var bookingIdStr = input.TryGetProperty("booking_id", out var bid) ? bid.GetString() : null;
@@ -743,46 +807,8 @@ public class ToolExecutor : IToolExecutor
                 }
             }
 
-            if (input.TryGetProperty("rice_type", out var riceEl) && riceEl.ValueKind == JsonValueKind.String)
-            {
-                var riceType = riceEl.GetString();
-                if (!string.IsNullOrEmpty(riceType) && riceType != booking.ArrozType)
-                {
-                    updateData.ArrozType = riceType;
-                    changes.Add($"arroz: {(booking.ArrozType ?? "Ninguno")} → {riceType}");
-                }
-            }
-
-            if (input.TryGetProperty("rice_servings", out var servingsEl) && servingsEl.ValueKind == JsonValueKind.Number)
-            {
-                updateData.ArrozServings = servingsEl.GetInt32();
-            }
-
-            if (input.TryGetProperty("high_chairs", out var chairsEl) && chairsEl.ValueKind == JsonValueKind.Number)
-            {
-                var chairs = chairsEl.GetInt32();
-                if (chairs != booking.HighChairs)
-                {
-                    updateData.HighChairs = chairs;
-                    changes.Add($"tronas: {booking.HighChairs} → {chairs}");
-                }
-            }
-
-            if (input.TryGetProperty("baby_strollers", out var strollersEl) && strollersEl.ValueKind == JsonValueKind.Number)
-            {
-                var strollers = strollersEl.GetInt32();
-                if (strollers != booking.BabyStrollers)
-                {
-                    updateData.BabyStrollers = strollers;
-                    changes.Add($"carros: {booking.BabyStrollers} → {strollers}");
-                }
-            }
-
-            if (input.TryGetProperty("clear_rice", out var clearEl) && clearEl.ValueKind == JsonValueKind.True)
-            {
-                updateData.ClearRice = true;
-                changes.Add("arroz: eliminado");
-            }
+            // Rice type/servings, high chairs, baby strollers and clear-rice changes.
+            changes.AddRange(CollectRiceAndExtrasChanges(input, booking, updateData));
 
             // Check if there are any changes
             if (changes.Count == 0)
@@ -801,9 +827,9 @@ public class ToolExecutor : IToolExecutor
             // === LOG MODIFICATION ===
             var modificationsJson = JsonSerializer.Serialize(changes);
             await connection.ExecuteAsync(@"
-                INSERT INTO modification_history (booking_id, field_name, old_value, new_value, modified_at)
-                VALUES (@BookingId, 'multiple', @OldValue, @NewValue, NOW())",
-                new { BookingId = bookingId, OldValue = "N/A", NewValue = modificationsJson });
+                INSERT INTO modification_history (booking_id, customer_phone, field_modified, old_value, new_value, modification_date)
+                VALUES (@BookingId, @CustomerPhone, 'multiple', @OldValue, @NewValue, NOW())",
+                new { BookingId = bookingId, CustomerPhone = phone9, OldValue = "N/A", NewValue = modificationsJson });
 
             // === GET UPDATED BOOKING ===
             var updated = await _bookingRepository.GetBookingByIdAsync(bookingId, ct);
@@ -835,14 +861,17 @@ public class ToolExecutor : IToolExecutor
                         time = updated.TimeFormatted,
                         people = updated.PartySize,
                         rice = updated.ArrozType,
-                        riceServings = updated.ArrozServings
+                        riceServings = updated.ArrozServings,
+                        highChairs = updated.HighChairs,
+                        babyStrollers = updated.BabyStrollers
                     }
                 })
             };
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error modifying booking {BookingId}", bookingId);
+            _logger.LogError(ex, "Error modifying booking {BookingId} for {Phone}. Input: {Input}",
+                bookingId, phoneNumber, input.GetRawText());
             return new ToolResult { IsError = true, Content = $"Error modifying booking: {ex.Message}" };
         }
     }
