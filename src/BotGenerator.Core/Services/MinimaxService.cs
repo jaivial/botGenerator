@@ -33,7 +33,7 @@ public class MinimaxService : IGeminiService
         _apiKey = configuration["Minimax:ApiKey"]
             ?? throw new InvalidOperationException("Minimax:ApiKey must be configured");
 
-        _model = configuration["Minimax:Model"] ?? "MiniMax-M2.7-highspeed";
+        _model = configuration["Minimax:Model"] ?? "MiniMax-M3";
         _baseUrl = configuration["Minimax:BaseUrl"] ?? "https://api.minimax.io/anthropic/v1";
 
         _temperature = configuration.GetValue("Minimax:Temperature", 0.7);

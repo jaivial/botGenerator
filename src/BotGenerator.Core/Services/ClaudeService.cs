@@ -64,7 +64,7 @@ public class ClaudeService : IGeminiService
         var apiKey = configuration["Minimax:ApiKey"]
             ?? throw new InvalidOperationException("Minimax:ApiKey must be configured");
 
-        _model = configuration["Minimax:Model"] ?? "MiniMax-M2.7-highspeed";
+        _model = configuration["Minimax:Model"] ?? "MiniMax-M3";
         _defaultMaxTokens = configuration.GetValue("Minimax:MaxOutputTokens", 2048);
         _defaultTemperature = configuration.GetValue("Minimax:Temperature", 0.7);
 

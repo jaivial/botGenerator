@@ -204,11 +204,12 @@ NOTAS: Cocktails, eventos, menus corporativos";
                         // Log tool execution result
                         if (toolResult.IsError)
                         {
-                            _logger.LogError("[AGENT] Tool {Tool} failed: {Error}", toolName, toolResult.Content);
+                            _logger.LogWarning("[AGENT] Tool {Tool} failed for {Phone}: {Error} | Input: {Input}",
+                                toolName, phoneNumber, toolResult.Content, toolInput.GetRawText());
                         }
                         else
                         {
-                            _logger.LogInformation("[AGENT] Tool {Tool} executed successfully", toolName);
+                            _logger.LogInformation("[AGENT] Tool {Tool} executed successfully for {Phone}", toolName, phoneNumber);
                         }
 
                         // Track sent messages for the result
@@ -448,6 +449,15 @@ NOTAS: Cocktails, eventos, menus corporativos";
         sb.AppendLine("Solo get_bookings() te dice el estado ACTUAL de las reservas en la base de datos.");
         sb.AppendLine("NUNCA afirmes que el usuario tiene una reserva si no la has verificado con get_bookings()");
         sb.AppendLine();
+        sb.AppendLine("## REGLA DE ORO: CONFIRMAR CAMBIOS (CRITICA)");
+        sb.AppendLine("NUNCA confirmes que una reserva ha sido CREADA, MODIFICADA o CANCELADA a menos que la herramienta");
+        sb.AppendLine("correspondiente (create_booking / modify_booking / cancel_booking) haya devuelto success=true en ESTE turno.");
+        sb.AppendLine("Tras un modify_booking con exito, refleja SOLO los valores del objeto `updatedBooking` devuelto por la herramienta.");
+        sb.AppendLine("NO inventes ni asumas campos (tronas, carritos, arroz, personas) que no aparezcan en el resultado de la herramienta.");
+        sb.AppendLine("Si una herramienta devolvio un error, NO afirmes exito en este ni en turnos posteriores:");
+        sb.AppendLine("reintenta la herramienta con datos corregidos, o manten el mensaje de error y sugiere llamar al restaurante.");
+        sb.AppendLine("Ejemplo PROHIBIDO: decir 'Carro de bebe: 1 ✅' sin que modify_booking haya devuelto babyStrollers=1.");
+        sb.AppendLine();
         sb.AppendLine("## NOMBRE DEL USUARIO (AUTOMATICO)");
         sb.AppendLine($"El nombre del usuario ES: {pushName}");
         sb.AppendLine("Este nombre viene del perfil de WhatsApp del usuario.");
@@ -472,7 +482,9 @@ NOTAS: Cocktails, eventos, menus corporativos";
         sb.AppendLine("## FLUJO MODIFICAR RESERVA");
         sb.AppendLine("1. get_bookings para ver reservas");
         sb.AppendLine("2. Mostrar reservas y preguntar cual modificar");
-        sb.AppendLine("3. modify_booking (booking_id, campos, confirmed: true)");
+        sb.AppendLine("3. Si añade/cambia arroz: check_rice_availability y usa el nombre matched exacto");
+        sb.AppendLine("4. Si no indicó raciones: preguntar cuántas quiere. NUNCA asumirlas");
+        sb.AppendLine("5. modify_booking (booking_id, campos, confirmed: true). Arroz requiere rice_type + rice_servings");
         sb.AppendLine("VALIDA: no hoy/manana, max 3 modificaciones");
         sb.AppendLine();
         sb.AppendLine("## FLUJO CANCELAR RESERVA");
@@ -504,8 +516,9 @@ NOTAS: Cocktails, eventos, menus corporativos";
         sb.AppendLine("## FLUJO: ARROZ ESPECIFICO EN RESERVA");
         sb.AppendLine("Cuando usuario menciona un arroz concreto (ej: 'paella', 'arroz negro'):");
         sb.AppendLine("1. check_rice_availability(rice_type='arroz mencionado') para verificar");
-        sb.AppendLine("2. Si available=true: usar el matched rice en create_booking");
-        sb.AppendLine("3. Si available=false: informar y sugerir opciones de la lista");
+        sb.AppendLine("2. Si available=true: usar el matched rice exacto en create_booking o modify_booking");
+        sb.AppendLine("3. Preguntar cuántas raciones quiere si no lo indicó; mínimo 2, máximo número de personas");
+        sb.AppendLine("4. Si available=false: informar y sugerir opciones de la lista");
         sb.AppendLine();
         sb.AppendLine("## EJEMPLO CREAR");
         sb.AppendLine("Usuario: Reservar manana 14:00 4 personas");

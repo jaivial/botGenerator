@@ -253,11 +253,11 @@ public static class AgentToolDefinitions
                 },
                 ""rice_type"": {
                     ""type"": ""string"",
-                    ""description"": ""Tipo de arroz. Ejemplo: Paella Valenciana, Arroz Negro, Arroz a Banda""
+                    ""description"": ""Tipo exacto devuelto por check_rice_availability. Si se informa, rice_servings tambien es obligatorio.""
                 },
                 ""rice_servings"": {
                     ""type"": ""integer"",
-                    ""description"": ""Número de porciones de arroz (opcional)""
+                    ""description"": ""Número de raciones de arroz, mínimo 2 y máximo el número de personas.""
                 },
                 ""name"": {
                     ""type"": ""string"",
@@ -331,11 +331,11 @@ public static class AgentToolDefinitions
                 },
                 ""rice_type"": {
                     ""type"": ""string"",
-                    ""description"": ""Nuevo tipo de arroz (opcional)""
+                    ""description"": ""Tipo exacto devuelto por check_rice_availability. Al añadir arroz a una reserva sin raciones, rice_servings es obligatorio.""
                 },
                 ""rice_servings"": {
                     ""type"": ""integer"",
-                    ""description"": ""Nuevo numero de porciones de arroz (opcional)""
+                    ""description"": ""Nuevo numero de raciones, mínimo 2 y máximo el número de personas. Nunca lo supongas: pregúntalo.""
                 },
                 ""high_chairs"": {
                     ""type"": ""integer"",

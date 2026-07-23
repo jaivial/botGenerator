@@ -14,7 +14,7 @@ namespace BotGenerator.Core.Tests.Services;
 /// </summary>
 public class ModifyBookingChangesTests
 {
-    private const string TestPhone = "34692747052";
+    private const string TestPhone = "34 692747052";
 
     private static BookingRecord SampleBooking() => new()
     {
@@ -90,5 +90,46 @@ public class ModifyBookingChangesTests
 
         changes.Should().ContainSingle();
         updateData.ClearRice.Should().BeTrue();
+    }
+
+    [Fact]
+    public void AddRiceWithoutServings_IsRejected()
+    {
+        var booking = SampleBooking() with { ArrozType = null, ArrozServings = null };
+
+        var error = ToolExecutor.ValidateRiceChange(
+            Input("{\"rice_type\":\"Arroz de Verduras\"}"), booking, booking.PartySize);
+
+        error.Should().Contain("rice_servings");
+    }
+
+    [Fact]
+    public void AddRiceWithFiveServings_IsValidForTestPhoneBooking()
+    {
+        var booking = SampleBooking() with
+        {
+            ContactPhone = TestPhone[^9..],
+            ArrozType = null,
+            ArrozServings = null
+        };
+
+        var error = ToolExecutor.ValidateRiceChange(
+            Input("{\"rice_type\":\"Arroz seco de verduras de la huerta\",\"rice_servings\":5}"),
+            booking,
+            booking.PartySize);
+
+        error.Should().BeNull();
+    }
+
+    [Fact]
+    public void RiceMatch_ResolvesVegetableRiceInsteadOfFirstRice()
+    {
+        var match = ToolExecutor.FindRiceMatch("Arroz de verduras", new[]
+        {
+            "Arroz meloso de pulpo y gambones (+5€)",
+            "Arroz seco de verduras de la huerta"
+        });
+
+        match.Should().Be("Arroz seco de verduras de la huerta");
     }
 }

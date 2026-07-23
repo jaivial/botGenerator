@@ -185,21 +185,11 @@ public class ToolExecutor : IToolExecutor
             var arroces = await connection.QueryAsync<dynamic>(sql);
             var arrozList = arroces.ToList();
 
-            // Normalize search term
-            var searchNormalized = riceType.ToLowerInvariant().Trim();
-
-            // Try to find a match
-            dynamic? matched = null;
-            foreach (var a in arrozList)
-            {
-                var descNormalized = ((string)a.Descripcion).ToLowerInvariant();
-                if (descNormalized.Contains(searchNormalized) ||
-                    searchNormalized.Contains(descNormalized.Split(' ')[0]))
-                {
-                    matched = a;
-                    break;
-                }
-            }
+            var matchedName = FindRiceMatch(
+                riceType,
+                arrozList.Select(a => (string)a.Descripcion));
+            dynamic? matched = arrozList.FirstOrDefault(a =>
+                string.Equals((string)a.Descripcion, matchedName, StringComparison.Ordinal));
 
             if (matched != null)
             {
@@ -237,6 +227,25 @@ public class ToolExecutor : IToolExecutor
                 Content = JsonSerializer.Serialize(new { error = "Error al verificar disponibilidad del arroz" })
             };
         }
+    }
+
+    public static string? FindRiceMatch(string requested, IEnumerable<string> available)
+    {
+        var normalized = requested.Trim().ToLowerInvariant();
+        var names = available.Where(x => !string.IsNullOrWhiteSpace(x)).ToList();
+        var exact = names.FirstOrDefault(x =>
+            string.Equals(x.Trim(), requested.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (exact != null) return exact;
+
+        var generic = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { "arroz", "seco", "meloso", "caldoso", "de", "del", "la", "el" };
+        var terms = normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => x.Trim(' ', '.', ',', ';', ':', '(', ')'))
+            .Where(x => x.Length > 1 && !generic.Contains(x))
+            .ToList();
+
+        return terms.Count == 0 ? null : names.FirstOrDefault(name =>
+            terms.All(term => name.Contains(term, StringComparison.OrdinalIgnoreCase)));
     }
 
     // === check_availability ===
@@ -622,6 +631,33 @@ public class ToolExecutor : IToolExecutor
         return changes;
     }
 
+    public static string? ValidateRiceChange(
+        JsonElement input, BookingRecord booking, int targetPartySize)
+    {
+        if (input.TryGetProperty("clear_rice", out var clear) && clear.ValueKind == JsonValueKind.True)
+            return null;
+
+        var suppliedType = input.TryGetProperty("rice_type", out var rice) && rice.ValueKind == JsonValueKind.String
+            ? rice.GetString() : null;
+        var suppliedServings = input.TryGetProperty("rice_servings", out var servings) && servings.ValueKind == JsonValueKind.Number
+            ? servings.GetInt32() : (int?)null;
+
+        if (suppliedType == null && !suppliedServings.HasValue) return null;
+
+        var effectiveType = suppliedType ?? booking.ArrozType;
+        var effectiveServings = suppliedServings ?? booking.ArrozServings;
+        if (string.IsNullOrWhiteSpace(effectiveType))
+            return "Falta el tipo de arroz.";
+        if (!effectiveServings.HasValue)
+            return "Falta rice_servings. Pregunta al cliente cuántas raciones quiere; no lo supongas.";
+        if (effectiveServings < 2)
+            return "Cada arroz requiere un mínimo de 2 raciones.";
+        if (effectiveServings > targetPartySize)
+            return $"Las raciones de arroz ({effectiveServings}) no pueden superar las personas ({targetPartySize}).";
+
+        return null;
+    }
+
     private async Task<ToolResult> ExecuteModifyBooking(JsonElement input, string phoneNumber, CancellationToken ct)
     {
         var bookingIdStr = input.TryGetProperty("booking_id", out var bid) ? bid.GetString() : null;
@@ -808,7 +844,35 @@ public class ToolExecutor : IToolExecutor
             }
 
             // Rice type/servings, high chairs, baby strollers and clear-rice changes.
+            var riceValidationError = ValidateRiceChange(
+                input, booking, updateData.PartySize ?? booking.PartySize);
+            if (riceValidationError != null)
+                return new ToolResult { IsError = true, Content = riceValidationError };
+
             changes.AddRange(CollectRiceAndExtrasChanges(input, booking, updateData));
+
+            if (input.TryGetProperty("rice_type", out var requestedRice) &&
+                requestedRice.ValueKind == JsonValueKind.String)
+            {
+                var requested = requestedRice.GetString();
+                var activeRices = await _menuRepository.GetActiveRiceTypesAsync(ct);
+                var matchedRice = string.IsNullOrWhiteSpace(requested)
+                    ? null
+                    : FindRiceMatch(requested, activeRices);
+                if (matchedRice == null)
+                    return new ToolResult { IsError = true, Content = "Arroz no disponible. Usa check_rice_availability y confirma una opción válida." };
+
+                changes.RemoveAll(x => x.StartsWith("arroz:", StringComparison.Ordinal));
+                if (!string.Equals(matchedRice, booking.ArrozType, StringComparison.OrdinalIgnoreCase))
+                {
+                    updateData.ArrozType = matchedRice;
+                    changes.Add($"arroz: {(booking.ArrozType ?? "Ninguno")} → {matchedRice}");
+                }
+                else
+                {
+                    updateData.ArrozType = null;
+                }
+            }
 
             // Check if there are any changes
             if (changes.Count == 0)
@@ -909,6 +973,15 @@ public class ToolExecutor : IToolExecutor
             return new ToolResult { IsError = true, Content = "Missing required fields: date and time are required." };
         }
 
+        if (!string.IsNullOrWhiteSpace(riceType) && !riceServings.HasValue)
+            return new ToolResult { IsError = true, Content = "Falta rice_servings. Pregunta al cliente cuántas raciones quiere; no lo supongas." };
+        if (riceServings.HasValue && string.IsNullOrWhiteSpace(riceType))
+            return new ToolResult { IsError = true, Content = "Falta rice_type." };
+        if (riceServings is < 2)
+            return new ToolResult { IsError = true, Content = "Cada arroz requiere un mínimo de 2 raciones." };
+        if (riceServings > people)
+            return new ToolResult { IsError = true, Content = $"Las raciones de arroz ({riceServings}) no pueden superar las personas ({people})." };
+
         // 2. Validate date format and parse
         if (!TryParseDate(dateStr, out var bookingDate))
         {
@@ -936,6 +1009,14 @@ public class ToolExecutor : IToolExecutor
         {
             await using var connection = new MySqlConnection(_connectionString);
             await connection.OpenAsync(ct);
+
+            if (!string.IsNullOrWhiteSpace(riceType))
+            {
+                var matchedRice = FindRiceMatch(riceType, await _menuRepository.GetActiveRiceTypesAsync(ct));
+                if (matchedRice == null)
+                    return new ToolResult { IsError = true, Content = "Arroz no disponible. Usa check_rice_availability y confirma una opción válida." };
+                riceType = matchedRice;
+            }
 
             // === CAPACITY VALIDATIONS ===
 

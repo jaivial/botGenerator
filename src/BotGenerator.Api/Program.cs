@@ -20,6 +20,15 @@ else
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Validate the DI container at build time so missing/misconfigured service
+// registrations fail fast at startup instead of mid-conversation (e.g. a tool
+// service resolved with a null dependency during a modification request).
+builder.Host.UseDefaultServiceProvider((context, options) =>
+{
+    options.ValidateScopes = true;
+    options.ValidateOnBuild = true;
+});
+
 // Override configuration with environment variables
 var googleApiKey = Environment.GetEnvironmentVariable("GOOGLE_AI_API_KEY");
 if (string.IsNullOrWhiteSpace(googleApiKey))
