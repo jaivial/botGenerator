@@ -530,33 +530,32 @@ public class ToolExecutor : IToolExecutor
                 return new ToolResult { IsError = true, Content = $"Booking {bookingId} not found." };
             }
 
-            // Archive to cancelled_bookings table
-            var archiveSuccess = await _bookingRepository.InsertCancelledBookingAsync(
+            var phone9 = new string(phoneNumber.Where(char.IsDigit).ToArray());
+            if (phone9.Length > 9) phone9 = phone9[^9..];
+            if (!string.Equals(booking.ContactPhone, phone9, StringComparison.OrdinalIgnoreCase))
+                return new ToolResult { IsError = true, Content = "No tienes permiso para cancelar esta reserva." };
+
+            if (booking.Status is not ("pending" or "confirmed"))
+                return new ToolResult { IsError = true, Content = "Esta reserva no está activa y no se puede cancelar." };
+
+            var cancelSuccess = await _bookingRepository.ArchiveAndCancelBookingAsync(
                 booking, "AI_AGENT", ct);
 
-            if (!archiveSuccess)
+            if (!cancelSuccess)
             {
-                _logger.LogWarning("Failed to archive cancelled booking {BookingId}", bookingId);
+                return new ToolResult { IsError = true, Content = "Cancelación abortada sin borrar datos." };
             }
 
-            // Cancel the booking
-            var cancelSuccess = await _bookingRepository.CancelBookingAsync(bookingId, ct);
-
-            if (cancelSuccess)
+            _logger.LogInformation("Successfully cancelled booking {BookingId} via AI Agent", bookingId);
+            return new ToolResult
             {
-                _logger.LogInformation("Successfully cancelled booking {BookingId} via AI Agent", bookingId);
-                return new ToolResult
+                Content = JsonSerializer.Serialize(new
                 {
-                    Content = JsonSerializer.Serialize(new
-                    {
-                        success = true,
-                        bookingId,
-                        message = $"Booking for {booking.DateFormatted} at {booking.TimeFormatted} has been cancelled."
-                    })
-                };
-            }
-
-            return new ToolResult { IsError = true, Content = "Failed to cancel booking in database." };
+                    success = true,
+                    bookingId,
+                    message = $"Booking for {booking.DateFormatted} at {booking.TimeFormatted} has been cancelled."
+                })
+            };
         }
         catch (Exception ex)
         {
@@ -658,6 +657,33 @@ public class ToolExecutor : IToolExecutor
         return null;
     }
 
+    public static string? ValidateBookingCounts(
+        int people, int highChairs, int babyStrollers, int? riceServings)
+    {
+        if (people < 1) return "El número de personas debe ser al menos 1.";
+        if (highChairs < 0) return "El número de tronas no puede ser negativo.";
+        if (babyStrollers < 0) return "El número de carros no puede ser negativo.";
+        if (highChairs > people) return "Las tronas no pueden superar el número de personas.";
+        if (babyStrollers > people) return "Los carros no pueden superar el número de personas.";
+        if (riceServings > people) return "Las raciones de arroz no pueden superar el número de personas.";
+        return null;
+    }
+
+    public static string? ValidateModificationCounts(JsonElement input, BookingRecord booking)
+    {
+        var people = input.TryGetProperty("people", out var peopleEl) && peopleEl.ValueKind == JsonValueKind.Number
+            ? peopleEl.GetInt32() : booking.PartySize;
+        var chairs = input.TryGetProperty("high_chairs", out var chairsEl) && chairsEl.ValueKind == JsonValueKind.Number
+            ? chairsEl.GetInt32() : booking.HighChairs;
+        var strollers = input.TryGetProperty("baby_strollers", out var strollersEl) && strollersEl.ValueKind == JsonValueKind.Number
+            ? strollersEl.GetInt32() : booking.BabyStrollers;
+        var clearRice = input.TryGetProperty("clear_rice", out var clearEl) && clearEl.ValueKind == JsonValueKind.True;
+        var servings = clearRice ? null : input.TryGetProperty("rice_servings", out var servingsEl) && servingsEl.ValueKind == JsonValueKind.Number
+            ? servingsEl.GetInt32() : booking.ArrozServings;
+
+        return ValidateBookingCounts(people, chairs, strollers, servings);
+    }
+
     private async Task<ToolResult> ExecuteModifyBooking(JsonElement input, string phoneNumber, CancellationToken ct)
     {
         var bookingIdStr = input.TryGetProperty("booking_id", out var bid) ? bid.GetString() : null;
@@ -754,6 +780,10 @@ public class ToolExecutor : IToolExecutor
                 return new ToolResult { IsError = true, Content = "Has alcanzado el límite máximo de 3 modificaciones para esta reserva. Para más cambios, contacta directamente con el restaurante." };
             }
 
+            var countValidationError = ValidateModificationCounts(input, booking);
+            if (countValidationError != null)
+                return new ToolResult { IsError = true, Content = countValidationError };
+
             // === BUILD UPDATE DATA ===
             var updateData = new BookingUpdateData();
             var changes = new List<string>();
@@ -762,6 +792,8 @@ public class ToolExecutor : IToolExecutor
             if (input.TryGetProperty("date", out var dateEl) && dateEl.ValueKind == JsonValueKind.String)
             {
                 var dateStr = dateEl.GetString();
+                if (!string.IsNullOrEmpty(dateStr) && !TryParseDate(dateStr, out _))
+                    return new ToolResult { IsError = true, Content = "Fecha inválida. Usa YYYY-MM-DD o dd/MM/yyyy." };
                 if (!string.IsNullOrEmpty(dateStr) && TryParseDate(dateStr, out var newDate))
                 {
                     var newDateStr = newDate.ToString("yyyy-MM-dd");
@@ -799,7 +831,9 @@ public class ToolExecutor : IToolExecutor
                 var timeStr = timeEl.GetString();
                 if (!string.IsNullOrEmpty(timeStr))
                 {
-                    var normalizedTime = timeStr.Contains(":") ? timeStr : $"{timeStr}:00";
+                    if (!TimeSpan.TryParse(timeStr, out var parsedTime) || parsedTime.TotalHours < 0 || parsedTime.TotalHours >= 24)
+                        return new ToolResult { IsError = true, Content = "Hora inválida. Usa HH:mm." };
+                    var normalizedTime = $"{parsedTime.Hours:D2}:{parsedTime.Minutes:D2}";
                     if (normalizedTime != booking.ReservationTime.ToString("HH:mm"))
                     {
                         updateData.ReservationTime = normalizedTime;
@@ -956,7 +990,7 @@ public class ToolExecutor : IToolExecutor
         var dateStr = input.TryGetProperty("date", out var dateEl) ? dateEl.GetString() : null;
         var timeStr = input.TryGetProperty("time", out var timeEl) ? timeEl.GetString() : null;
         var people = input.TryGetProperty("people", out var peopleEl) && peopleEl.ValueKind == JsonValueKind.Number
-            ? peopleEl.GetInt32() : 2;
+            ? peopleEl.GetInt32() : 0;
         var riceType = input.TryGetProperty("rice_type", out var riceEl) ? riceEl.GetString() : null;
         var riceServings = input.TryGetProperty("rice_servings", out var servingsEl) && servingsEl.ValueKind == JsonValueKind.Number
             ? servingsEl.GetInt32() : (int?)null;
@@ -972,6 +1006,10 @@ public class ToolExecutor : IToolExecutor
         {
             return new ToolResult { IsError = true, Content = "Missing required fields: date and time are required." };
         }
+
+        var countValidationError = ValidateBookingCounts(people, highChairs, babyStrollers, riceServings);
+        if (countValidationError != null)
+            return new ToolResult { IsError = true, Content = countValidationError };
 
         if (!string.IsNullOrWhiteSpace(riceType) && !riceServings.HasValue)
             return new ToolResult { IsError = true, Content = "Falta rice_servings. Pregunta al cliente cuántas raciones quiere; no lo supongas." };

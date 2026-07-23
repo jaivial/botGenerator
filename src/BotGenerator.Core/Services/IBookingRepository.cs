@@ -46,20 +46,11 @@ public interface IBookingRepository
     Task<BookingRecord?> GetBookingByIdAsync(int bookingId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Deletes a booking from the bookings table.
-    /// Should be called AFTER inserting into cancelled_bookings archive.
-    /// </summary>
-    /// <param name="bookingId">The booking ID to delete.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>True if the deletion succeeded, false otherwise.</returns>
-    Task<bool> CancelBookingAsync(int bookingId, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Inserts a cancelled booking record into the cancelled_bookings archive table.
+    /// Archives then deletes a booking in one transaction.
     /// </summary>
     /// <param name="booking">The booking record to archive.</param>
     /// <param name="cancelledBy">Who cancelled the booking (e.g., "AI_ASSISTANT").</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>True if the insert succeeded, false otherwise.</returns>
-    Task<bool> InsertCancelledBookingAsync(BookingRecord booking, string cancelledBy, CancellationToken cancellationToken = default);
+    /// <returns>True only when archive and deletion both commit.</returns>
+    Task<bool> ArchiveAndCancelBookingAsync(BookingRecord booking, string cancelledBy, CancellationToken cancellationToken = default);
 }

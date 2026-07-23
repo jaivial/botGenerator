@@ -23,6 +23,12 @@ public class BookingRepository : IBookingRepository
 
     public async Task<long?> CreateBookingAsync(BookingData booking, CancellationToken cancellationToken = default)
     {
+        if (!booking.IsValid)
+        {
+            _logger.LogWarning("Cannot create invalid booking for {Phone}", booking.Phone);
+            return null;
+        }
+
         try
         {
             await using var connection = new MySqlConnection(_connectionString);
@@ -207,7 +213,14 @@ public class BookingRepository : IBookingRepository
                     JSON_UNQUOTE(JSON_EXTRACT(arroz_servings, '$[0]')) as arroz_servings,
                     highChairs,
                     babyStrollers,
-                    contact_phone
+                    contact_phone,
+                    contact_email,
+                    commentary,
+                    status,
+                    special_menu,
+                    menu_de_grupo_id,
+                    principales_json,
+                    restaurant_id
                 FROM bookings
                 WHERE contact_phone = @Phone
                   AND reservation_date >= CURDATE()
@@ -239,7 +252,14 @@ public class BookingRepository : IBookingRepository
                     ArrozServings = arrozServings,
                     HighChairs = (int)(row.highChairs ?? 0),
                     BabyStrollers = (int)(row.babyStrollers ?? 0),
-                    ContactPhone = row.contact_phone ?? ""
+                    ContactPhone = row.contact_phone ?? "",
+                    ContactEmail = row.contact_email ?? "",
+                    Commentary = row.commentary as string,
+                    Status = row.status ?? "pending",
+                    SpecialMenu = Convert.ToBoolean(row.special_menu),
+                    MenuDeGrupoId = row.menu_de_grupo_id == null ? null : (int?)Convert.ToInt32(row.menu_de_grupo_id),
+                    PrincipalesJson = row.principales_json as string,
+                    RestaurantId = Convert.ToInt32(row.restaurant_id)
                 });
             }
 
@@ -274,7 +294,14 @@ public class BookingRepository : IBookingRepository
                     JSON_UNQUOTE(JSON_EXTRACT(arroz_servings, '$[0]')) as arroz_servings,
                     highChairs,
                     babyStrollers,
-                    contact_phone
+                    contact_phone,
+                    contact_email,
+                    commentary,
+                    status,
+                    special_menu,
+                    menu_de_grupo_id,
+                    principales_json,
+                    restaurant_id
                 FROM bookings
                 WHERE id = @BookingId";
 
@@ -305,7 +332,14 @@ public class BookingRepository : IBookingRepository
                 ArrozServings = arrozServings,
                 HighChairs = (int)(row.highChairs ?? 0),
                 BabyStrollers = (int)(row.babyStrollers ?? 0),
-                ContactPhone = row.contact_phone ?? ""
+                ContactPhone = row.contact_phone ?? "",
+                ContactEmail = row.contact_email ?? "",
+                Commentary = row.commentary as string,
+                Status = row.status ?? "pending",
+                SpecialMenu = Convert.ToBoolean(row.special_menu),
+                MenuDeGrupoId = row.menu_de_grupo_id == null ? null : (int?)Convert.ToInt32(row.menu_de_grupo_id),
+                PrincipalesJson = row.principales_json as string,
+                RestaurantId = Convert.ToInt32(row.restaurant_id)
             };
         }
         catch (Exception ex)
@@ -419,40 +453,16 @@ public class BookingRepository : IBookingRepository
         }
     }
 
-    public async Task<bool> CancelBookingAsync(int bookingId, CancellationToken cancellationToken = default)
+    public async Task<bool> ArchiveAndCancelBookingAsync(
+        BookingRecord booking,
+        string cancelledBy,
+        CancellationToken cancellationToken = default)
     {
         try
         {
             await using var connection = new MySqlConnection(_connectionString);
             await connection.OpenAsync(cancellationToken);
-
-            // DELETE the booking row (after it has been archived to cancelled_bookings)
-            var sql = @"DELETE FROM bookings WHERE id = @BookingId";
-
-            var rowsAffected = await connection.ExecuteAsync(sql, new { BookingId = bookingId });
-
-            if (rowsAffected > 0)
-            {
-                _logger.LogInformation("Deleted booking {BookingId} from bookings table", bookingId);
-                return true;
-            }
-
-            _logger.LogWarning("No rows deleted when cancelling booking {BookingId}", bookingId);
-            return false;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error deleting booking {BookingId}", bookingId);
-            return false;
-        }
-    }
-
-    public async Task<bool> InsertCancelledBookingAsync(BookingRecord booking, string cancelledBy, CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            await using var connection = new MySqlConnection(_connectionString);
-            await connection.OpenAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
             // arroz_type and arroz_servings are JSON columns in the DB
             // reservation_time is varchar(10), needs string format
@@ -460,13 +470,15 @@ public class BookingRepository : IBookingRepository
                 INSERT INTO cancelled_bookings
                 (booking_id, reservation_date, reservation_time, party_size, customer_name,
                  contact_phone, contact_email, cancellation_date, cancelled_by,
-                 arroz_type, arroz_servings, babyStrollers, highChairs, commentary)
+                 arroz_type, arroz_servings, babyStrollers, highChairs, commentary,
+                 special_menu, menu_de_grupo_id, principales_json, restaurant_id)
                 VALUES
                 (@BookingId, @ReservationDate, @ReservationTime, @PartySize, @CustomerName,
                  @ContactPhone, @ContactEmail, NOW(), @CancelledBy,
                  CASE WHEN @ArrozType IS NULL OR @ArrozType = '' THEN NULL ELSE JSON_ARRAY(@ArrozType) END,
                  CASE WHEN @ArrozServings IS NULL THEN NULL ELSE JSON_ARRAY(@ArrozServings) END,
-                 @BabyStrollers, @HighChairs, @Commentary)";
+                 @BabyStrollers, @HighChairs, @Commentary,
+                 @SpecialMenu, @MenuDeGrupoId, @PrincipalesJson, @RestaurantId)";
 
             // Format reservation time as string (HH:mm) for varchar column
             var timeStr = booking.ReservationTime.ToString(@"hh\:mm\:ss");
@@ -479,31 +491,44 @@ public class BookingRepository : IBookingRepository
                 PartySize = booking.PartySize,
                 CustomerName = booking.CustomerName,
                 ContactPhone = booking.ContactPhone,
-                ContactEmail = "whatsapp@bot.local",
+                ContactEmail = string.IsNullOrWhiteSpace(booking.ContactEmail) ? "whatsapp@bot.local" : booking.ContactEmail,
                 CancelledBy = cancelledBy,
                 ArrozType = string.IsNullOrWhiteSpace(booking.ArrozType) ? null : booking.ArrozType,
                 ArrozServings = booking.ArrozServings,
                 BabyStrollers = booking.BabyStrollers,
                 HighChairs = booking.HighChairs,
-                Commentary = (string?)null
+                Commentary = booking.Commentary,
+                SpecialMenu = booking.SpecialMenu,
+                MenuDeGrupoId = booking.MenuDeGrupoId,
+                PrincipalesJson = booking.PrincipalesJson,
+                RestaurantId = booking.RestaurantId
             };
 
-            var rowsAffected = await connection.ExecuteAsync(sql, parameters);
+            await connection.ExecuteAsync(sql, parameters, transaction);
+            var deleted = await connection.ExecuteAsync(@"
+                DELETE FROM bookings
+                WHERE id = @BookingId
+                  AND contact_phone = @ContactPhone
+                  AND status IN ('pending', 'confirmed')",
+                parameters,
+                transaction);
 
-            if (rowsAffected > 0)
+            if (deleted != 1)
             {
-                _logger.LogInformation(
-                    "Inserted cancelled booking record for booking {BookingId}, cancelled by {CancelledBy}",
-                    booking.Id, cancelledBy);
-                return true;
+                await transaction.RollbackAsync(cancellationToken);
+                _logger.LogWarning("Cancellation rolled back for booking {BookingId}", booking.Id);
+                return false;
             }
 
-            _logger.LogWarning("Failed to insert cancelled booking record for {BookingId}", booking.Id);
-            return false;
+            await transaction.CommitAsync(cancellationToken);
+            _logger.LogInformation(
+                "Archived and deleted booking {BookingId}, cancelled by {CancelledBy}",
+                booking.Id, cancelledBy);
+            return true;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error inserting cancelled booking record for {BookingId}", booking.Id);
+            _logger.LogError(ex, "Error archiving and cancelling booking {BookingId}", booking.Id);
             return false;
         }
     }

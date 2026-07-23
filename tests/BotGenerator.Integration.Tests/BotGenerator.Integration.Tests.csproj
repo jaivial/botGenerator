@@ -22,4 +22,8 @@
     </PackageReference>
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\BotGenerator.Core\BotGenerator.Core.csproj" />
+  </ItemGroup>
+
 </Project>

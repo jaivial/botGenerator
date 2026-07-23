@@ -56,6 +56,20 @@ public record BookingRecord
     /// </summary>
     public string ContactPhone { get; init; } = "";
 
+    public string ContactEmail { get; init; } = "";
+
+    public string? Commentary { get; init; }
+
+    public string Status { get; init; } = "pending";
+
+    public bool SpecialMenu { get; init; }
+
+    public int? MenuDeGrupoId { get; init; }
+
+    public string? PrincipalesJson { get; init; }
+
+    public int RestaurantId { get; init; } = 1;
+
     /// <summary>
     /// Gets the reservation date formatted for display (dd/MM/yyyy).
     /// </summary>

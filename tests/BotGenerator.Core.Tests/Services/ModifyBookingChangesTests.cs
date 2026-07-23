@@ -132,4 +132,38 @@ public class ModifyBookingChangesTests
 
         match.Should().Be("Arroz seco de verduras de la huerta");
     }
+
+    [Theory]
+    [InlineData(0, 0, 0, null)]
+    [InlineData(5, -1, 0, null)]
+    [InlineData(5, 0, -1, null)]
+    [InlineData(5, 6, 0, null)]
+    [InlineData(5, 0, 6, null)]
+    [InlineData(5, 0, 0, 6)]
+    public void InvalidCounts_AreRejected(int people, int chairs, int strollers, int? servings) =>
+        ToolExecutor.ValidateBookingCounts(people, chairs, strollers, servings).Should().NotBeNull();
+
+    [Theory]
+    [InlineData(1, 0, 0, null)]
+    [InlineData(5, 5, 5, 5)]
+    public void BoundaryCounts_AreAccepted(int people, int chairs, int strollers, int? servings) =>
+        ToolExecutor.ValidateBookingCounts(people, chairs, strollers, servings).Should().BeNull();
+
+    [Fact]
+    public void ReducePeopleBelowExistingRiceServings_IsRejected()
+    {
+        var error = ToolExecutor.ValidateModificationCounts(
+            Input("{\"people\":1}"), SampleBooking());
+
+        error.Should().Contain("raciones");
+    }
+
+    [Fact]
+    public void ReducePeopleAndClearRice_IsAccepted()
+    {
+        var error = ToolExecutor.ValidateModificationCounts(
+            Input("{\"people\":1,\"clear_rice\":true}"), SampleBooking());
+
+        error.Should().BeNull();
+    }
 }

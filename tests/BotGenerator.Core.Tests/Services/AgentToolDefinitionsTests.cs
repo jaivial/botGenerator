@@ -37,4 +37,29 @@ public class AgentToolDefinitionsTests
         required.Should().Contain("booking_id");
         required.Should().Contain("confirmed");
     }
+
+    [Fact]
+    public void CreateBookingTool_RequiresPeopleAndPublishesCountBounds()
+    {
+        var schema = AgentToolDefinitions.GetCreateBookingTool().InputSchema;
+        var properties = schema.GetProperty("properties");
+        var required = schema.GetProperty("required").EnumerateArray().Select(x => x.GetString()).ToList();
+
+        required.Should().Contain("people");
+        properties.GetProperty("people").GetProperty("minimum").GetInt32().Should().Be(1);
+        properties.GetProperty("rice_servings").GetProperty("minimum").GetInt32().Should().Be(2);
+        properties.GetProperty("high_chairs").GetProperty("minimum").GetInt32().Should().Be(0);
+        properties.GetProperty("baby_strollers").GetProperty("minimum").GetInt32().Should().Be(0);
+    }
+
+    [Fact]
+    public void ModifyBookingTool_PublishesCountBounds()
+    {
+        var properties = AgentToolDefinitions.GetModifyBookingTool().InputSchema.GetProperty("properties");
+
+        properties.GetProperty("people").GetProperty("minimum").GetInt32().Should().Be(1);
+        properties.GetProperty("rice_servings").GetProperty("minimum").GetInt32().Should().Be(2);
+        properties.GetProperty("high_chairs").GetProperty("minimum").GetInt32().Should().Be(0);
+        properties.GetProperty("baby_strollers").GetProperty("minimum").GetInt32().Should().Be(0);
+    }
 }

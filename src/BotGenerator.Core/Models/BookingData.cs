@@ -1,5 +1,7 @@
 namespace BotGenerator.Core.Models;
 
+using System.Globalization;
+
 /// <summary>
 /// Represents the data for a reservation.
 /// Extracted from AI response when BOOKING_REQUEST command is detected.
@@ -70,7 +72,11 @@ public record BookingData
         !string.IsNullOrWhiteSpace(Phone) &&
         !string.IsNullOrWhiteSpace(Date) &&
         !string.IsNullOrWhiteSpace(Time) &&
-        People > 0;
+        People > 0 &&
+        HighChairs >= 0 && HighChairs <= People &&
+        BabyStrollers >= 0 && BabyStrollers <= People &&
+        ((string.IsNullOrWhiteSpace(ArrozType) && !ArrozServings.HasValue) ||
+         (!string.IsNullOrWhiteSpace(ArrozType) && ArrozServings is >= 2 && ArrozServings <= People));
 
     /// <summary>
     /// Returns a list of missing required fields.
@@ -98,27 +104,14 @@ public record BookingData
         {
             if (string.IsNullOrWhiteSpace(Date)) return null;
 
-            // Try dd/MM/yyyy format first
-            var parts = Date.Split('/');
-            if (parts.Length == 3)
-            {
-                return $"{parts[2]}-{parts[1].PadLeft(2, '0')}-{parts[0].PadLeft(2, '0')}";
-            }
-
-            // Try yyyy-MM-dd format (already correct)
-            parts = Date.Split('-');
-            if (parts.Length == 3)
-            {
-                return $"{parts[0]}-{parts[1].PadLeft(2, '0')}-{parts[2].PadLeft(2, '0')}";
-            }
-
-            // Last resort: try to parse as DateTime
-            if (DateTime.TryParse(Date, out var dt))
-            {
-                return dt.ToString("yyyy-MM-dd");
-            }
-
-            return null;
+            return DateTime.TryParseExact(
+                Date.Trim(),
+                new[] { "dd/MM/yyyy", "d/M/yyyy", "yyyy-MM-dd" },
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var parsed)
+                ? parsed.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+                : null;
         }
     }
 }

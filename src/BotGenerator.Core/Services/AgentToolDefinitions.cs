@@ -249,7 +249,8 @@ public static class AgentToolDefinitions
                 },
                 ""people"": {
                     ""type"": ""integer"",
-                    ""description"": ""Número de personas para la reserva (default: 2)""
+                    ""minimum"": 1,
+                    ""description"": ""Número de personas para la reserva. Obligatorio; nunca asumir.""
                 },
                 ""rice_type"": {
                     ""type"": ""string"",
@@ -257,6 +258,7 @@ public static class AgentToolDefinitions
                 },
                 ""rice_servings"": {
                     ""type"": ""integer"",
+                    ""minimum"": 2,
                     ""description"": ""Número de raciones de arroz, mínimo 2 y máximo el número de personas.""
                 },
                 ""name"": {
@@ -265,10 +267,12 @@ public static class AgentToolDefinitions
                 },
                 ""high_chairs"": {
                     ""type"": ""integer"",
+                    ""minimum"": 0,
                     ""description"": ""Número de tronas necesarias (opcional)""
                 },
                 ""baby_strollers"": {
                     ""type"": ""integer"",
+                    ""minimum"": 0,
                     ""description"": ""Número de espacios para carritos de bebé (opcional)""
                 },
                 ""confirmed"": {
@@ -276,7 +280,7 @@ public static class AgentToolDefinitions
                     ""description"": ""DEBE ser TRUE para crear la reserva. Esto es una confirmacion de seguridad.""
                 }
             },
-            ""required"": [""date"", ""time"", ""confirmed""]
+            ""required"": [""date"", ""time"", ""people"", ""confirmed""]
         }").RootElement
     };
 
@@ -286,7 +290,7 @@ public static class AgentToolDefinitions
     public static ToolDefinition GetCancelBookingTool() => new()
     {
         Name = "cancel_booking",
-        Description = "Cancela una reserva existente. La reserva debe tener estado 'Confirmed' para poder cancelarse.",
+        Description = "Cancela una reserva pendiente o confirmada del usuario actual. Requiere confirmación explícita.",
         InputSchema = JsonDocument.Parse(@"{
             ""type"": ""object"",
             ""properties"": {
@@ -327,6 +331,7 @@ public static class AgentToolDefinitions
                 },
                 ""people"": {
                     ""type"": ""integer"",
+                    ""minimum"": 1,
                     ""description"": ""Nuevo numero de personas (opcional)""
                 },
                 ""rice_type"": {
@@ -335,14 +340,17 @@ public static class AgentToolDefinitions
                 },
                 ""rice_servings"": {
                     ""type"": ""integer"",
+                    ""minimum"": 2,
                     ""description"": ""Nuevo numero de raciones, mínimo 2 y máximo el número de personas. Nunca lo supongas: pregúntalo.""
                 },
                 ""high_chairs"": {
                     ""type"": ""integer"",
+                    ""minimum"": 0,
                     ""description"": ""Numero de tronas (opcional)""
                 },
                 ""baby_strollers"": {
                     ""type"": ""integer"",
+                    ""minimum"": 0,
                     ""description"": ""Numero de espacios para carritos (opcional)""
                 },
                 ""clear_rice"": {
