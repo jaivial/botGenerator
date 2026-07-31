@@ -47,7 +47,7 @@ public sealed class EvolutionWhatsAppService : IWhatsAppService
         SendAcceptedAsync(
             "sendText",
             NormalizeRecipientNumber(phoneNumber),
-            new EvolutionTextRequest(NormalizeRecipientNumber(phoneNumber), text),
+            new EvolutionTextRequest(NormalizeRecipientNumber(phoneNumber), WhatsAppMessageSanitizer.Sanitize(text)),
             cancellationToken);
 
     public Task<bool> SendButtonsAsync(

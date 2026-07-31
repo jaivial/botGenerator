@@ -579,33 +579,6 @@ NOTAS: Cocktails, eventos, menus corporativos";
             .Replace("\r", "\\r")
             .Replace("\t", "\\t");
     }
-
-    /// <summary>
-    /// Decode Unicode escape sequences like \u00BF to actual UTF-8 characters.
-    /// This is needed because the AI may return escaped Unicode that needs decoding.
-    /// </summary>
-    private static string DecodeUnicodeEscapes(string text)
-    {
-        if (string.IsNullOrEmpty(text))
-            return text;
-
-        try
-        {
-            // Use regex to find and replace Unicode escapes
-            return System.Text.RegularExpressions.Regex.Replace(
-                text,
-                @"\\u([0-9A-Fa-f]{4})",
-                match =>
-                {
-                    var codePoint = int.Parse(match.Groups[1].Value, System.Globalization.NumberStyles.HexNumber);
-                    return char.ConvertFromUtf32(codePoint);
-                });
-        }
-        catch
-        {
-            return text;
-        }
-    }
 }
 
 /// <summary>

@@ -34,6 +34,7 @@ public class WhatsAppService : IWhatsAppService
         string text,
         CancellationToken cancellationToken = default)
     {
+        text = WhatsAppMessageSanitizer.Sanitize(text);
         var normalizedNumber = NormalizeRecipientNumber(phoneNumber);
         _logger.LogInformation(
             "Sending text message to {Phone}: {Preview}",

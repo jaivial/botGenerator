@@ -1289,10 +1289,10 @@ public class ToolExecutor : IToolExecutor
             ? m.GetString()
             : null;
 
-        // Decode Unicode escape sequences (e.g., \u00BF -> ¿, \uD83D\uDCC5 -> 📅)
+        // Decode Unicode escape sequences and normalize WhatsApp formatting (e.g., ** -> *)
         if (!string.IsNullOrEmpty(message))
         {
-            message = DecodeUnicodeEscapes(message);
+            message = WhatsAppMessageSanitizer.Sanitize(message);
         }
 
         if (string.IsNullOrWhiteSpace(message))
@@ -2066,33 +2066,6 @@ public class ToolExecutor : IToolExecutor
                 "Error sending modification confirmation WhatsApp to {Phone}",
                 phoneNumber);
             return false;
-        }
-    }
-
-    /// <summary>
-    /// Decode Unicode escape sequences like \u00BF to actual UTF-8 characters.
-    /// The AI may return escaped Unicode that needs decoding before sending to WhatsApp.
-    /// </summary>
-    private static string DecodeUnicodeEscapes(string text)
-    {
-        if (string.IsNullOrEmpty(text))
-            return text;
-
-        try
-        {
-            // Match \uXXXX patterns and decode them
-            return System.Text.RegularExpressions.Regex.Replace(
-                text,
-                @"\\u([0-9A-Fa-f]{4})",
-                match =>
-                {
-                    var codePoint = int.Parse(match.Groups[1].Value, System.Globalization.NumberStyles.HexNumber);
-                    return char.ConvertFromUtf32(codePoint);
-                });
-        }
-        catch
-        {
-            return text;
         }
     }
 }
