@@ -19,6 +19,14 @@ public class AgentToolDefinitionsTests
     }
 
     [Fact]
+    public void GetAllTools_IncludesSendContactCard()
+    {
+        var tools = AgentToolDefinitions.GetAllTools();
+
+        tools.Should().Contain(t => t.Name == "send_contact_card");
+    }
+
+    [Fact]
     public void ModifyBookingTool_ExposesBabyStrollersAndHighChairs()
     {
         var tool = AgentToolDefinitions.GetModifyBookingTool();

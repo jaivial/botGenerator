@@ -215,6 +215,22 @@ public class EvolutionWhatsAppServiceTests
         contact.GetProperty("email").GetString().Should().Be("test@example.com");
     }
 
+    // Regression: Evolution v2.4.0-rc2 rejects sendContact with `"email":null`
+    // ("contact[0].email is not of a type(s) string"). Optional fields must be omitted.
+    [Fact]
+    public async Task SendContactCardAsync_WhenOptionalFieldsAreNull_OmitsThem()
+    {
+        var handler = SuccessHandler();
+        var accepted = await CreateService(handler).SendContactCardAsync(
+            "638857294", "Gestión Reservas", "638857294", "Alquería Villa Carmen");
+
+        accepted.Should().BeTrue();
+        var payload = AssertRequest(handler, "/message/sendContact/villa-carmen");
+        var contact = payload.GetProperty("contact")[0];
+        contact.TryGetProperty("email", out _).Should().BeFalse();
+        contact.GetProperty("organization").GetString().Should().Be("Alquería Villa Carmen");
+    }
+
     [Theory]
     [InlineData("👀")]
     [InlineData("")]

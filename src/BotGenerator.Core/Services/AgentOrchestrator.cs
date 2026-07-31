@@ -121,6 +121,18 @@ NOTAS: Cocktails, eventos, menus corporativos";
             _logger.LogWarning(ex, "[AGENT] Failed to fetch WhatsApp history, continuing without context");
         }
 
+        // AI CLASSIFICATION GATE: ask the model (from a focused system prompt) whether this
+        // conversation is a special event (comunion, boda, bautizo, fecha senalada) or a group
+        // of more than 10 people. If so, the booking is never processed: we redirect the
+        // customer to restaurant management and send the management contact card.
+        if (await IsSpecialEventAsync(userMessage, historyContext, ct))
+        {
+            _logger.LogWarning(
+                "[AGENT] AI classified as special event / large group for {Phone}: '{Message}'. Redirecting to restaurant management (booking not processed).",
+                phoneNumber, userMessage);
+            return await RedirectToManagementAsync(phoneNumber, pushName, ct);
+        }
+
         // Build initial messages for the conversation (Anthropic format)
         // Each message has role and content (which can be string or array of blocks)
         // Include history context with the user message
@@ -407,6 +419,105 @@ NOTAS: Cocktails, eventos, menus corporativos";
         return agentResult;
     }
 
+    private static readonly string SpecialEventClassifierPrompt =
+        "Eres un clasificador de conversaciones de un restaurante por WhatsApp. " +
+        "Responde SOLO con 'SI' o 'NO'. " +
+        "Responde 'SI' si el cliente quiere reservar u organizar: " +
+        "un evento especial (comunion, boda, bautizo, celebracion, banquete, evento privado, fiesta privada), " +
+        "una fecha senalada o festiva en Espana (Nochevieja, Navidad, Ano Nuevo, Reyes, Fallas, San Jose, Semana Santa, San Juan, puentes, dias festivos), " +
+        "un cumpleanos con mas de 10 personas, o un grupo de mas de 10 personas (ej: 'somos 40', '40 personas', '20 invitados'). " +
+        "Tambien responde 'SI' si en la conversacion anterior el cliente ya menciono un evento especial o un grupo de mas de 10 personas y ahora sigue insistiendo o dando detalles de esa reserva. " +
+        "NO respondas 'SI' si el ultimo mensaje del cliente es solo un saludo o agradecimiento corto (hola, gracias, ok, vale, perfecto, de nada, si, no). " +
+        "Responde 'NO' para cualquier otra peticion: reservas normales de hasta 10 personas, consultas, preguntas sobre el restaurante, modificaciones o cancelaciones de reservas normales, saludos o agradecimientos.";
+
+    /// <summary>
+    /// Asks the AI (via a focused classification prompt) whether the conversation should be
+    /// redirected to restaurant management because it involves a special event or a group of
+    /// more than 10 people. Detection is fully AI-driven from the prompt, no regex.
+    /// </summary>
+    private async Task<bool> IsSpecialEventAsync(string userMessage, string historyContext, CancellationToken ct)
+    {
+        try
+        {
+            var input = historyContext +
+                        $"## MENSAJE DEL CLIENTE:\n{userMessage}\n\n" +
+                        "¿Este cliente quiere reservar u organizar un EVENTO ESPECIAL o un GRUPO DE MAS DE 10 PERSONAS?\n" +
+                        "Responde SOLO con SI o NO.";
+
+            var answer = await _ai.GenerateAsync(
+                SpecialEventClassifierPrompt,
+                input,
+                null,
+                new GeminiGenerationConfig { Temperature = 0.0, MaxOutputTokens = 10 },
+                ct);
+
+            var normalized = StripDiacritics(answer.Trim().ToUpperInvariant());
+            var isSpecialEvent = normalized.StartsWith("SI", StringComparison.Ordinal);
+
+            _logger.LogInformation(
+                "[AGENT] Special event classification: answer='{Answer}' => IsSpecialEvent={Result}",
+                answer, isSpecialEvent);
+            return isSpecialEvent;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[AGENT] Special event classification failed; proceeding with normal flow");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Redirects a special-event / large-group request to restaurant management: sends a
+    /// message with the management phone and the management contact card. No booking is
+    /// ever processed for these cases.
+    /// </summary>
+    private async Task<AgentResult> RedirectToManagementAsync(string phoneNumber, string pushName, CancellationToken ct)
+    {
+        var sentMessages = new List<string>();
+        var toolCalls = new List<string> { "send_message", "send_contact_card" };
+
+        var message =
+            $"¡Hola, {pushName}! 😊\n\n" +
+            "Gracias por tu interés en Alquería Villa Carmen. 🌿\n\n" +
+            "Las reservas para eventos especiales (comuniones, bodas, bautizos, fechas señaladas) y grupos de más de 10 personas se gestionan directamente con nuestro equipo de gestión del restaurante, no por WhatsApp.\n\n" +
+            "Te he enviado la tarjeta de contacto con el teléfono *+34 638 857 294*. ¡Muchas gracias! 🎉";
+
+        var messageInput = JsonDocument.Parse($"{{\"message\": \"{EscapeJson(message)}\"}}").RootElement;
+        var messageResult = await _toolExecutor.ExecuteAsync("send_message", messageInput, phoneNumber, ct);
+        if (messageResult.Success)
+            sentMessages.Add(message);
+
+        await _toolExecutor.ExecuteAsync("send_contact_card", JsonDocument.Parse("{}").RootElement, phoneNumber, ct);
+
+        _logger.LogInformation(
+            "[AGENT] Redirected {Phone} to restaurant management for a special event / large group. MessagesSent={Count}",
+            phoneNumber, sentMessages.Count);
+
+        return new AgentResult
+        {
+            Success = sentMessages.Count > 0,
+            SentMessages = sentMessages,
+            ToolCalls = toolCalls,
+            Iterations = 0
+        };
+    }
+
+    private static string StripDiacritics(string text)
+    {
+        var chars = new char[text.Length];
+        for (var i = 0; i < text.Length; i++)
+        {
+            chars[i] = text[i] switch
+            {
+                'Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U',
+                'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u',
+                'ñ' => 'n', 'Ñ' => 'N', 'Ü' => 'U', 'ü' => 'u',
+                _ => text[i]
+            };
+        }
+        return new string(chars);
+    }
+
     private static string BuildSystemPrompt(string pushName, string todayES, string restaurantInfo)
     {
         var sb = new System.Text.StringBuilder();
@@ -436,11 +547,13 @@ NOTAS: Cocktails, eventos, menus corporativos";
         sb.AppendLine(restaurantInfo);
         sb.AppendLine();
         sb.AppendLine("## REGLAS (CRITICAS)");
-        sb.AppendLine("1. USA SIEMPRE send_message para responder (nunca texto plano)");
-        sb.AppendLine("2. Para reservas: solicita fecha, hora y numero de personas");
-        sb.AppendLine("3. Para modificar/cancelar: confirma datos antes de actuar");
-        sb.AppendLine("4. IMPORTANTE: Cuando menciones fechas, USA EXACTAMENTE la fecha calculada");
-        sb.AppendLine("5. IMPORTANTE: El HISTORIAL de conversacion esta en el mensaje del usuario - usalo para entender referencias");
+        sb.AppendLine("1. REGLA DE PRIORIDAD MAXIMA - EVENTOS ESPECIALES Y GRUPOS GRANDES: si el cliente pide reservar para una comunion, boda, bautizo, celebracion, evento, banquete, fecha senalada o festiva en Espana (Nochevieja, Navidad, Ano Nuevo, Reyes, Fallas, San Jose, Semana Santa, puentes, festivos), un cumpleanos de mas de 10 personas o cualquier grupo de mas de 10 personas, entonces: NO preguntes fecha/hora/personas/arroz, NO llames a create_booking/modify_booking ni a herramientas de disponibilidad/capacidad, NO proceses la reserva. En su lugar llama a send_contact_card (tarjeta del equipo de gestion) y responde con send_message indicando que estos eventos/grupos se gestionan directamente con el equipo de gestion del restaurante, telefono +34 638 857 294. TERMINA ahi, no sigas pidiendo datos.");
+        sb.AppendLine("2. USA SIEMPRE send_message para responder (nunca texto plano)");
+        sb.AppendLine("3. Para reservas: solicita fecha, hora y numero de personas");
+        sb.AppendLine("4. Para modificar/cancelar: confirma datos antes de actuar");
+        sb.AppendLine("5. IMPORTANTE: Cuando menciones fechas, USA EXACTAMENTE la fecha calculada");
+        sb.AppendLine("6. IMPORTANTE: El HISTORIAL de conversacion esta en el mensaje del usuario - usalo para entender referencias");
+        sb.AppendLine("7. ENVIA UNA SOLA RESPUESTA COMPLETA por cada mensaje del usuario con UN solo send_message. No envíes mensajes de relleno ni de saludo y luego más mensajes en el mismo turno, ni repitas información ya enviada.");
         sb.AppendLine();
         sb.AppendLine("## REGLA DE ORO: VERIFICACION DE RESERVAS (CRITICA)");
         sb.AppendLine("ANTES de decir que el usuario TIENE o NO tiene una reserva, SIEMPRE llama a get_bookings()");
@@ -448,6 +561,24 @@ NOTAS: Cocktails, eventos, menus corporativos";
         sb.AppendLine("Los administradores pueden haber borrado reservas manualmente.");
         sb.AppendLine("Solo get_bookings() te dice el estado ACTUAL de las reservas en la base de datos.");
         sb.AppendLine("NUNCA afirmes que el usuario tiene una reserva si no la has verificado con get_bookings()");
+        sb.AppendLine();
+        sb.AppendLine("## REGLA CRITICA: EVENTOS ESPECIALES Y GRUPOS GRANDES (PRIORIDAD MAXIMA, NO GESTIONAR RESERVA)");
+        sb.AppendLine("ESTA REGLA PREVALECE SOBRE CUALQUIER OTRA REGLA O FLUJO DE RESERVA.");
+        sb.AppendLine("DETECTA e INTERPRETA estas senales en el mensaje del cliente (y en el historial de la conversacion):");
+        sb.AppendLine("- Eventos especiales: cualquier mencion a comunion(es), boda(s), bautizo(s), celebracion(es), banquete(s), evento(s) privado(s), fiesta(s) privada(s), festejo(s).");
+        sb.AppendLine("- Fechas senaladas/festivas en Espana: Nochevieja, Navidad, Ano Nuevo, Reyes, Fallas, San Jose, Semana Santa, San Juan, puentes, dias festivos.");
+        sb.AppendLine("- Cumpleanos (birthday) con mas de 10 personas.");
+        sb.AppendLine("- Cualquier grupo de mas de 10 personas (ej: 'somos 40', '40 personas', '20 invitados').");
+        sb.AppendLine("SI DETECTAS CUALQUIERA DE ESAS SENALES:");
+        sb.AppendLine("1. NO proceses la reserva. PROHIBIDO preguntar fecha, hora, personas o arroz. PROHIBIDO llamar a create_booking, modify_booking, check_day_capacity, get_opening_hours_with_capacity, check_availability o cualquier herramienta de disponibilidad/capacidad.");
+        sb.AppendLine("2. Llama a send_contact_card (envia la tarjeta de contacto del equipo de gestion del restaurante).");
+        sb.AppendLine("3. Envia UN mensaje con send_message: explica que estos eventos y grupos se gestionan directamente con el equipo de gestion del restaurante e indica el telefono +34 638 857 294.");
+        sb.AppendLine("4. TERMINA: no sigas pidiendo mas datos de la reserva.");
+        sb.AppendLine("EJEMPLO DE RESPUESTA CORRECTA:");
+        sb.AppendLine("Usuario: 'Quiero reservar para una comunion'");
+        sb.AppendLine("1. send_contact_card");
+        sb.AppendLine("2. send_message: 'Hola! Las reservas de eventos especiales como comuniones se gestionan directamente con nuestro equipo de gestion del restaurante. Te he enviado su tarjeta de contacto. Puedes llamarles al +34 638 857 294. Gracias!'");
+        sb.AppendLine("EJEMPLO PROHIBIDO: preguntar 'Para que dia seria la comunion?' o 'Cuantas personas sereis?' en una comunion.");
         sb.AppendLine();
         sb.AppendLine("## REGLA DE ORO: CONFIRMAR CAMBIOS (CRITICA)");
         sb.AppendLine("NUNCA confirmes que una reserva ha sido CREADA, MODIFICADA o CANCELADA a menos que la herramienta");
@@ -494,6 +625,7 @@ NOTAS: Cocktails, eventos, menus corporativos";
         sb.AppendLine();
         sb.AppendLine("## HERRAMIENTAS");
         sb.AppendLine("- send_message: Enviar mensaje (OBLIGATORIO)");
+        sb.AppendLine("- send_contact_card: Enviar tarjeta de contacto del equipo de gestión (eventos especiales / grupos >10 personas)");
         sb.AppendLine("- fetch_whatsapp_history: Historial conversacion");
         sb.AppendLine("- get_bookings: Reservas del usuario");
         sb.AppendLine("- get_restaurant_info: Info restaurante");
@@ -519,6 +651,13 @@ NOTAS: Cocktails, eventos, menus corporativos";
         sb.AppendLine("2. Si available=true: usar el matched rice exacto en create_booking o modify_booking");
         sb.AppendLine("3. Preguntar cuántas raciones quiere si no lo indicó; mínimo 2, máximo número de personas");
         sb.AppendLine("4. Si available=false: informar y sugerir opciones de la lista");
+        sb.AppendLine();
+        sb.AppendLine("## EJEMPLO: EVENTO ESPECIAL (PRIORIDAD MAXIMA)");
+        sb.AppendLine("Usuario: Quiero reservar para una comunion");
+        sb.AppendLine("1. send_contact_card (tarjeta del equipo de gestion)");
+        sb.AppendLine("2. send_message: Hola! Las reservas de eventos especiales como comuniones se gestionan directamente con nuestro equipo de gestion del restaurante. Te he enviado su tarjeta de contacto. Puedes llamarles al +34 638 857 294. Gracias!");
+        sb.AppendLine("Usuario: Somos 40");
+        sb.AppendLine("3. Si el grupo es de mas de 10 personas, repetir el mismo tratamiento: send_contact_card + send_message indicando +34 638 857 294. NUNCA preguntar fecha/hora/arroz.");
         sb.AppendLine();
         sb.AppendLine("## EJEMPLO CREAR");
         sb.AppendLine("Usuario: Reservar manana 14:00 4 personas");

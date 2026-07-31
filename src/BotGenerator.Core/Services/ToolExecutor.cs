@@ -66,6 +66,7 @@ public class ToolExecutor : IToolExecutor
                 "get_bookings" => await ExecuteGetBookings(input, phoneNumber, ct),
                 "query_database" => await ExecuteQueryDatabase(input, ct),
                 "send_message" => await ExecuteSendMessage(input, phoneNumber, ct),
+                "send_contact_card" => await ExecuteSendContactCard(phoneNumber, ct),
                 "cancel_booking" => await ExecuteCancelBooking(input, phoneNumber, ct),
                 "modify_booking" => await ExecuteModifyBooking(input, phoneNumber, ct),
                 "create_booking" => await ExecuteCreateBooking(input, phoneNumber, ct),
@@ -901,6 +902,17 @@ public class ToolExecutor : IToolExecutor
                 }
             }
 
+            if (updateData.PartySize is > 10)
+            {
+                return new ToolResult
+                {
+                    IsError = true,
+                    Content = "No se puede modificar la reserva automáticamente para grupos de más de 10 personas (eventos, cumpleaños, celebraciones). " +
+                              "Usa send_contact_card para enviar la tarjeta de contacto del equipo de gestión del restaurante " +
+                              "e indica al cliente que contacte directamente con el restaurante al +34 638 857 294."
+                };
+            }
+
             // Rice type/servings, high chairs, baby strollers and clear-rice changes.
             var riceValidationError = ValidateRiceChange(
                 input, booking, updateData.PartySize ?? booking.PartySize);
@@ -1034,6 +1046,17 @@ public class ToolExecutor : IToolExecutor
         var countValidationError = ValidateBookingCounts(people, highChairs, babyStrollers, riceServings);
         if (countValidationError != null)
             return new ToolResult { IsError = true, Content = countValidationError };
+
+        if (people > 10)
+        {
+            return new ToolResult
+            {
+                IsError = true,
+                Content = "No se puede crear la reserva automáticamente para grupos de más de 10 personas (eventos, cumpleaños, celebraciones). " +
+                          "Usa send_contact_card para enviar la tarjeta de contacto del equipo de gestión del restaurante " +
+                          "e indica al cliente que contacte directamente con el restaurante al +34 638 857 294."
+            };
+        }
 
         if (!string.IsNullOrWhiteSpace(riceType) && !riceServings.HasValue)
             return new ToolResult { IsError = true, Content = "Falta rice_servings. Pregunta al cliente cuántas raciones quiere; no lo supongas." };
@@ -1314,6 +1337,27 @@ public class ToolExecutor : IToolExecutor
         }
 
         return new ToolResult { IsError = true, Content = $"Failed to send message to {phoneNumber}" };
+    }
+
+    // === send_contact_card ===
+
+    private async Task<ToolResult> ExecuteSendContactCard(string phoneNumber, CancellationToken ct)
+    {
+        _logger.LogInformation("ToolExecutor: Sending management contact card to {Phone}", phoneNumber);
+
+        var success = await _whatsApp.SendContactCardAsync(
+            phoneNumber,
+            fullName: "Gestión Reservas",
+            contactPhoneNumber: "+34638857294",
+            organization: "Alquería Villa Carmen",
+            cancellationToken: ct);
+
+        if (success)
+        {
+            return new ToolResult { Content = "Contact card of the restaurant management sent successfully" };
+        }
+
+        return new ToolResult { IsError = true, Content = "Failed to send contact card" };
     }
 
     // ========================================================================

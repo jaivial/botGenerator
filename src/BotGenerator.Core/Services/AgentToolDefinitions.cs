@@ -15,6 +15,7 @@ public static class AgentToolDefinitions
     {
         // Core messaging
         GetSendMessageTool(),
+        GetSendContactCardTool(),
         GetFetchHistoryTool(),
         
         // Restaurant info
@@ -59,6 +60,19 @@ public static class AgentToolDefinitions
                 }
             },
             ""required"": [""message""]
+        }").RootElement
+    };
+
+    /// <summary>
+    /// Tool for sending the restaurant management contact card (vCard).
+    /// </summary>
+    public static ToolDefinition GetSendContactCardTool() => new()
+    {
+        Name = "send_contact_card",
+        Description = "Envía al usuario la tarjeta de contacto (vCard) del equipo de gestión/reservas del restaurante (+34 638 857 294). OBLIGATORIO usarla cuando el cliente quiera reservar para un EVENTO ESPECIAL (comunión, boda, bautizo, celebración, evento privado), una fecha señalada/festiva en España (Nochevieja, Navidad, Año Nuevo, Reyes, Fallas, San José, Semana Santa, puentes, festivos), un cumpleaños de más de 10 personas o un grupo de más de 10 personas. En esos casos NO se procesa la reserva: envía esta tarjeta y un mensaje indicando que contacten con el equipo de gestión del restaurante en el +34 638 857 294.",
+        InputSchema = JsonDocument.Parse(@"{
+            ""type"": ""object"",
+            ""properties"": {}
         }").RootElement
     };
 

@@ -316,6 +316,88 @@ SPECIAL_REQUESTS_TESTS = [
 ]
 
 
+# === SPECIAL EVENTS TESTS ===
+# Events like comuniones, bodas, bautizos, festive dates and birthdays >10 people
+# must NOT be booked by the bot: it must redirect to restaurant management and
+# send the management contact card (+34 638 857 294).
+SPECIAL_EVENTS_TESTS = [
+    {
+        "name": "Comunion Redirects To Management",
+        "turns": [
+            {
+                "input": "Quiero reservar para una comunion",
+                "expected_contains": ["638 857 294"],
+                "expected_not_contains": ["¿Qué día", "¿A qué hora", "¿Cuántas personas", "fecha de la comunión"]
+            }
+        ]
+    },
+    {
+        "name": "Comunion 40 People Redirects To Management",
+        "turns": [
+            {
+                "input": "Quiero reservar para una comunion",
+                "expected_contains": ["638 857 294"]
+            },
+            {
+                "input": "somos 40",
+                "expected_contains": ["638 857 294"],
+                "expected_not_contains": ["¿Qué día", "¿A qué hora"]
+            }
+        ]
+    },
+    {
+        "name": "Boda Redirects To Management",
+        "turns": [
+            {
+                "input": "Queremos reservar para una boda en vuestro restaurante",
+                "expected_contains": ["638 857 294"],
+                "expected_not_contains": ["¿Qué día", "¿A qué hora"]
+            }
+        ]
+    },
+    {
+        "name": "Bautizo Redirects To Management",
+        "turns": [
+            {
+                "input": "Reserva para un bautizo",
+                "expected_contains": ["638 857 294"],
+                "expected_not_contains": ["¿Qué día", "¿A qué hora"]
+            }
+        ]
+    },
+    {
+        "name": "Birthday More Than 10 Redirects To Management",
+        "turns": [
+            {
+                "input": "Quiero reservar para el cumpleaños de mi padre, somos 15 personas",
+                "expected_contains": ["638 857 294"],
+                "expected_not_contains": ["¿Qué día", "¿A qué hora"]
+            }
+        ]
+    },
+    {
+        "name": "Large Group More Than 10 Redirects To Management",
+        "turns": [
+            {
+                "input": "Quiero reservar para 20 personas",
+                "expected_contains": ["638 857 294"],
+                "expected_not_contains": ["¿Qué día", "¿A qué hora"]
+            }
+        ]
+    },
+    {
+        "name": "Festive Date Redirects To Management",
+        "turns": [
+            {
+                "input": "Quiero reservar para Nochevieja",
+                "expected_contains": ["638 857 294"],
+                "expected_not_contains": ["¿Qué día", "¿A qué hora"]
+            }
+        ]
+    }
+]
+
+
 # === COMBINE ALL TESTS ===
 def get_all_tests():
     """Returns all test scenarios combined"""
@@ -327,7 +409,8 @@ def get_all_tests():
         CANCELLATION_TESTS +
         EDGE_CASE_TESTS +
         MULTI_TURN_TESTS +
-        SPECIAL_REQUESTS_TESTS
+        SPECIAL_REQUESTS_TESTS +
+        SPECIAL_EVENTS_TESTS
     )
 
 
@@ -341,7 +424,8 @@ def get_tests_by_category(category: str):
         "cancellation": CANCELLATION_TESTS,
         "edge": EDGE_CASE_TESTS,
         "multiturn": MULTI_TURN_TESTS,
-        "special": SPECIAL_REQUESTS_TESTS
+        "special": SPECIAL_REQUESTS_TESTS,
+        "events": SPECIAL_EVENTS_TESTS
     }
     return categories.get(category.lower(), [])
 
@@ -356,5 +440,6 @@ def list_categories():
         "cancellation",
         "edge",
         "multiturn",
-        "special"
+        "special",
+        "events"
     ]
