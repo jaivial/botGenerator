@@ -121,6 +121,17 @@ public class ToolExecutor : IToolExecutor
     private async Task<ToolResult> ExecuteGetRestaurantInfo(JsonElement input, CancellationToken ct)
     {
         var config = await _restaurantConfigRepo.GetBySlugAsync("villacarmen", ct);
+        var days = Enum.GetValues<DayOfWeek>();
+        var defaultClosedDays = days
+            .Where(RestaurantSchedulePolicy.IsDefaultClosed)
+            .OrderBy(day => day == DayOfWeek.Sunday ? 7 : (int)day)
+            .Select(day => day.ToString());
+        var defaultOpenDays = days
+            .Where(day => !RestaurantSchedulePolicy.IsDefaultClosed(day))
+            .OrderBy(day => day == DayOfWeek.Sunday ? 7 : (int)day)
+            .Select(day => day.ToString());
+        const string schedulePolicy =
+            "Por defecto abre de jueves a domingo y cierra lunes, martes y miércoles. Para una fecha concreta, restaurant_days puede reemplazar esta regla; usa primero check_day_capacity.";
 
         if (config == null)
         {
@@ -133,7 +144,10 @@ public class ToolExecutor : IToolExecutor
                     email = "reservas@alqueriavillacarmen.com",
                     address = "Carrer Sequia Rascanya 2, Catarroja 46470 Valencia",
                     web = "https://alqueriavillacarmen.com",
-                    menu = "https://alqueriavillacarmen.com/menufindesemana.php"
+                    menu = "https://alqueriavillacarmen.com/menufindesemana.php",
+                    defaultClosedDays,
+                    defaultOpenDays,
+                    schedulePolicy
                 })
             };
         }
@@ -147,7 +161,10 @@ public class ToolExecutor : IToolExecutor
                 email = config.ContactEmail,
                 address = config.Location,
                 web = config.WebsiteUrl,
-                menu = config.MenuUrl
+                menu = config.MenuUrl,
+                defaultClosedDays,
+                defaultOpenDays,
+                schedulePolicy
             })
         };
     }
@@ -820,8 +837,7 @@ public class ToolExecutor : IToolExecutor
                         var isClosed = await connection.ExecuteScalarAsync<int?>(@"
                             SELECT is_open FROM restaurant_days WHERE date = @Date",
                             new { Date = newDbDate });
-                        var phpDayNum = newDate.DayOfWeek == DayOfWeek.Sunday ? 7 : (int)newDate.DayOfWeek;
-                        var isDefaultClosed = phpDayNum is 1 or 2 or 3;
+                        var isDefaultClosed = RestaurantSchedulePolicy.IsDefaultClosed(newDate.DayOfWeek);
                         if ((!isClosed.HasValue && isDefaultClosed) || isClosed == 0)
                         {
                             var dayName = newDate.ToString("dddd", new System.Globalization.CultureInfo("es-ES"));
@@ -1071,9 +1087,7 @@ public class ToolExecutor : IToolExecutor
                 SELECT is_open FROM restaurant_days WHERE date = @Date",
                 new { Date = dbDate });
 
-            // Default closed days: Mon=1, Tue=2, Wed=3 (PHP ISO day format)
-            var phpDayNum = bookingDate.DayOfWeek == DayOfWeek.Sunday ? 7 : (int)bookingDate.DayOfWeek;
-            var isDefaultClosed = phpDayNum is 1 or 2 or 3;
+            var isDefaultClosed = RestaurantSchedulePolicy.IsDefaultClosed(bookingDate.DayOfWeek);
 
             if (!isClosed.HasValue && isDefaultClosed)
             {
@@ -1683,9 +1697,7 @@ public class ToolExecutor : IToolExecutor
                 SELECT is_open FROM restaurant_days WHERE date = @Date",
                 new { Date = dbDate });
 
-            // Default closed days: Mon=1, Tue=2, Wed=3 (PHP day numbers)
-            var phpDayNum = date.DayOfWeek == DayOfWeek.Sunday ? 7 : (int)date.DayOfWeek;
-            var isDefaultClosed = phpDayNum is 1 or 2 or 3;
+            var isDefaultClosed = RestaurantSchedulePolicy.IsDefaultClosed(date.DayOfWeek);
 
             // If no row in restaurant_days, use default (closed Mon/Tue/Wed)
             if (!isClosed.HasValue && isDefaultClosed)
@@ -1785,8 +1797,7 @@ public class ToolExecutor : IToolExecutor
                 SELECT is_open FROM restaurant_days WHERE date = @Date",
                 new { Date = dbDate });
 
-            var phpDayNum = date.DayOfWeek == DayOfWeek.Sunday ? 7 : (int)date.DayOfWeek;
-            var isDefaultClosed = phpDayNum is 1 or 2 or 3;
+            var isDefaultClosed = RestaurantSchedulePolicy.IsDefaultClosed(date.DayOfWeek);
 
             if (!isClosed.HasValue && isDefaultClosed)
             {

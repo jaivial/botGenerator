@@ -85,3 +85,9 @@ public record ScheduleEntry
     public override string ToString() =>
         IsClosed ? "Cerrado" : $"{OpenTime:HH:mm} – {CloseTime:HH:mm}";
 }
+
+public static class RestaurantSchedulePolicy
+{
+    public static bool IsDefaultClosed(DayOfWeek day) =>
+        day is DayOfWeek.Monday or DayOfWeek.Tuesday or DayOfWeek.Wednesday;
+}

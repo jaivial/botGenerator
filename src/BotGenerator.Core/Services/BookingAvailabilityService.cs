@@ -1,4 +1,5 @@
 using System.Text.Json;
+using BotGenerator.Core.Models;
 using Dapper;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -51,7 +52,7 @@ public class BookingAvailabilityService : IBookingAvailabilityService
         var weekday = weekdayNames[dayOfWeekN];
 
         // Check if the day is a default closed day (Monday=1, Tuesday=2, Wednesday=3)
-        var isDefaultClosedDay = dayOfWeekN is 1 or 2 or 3;
+        var isDefaultClosedDay = RestaurantSchedulePolicy.IsDefaultClosed(date.DayOfWeek);
 
         await using var connection = new MySqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -640,4 +641,3 @@ public class BookingAvailabilityService : IBookingAvailabilityService
         public bool IsClosed { get; init; }
     }
 }
-

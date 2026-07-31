@@ -87,7 +87,7 @@ public static class AgentToolDefinitions
     public static ToolDefinition GetRestaurantInfoTool() => new()
     {
         Name = "get_restaurant_info",
-        Description = "Obtiene información del restaurante: nombre, teléfono, email, dirección, web, menú.",
+        Description = "Obtiene información del restaurante y la política autoritativa de días abiertos/cerrados por defecto. No devuelve horas de apertura. Para una fecha concreta usa primero check_day_capacity, porque restaurant_days puede reemplazar la regla semanal.",
         InputSchema = JsonDocument.Parse(@"{
             ""type"": ""object"",
             ""properties"": {}
