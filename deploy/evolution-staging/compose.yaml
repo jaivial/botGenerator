@@ -2,7 +2,7 @@ name: botgenerator-evolution-staging
 
 services:
   api:
-    image: botgenerator/evolution-api:2.4.0-rc2-baileys-rc14-pairing-debug
+    image: botgenerator/evolution-api:2.4.0-rc2-baileys-rc14-ackfix1
     container_name: botgenerator-evolution-staging-api
     restart: unless-stopped
     init: true
