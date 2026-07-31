@@ -6,15 +6,17 @@ Date: 2026-07-31
 
 | Component | Version |
 |---|---|
-| Evolution source | `3f14e21b95fc31aac70989b14099923e150db4b4` |
-| Evolution image | `botgenerator/evolution-api:2.4.0-rc2-baileys-rc14-ackfix1` |
-| Evolution image ID | `sha256:c4f5c5c1a19b9786d432dfc4ed166253c5941106d9bdee8f20b61a38fbe9d6a0` |
+| Evolution source | `10166e9b` |
+| Evolution image | `botgenerator/evolution-api:2.4.0-rc2-baileys-rc14-ackfix2` |
+| Evolution image ID | `sha256:837c8c6f4dbc6dddef1f5e9c0f0012ac49f9ec2452142fe23a404fe99efc10ae` |
 | BotGenerator source | `dec5e8c4802385ec7899c843b86006e458814513` |
 
 ## Backups
 
 - Evolution PostgreSQL and instance auth:
   `/var/backups/botgenerator-evolution-staging/20260731T151904Z`
+- Final quality-fix deployment backup:
+  `/var/backups/botgenerator-evolution-staging/20260731T153158Z`
 - Previous BotGenerator publish directory:
   `/var/backups/botgenerator-service/publish-dir-20260731T152347Z`
 
@@ -29,8 +31,22 @@ Date: 2026-07-31
 | BotGenerator total | PASS, 186/186 |
 | Git whitespace checks | PASS |
 
-Full Evolution lint remains blocked by a pre-existing formatting finding in
-`whatsapp.baileys.service.ts:246`; modified files pass focused formatting checks.
+Full Evolution lint passes after formatting the remaining pairing diagnostic at
+`whatsapp.baileys.service.ts:246`.
+
+## Final Quality-Fix Redeployment
+
+The final `ackfix2` image contains no behavior change beyond the lint-compliant
+pairing diagnostic formatting. After API-only recreation:
+
+- instance reconnected as `open` without QR pairing;
+- all five outbound contracts returned accepted message IDs;
+- text, reply button, URL button, list, and contact primary rows all reached
+  `DELIVERY_ACK`;
+- end-to-end inbound schedule check sent one successful response;
+- response still reported Thursday-Sunday open and Monday-Wednesday closed;
+- Evolution health, PostgreSQL, Redis, and BotGenerator health all passed;
+- no new error, conflict, deadlock, or unhandled-exception logs appeared.
 
 ## ACK Live Verification
 
