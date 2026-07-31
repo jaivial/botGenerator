@@ -7,7 +7,7 @@ sys.path.insert(0, '/home/jaime/Documents/projects/botGenerator/testing')
 from conversation_tester import ConversationTester, TestConfig
 
 config = TestConfig(
-    bot_webhook_url="http://localhost:5082/api/webhook/whatsapp-webhook",
+    bot_webhook_url="http://localhost:5082/api/bot/whatsapp-webhook",
     mock_server_url="http://localhost:8080",
     default_phone="34612345679",  # Different phone to avoid state conflicts
     response_timeout=30

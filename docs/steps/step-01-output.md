@@ -97,8 +97,8 @@ tests/
 ### 1.8 Placeholder Controller Created ✅
 
 **WebhookController** (/home/jaime/Documents/projects/botGenerator/src/BotGenerator.Api/Controllers/WebhookController.cs):
-- Health check endpoint: `GET /api/webhook/health`
-- WhatsApp webhook endpoint: `POST /api/webhook/webhook`
+- Health check endpoint: `GET /api/bot/health`
+- WhatsApp webhook endpoint: `POST /api/bot/whatsapp-webhook`
 - Basic logging implementation
 
 ### 1.9 Verification ✅

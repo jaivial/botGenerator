@@ -117,7 +117,7 @@ def cleanup(mock_server, bot_process, env_backup):
 def run_full_booking_test():
     """Run a complete booking test with valid rice type"""
     config = TestConfig(
-        bot_webhook_url="http://localhost:5082/api/webhook/whatsapp-webhook",
+        bot_webhook_url="http://localhost:5082/api/bot/whatsapp-webhook",
         response_timeout=30,
         logs_dir="logs"
     )

@@ -35,7 +35,7 @@ class ConversationQualityTester:
         self.logs_dir = Path(logs_dir)
         # Use port 5082 which is the actual bot port
         self.config = TestConfig(
-            bot_webhook_url="http://localhost:5082/api/webhook/whatsapp-webhook",
+            bot_webhook_url="http://localhost:5082/api/bot/whatsapp-webhook",
             logs_dir=str(self.logs_dir),
             enable_logging=True,
             response_timeout=30

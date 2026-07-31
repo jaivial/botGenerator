@@ -225,7 +225,7 @@ dotnet run --project src/BotGenerator.Api
 
 1. Clear conversation history for a test phone:
    ```bash
-   curl -X POST "http://localhost:5000/api/webhook/test/clear-state?phone=34612345678"
+   curl -X POST "http://localhost:5000/api/bot/test/clear-state?phone=34612345678"
    ```
 
 2. Send a message from that phone

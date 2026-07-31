@@ -1,0 +1,28 @@
+[Unit]
+Description=BotGenerator temporary WhatsApp QR viewer
+After=network-online.target botgenerator-evolution-staging-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+EnvironmentFile=/opt/botgenerator-qr-viewer/service.env
+ExecStart=/usr/bin/node /opt/botgenerator-qr-viewer/qr-viewer-server.mjs
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -117,7 +117,7 @@ def start_bot():
     import requests
     for i in range(20):  # Wait up to 20 seconds
         try:
-            resp = requests.get("http://localhost:5082/api/webhook/health", timeout=2)
+            resp = requests.get("http://localhost:5082/api/bot/health", timeout=2)
             if resp.status_code == 200:
                 print("[SETUP] Bot started successfully")
                 return True
@@ -137,7 +137,7 @@ def run_test():
     from conversation_tester import ConversationTester, TestConfig
 
     config = TestConfig(
-        bot_webhook_url="http://localhost:5082/api/webhook/whatsapp-webhook",
+        bot_webhook_url="http://localhost:5082/api/bot/whatsapp-webhook",
         mock_server_url="http://localhost:8080",
         default_phone="34612345678",
         response_timeout=30

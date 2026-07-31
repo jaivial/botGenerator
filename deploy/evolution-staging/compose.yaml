@@ -1,0 +1,159 @@
+name: botgenerator-evolution-staging
+
+services:
+  api:
+    image: botgenerator/evolution-api:2.4.0-rc2-baileys-rc14-pairing-debug
+    container_name: botgenerator-evolution-staging-api
+    restart: unless-stopped
+    init: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8108:8080"
+    environment:
+      SERVER_NAME: botgenerator-evolution-staging
+      SERVER_TYPE: http
+      SERVER_PORT: "8080"
+      SERVER_URL: http://127.0.0.1:8108
+      SERVER_DISABLE_MANAGER: "true"
+      SERVER_DISABLE_DOCS: "true"
+      CORS_ORIGIN: http://127.0.0.1:8108,http://localhost:8108
+      CORS_METHODS: GET,POST,PUT,DELETE
+      CORS_CREDENTIALS: "false"
+      LOG_LEVEL: ERROR,WARN,INFO
+      LOG_COLOR: "false"
+      LOG_BAILEYS: error
+      TELEMETRY_ENABLED: "false"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=evolution_api"
+      DATABASE_CONNECTION_CLIENT_NAME: botgenerator_evolution_staging
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "true"
+      DATABASE_SAVE_DATA_CONTACTS: "true"
+      DATABASE_SAVE_DATA_CHATS: "true"
+      DATABASE_SAVE_DATA_LABELS: "true"
+      DATABASE_SAVE_DATA_HISTORIC: "true"
+      DATABASE_SAVE_IS_ON_WHATSAPP: "true"
+      DATABASE_SAVE_IS_ON_WHATSAPP_DAYS: "7"
+      DATABASE_DELETE_MESSAGE: "true"
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379/6
+      CACHE_REDIS_PREFIX_KEY: botgenerator-evolution-staging
+      CACHE_REDIS_SAVE_INSTANCES: "false"
+      CACHE_LOCAL_ENABLED: "false"
+      WEBSOCKET_ENABLED: "false"
+      RABBITMQ_ENABLED: "false"
+      SQS_ENABLED: "false"
+      KAFKA_ENABLED: "false"
+      PUSHER_ENABLED: "false"
+      TYPEBOT_ENABLED: "false"
+      CHATWOOT_ENABLED: "false"
+      OPENAI_ENABLED: "false"
+      DIFY_ENABLED: "false"
+      N8N_ENABLED: "false"
+      EVOAI_ENABLED: "false"
+      FLOWISE_ENABLED: "false"
+      S3_ENABLED: "false"
+      WEBHOOK_GLOBAL_ENABLED: "false"
+      AUTHENTICATION_API_KEY: ${AUTHENTICATION_API_KEY}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "false"
+      LANGUAGE: en
+    volumes:
+      - botgenerator_evolution_staging_instances:/evolution/instances
+    networks:
+      - botgenerator_evolution_staging
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    cpus: "1.00"
+    mem_limit: 1g
+    stop_grace_period: 30s
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "const http=require('http');const request=http.get({hostname:'127.0.0.1',port:8080,path:'/',headers:{Origin:'http://127.0.0.1:8108'}},response=>{response.resume();process.exit(response.statusCode===200?0:1)});request.setTimeout(5000,()=>request.destroy());request.on('error',()=>process.exit(1));"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  postgres:
+    image: postgres:16.4-alpine
+    container_name: botgenerator-evolution-staging-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - botgenerator_evolution_staging_postgres:/var/lib/postgresql/data
+    networks:
+      - botgenerator_evolution_staging
+    security_opt:
+      - no-new-privileges:true
+    shm_size: 256mb
+    pids_limit: 128
+    cpus: "0.75"
+    mem_limit: 768m
+    stop_grace_period: 60s
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready --username=$$POSTGRES_USER --dbname=$$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  redis:
+    image: redis:7.2.5-alpine
+    container_name: botgenerator-evolution-staging-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
+    volumes:
+      - botgenerator_evolution_staging_redis:/data
+    networks:
+      - botgenerator_evolution_staging
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    cpus: "0.25"
+    mem_limit: 256m
+    stop_grace_period: 30s
+    logging:
+      driver: local
+      options:
+        max-size: 5m
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  botgenerator_evolution_staging_instances:
+    name: botgenerator_evolution_staging_instances
+  botgenerator_evolution_staging_postgres:
+    name: botgenerator_evolution_staging_postgres
+  botgenerator_evolution_staging_redis:
+    name: botgenerator_evolution_staging_redis
+
+networks:
+  botgenerator_evolution_staging:
+    name: botgenerator_evolution_staging
+    driver: bridge

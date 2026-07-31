@@ -18,7 +18,7 @@ dotnet run --project src/BotGenerator.Api
 ### Test the Webhook
 
 ```bash
-curl -X POST http://localhost:5000/api/webhook/webhook \
+curl -X POST http://localhost:5000/api/bot/whatsapp-webhook \
   -H "Content-Type: application/json" \
   -d '{
     "EventType": "messages",
@@ -33,7 +33,7 @@ curl -X POST http://localhost:5000/api/webhook/webhook \
 ### Health Check
 
 ```bash
-curl http://localhost:5000/api/webhook/health
+curl http://localhost:5000/api/bot/health
 ```
 
 ---
@@ -43,7 +43,7 @@ curl http://localhost:5000/api/webhook/health
 ### Single AI Agent with Tool Calls
 
 ```
-WhatsApp → /api/webhook/webhook → AgentOrchestrator → Tools → Response
+WhatsApp → /api/bot/whatsapp-webhook → AgentOrchestrator → Tools → Response
 ```
 
 The bot uses a **single AI agent** that decides which tools to use based on the user's message.
@@ -187,7 +187,7 @@ dotnet BotGenerator.Api.dll
 - **Removed legacy pipeline**: Deleted multi-node pipeline approach
 - **Removed local history**: Using UAZAPI history directly
 - **New tools**: Added 5 new availability tools
-- **Single endpoint**: `POST /api/webhook/webhook`
+- **Single endpoint**: `POST /api/bot/whatsapp-webhook`
 
 ### v2.0.0 (Previous)
 - Multi-node pipeline architecture

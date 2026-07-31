@@ -126,7 +126,7 @@ def main():
     )
     parser.add_argument(
         "--bot-url",
-        default="http://localhost:5000/api/webhook/whatsapp-webhook",
+        default="http://localhost:5000/api/bot/whatsapp-webhook",
         help="Bot webhook URL"
     )
     parser.add_argument(

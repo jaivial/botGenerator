@@ -14,16 +14,21 @@ public class ToolExecutor : IToolExecutor
     private readonly IWhatsAppService _whatsApp;
     private readonly IMenuRepository _menuRepository;
     private readonly IBookingRepository _bookingRepository;
+    private readonly IBookingConfirmationOutboxRepository _bookingConfirmationOutboxRepository;
+    private readonly BookingConfirmationOutboxProcessor _bookingConfirmationOutboxProcessor;
     private readonly IRestaurantConfigRepository _restaurantConfigRepo;
     private readonly IOpeningHoursService _openingHoursService;
     private readonly IServiceProvider _serviceProvider;
     private readonly string _connectionString;
+    private readonly string _whatsAppProvider;
     private readonly ILogger<ToolExecutor> _logger;
 
     public ToolExecutor(
         IWhatsAppService whatsApp,
         IMenuRepository menuRepository,
         IBookingRepository bookingRepository,
+        IBookingConfirmationOutboxRepository bookingConfirmationOutboxRepository,
+        BookingConfirmationOutboxProcessor bookingConfirmationOutboxProcessor,
         IRestaurantConfigRepository restaurantConfigRepo,
         IOpeningHoursService openingHoursService,
         IServiceProvider serviceProvider,
@@ -33,10 +38,13 @@ public class ToolExecutor : IToolExecutor
         _whatsApp = whatsApp;
         _menuRepository = menuRepository;
         _bookingRepository = bookingRepository;
+        _bookingConfirmationOutboxRepository = bookingConfirmationOutboxRepository;
+        _bookingConfirmationOutboxProcessor = bookingConfirmationOutboxProcessor;
         _restaurantConfigRepo = restaurantConfigRepo;
         _openingHoursService = openingHoursService;
         _serviceProvider = serviceProvider;
         _connectionString = configuration["MySQL:ConnectionString"] ?? "";
+        _whatsAppProvider = configuration["WhatsApp:Provider"] ?? "evolution";
         _logger = logger;
     }
 
@@ -1221,8 +1229,8 @@ public class ToolExecutor : IToolExecutor
                     "Successfully created booking {BookingId} for {People} people on {Date} at {Time} for {Phone}",
                     bookingId.Value, people, dbDate, timeKey, phone9);
 
-                // Send WhatsApp confirmation message
-                var whatsappSent = await SendBookingConfirmationAsync(
+                var notification = await EnqueueBookingConfirmationAsync(
+                    bookingId.Value,
                     phone9,
                     name ?? "Cliente",
                     bookingDate,
@@ -1232,7 +1240,6 @@ public class ToolExecutor : IToolExecutor
                     riceServings,
                     highChairs,
                     babyStrollers,
-                    bookingId.Value,
                     ct);
 
                 return new ToolResult
@@ -1244,10 +1251,9 @@ public class ToolExecutor : IToolExecutor
                         date = bookingDate.ToString("dd/MM/yyyy"),
                         time = timeKey,
                         people = people,
-                        whatsappSent = whatsappSent,
-                        message = whatsappSent
-                            ? $"Reserva confirmada para {bookingDate:dd/MM/yyyy} a las {timeKey}, {people} personas. Se ha enviado confirmación por WhatsApp."
-                            : $"Reserva confirmada para {bookingDate:dd/MM/yyyy} a las {timeKey}, {people} personas."
+                        notification = notification.Status.ToString(),
+                        providerAccepted = notification.ProviderAccepted,
+                        message = BuildBookingCreatedMessage(bookingDate, timeKey, people, notification)
                     })
                 };
             }
@@ -1890,14 +1896,8 @@ public class ToolExecutor : IToolExecutor
         public string? Status { get; set; }
     }
 
-    // ========================================================================
-    // WHATSAPP CONFIRMATION HELPER
-    // ========================================================================
-
-    /// <summary>
-    /// Sends a booking confirmation WhatsApp message with buttons, similar to insert_booking_front.php.
-    /// </summary>
-    private async Task<bool> SendBookingConfirmationAsync(
+    private async Task<BookingConfirmationDeliveryResult> EnqueueBookingConfirmationAsync(
+        long bookingId,
         string phoneNumber,
         string customerName,
         DateTime bookingDate,
@@ -1907,84 +1907,73 @@ public class ToolExecutor : IToolExecutor
         int? arrozServings,
         int highChairs,
         int babyStrollers,
-        long bookingId,
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
         try
         {
-            // Format date as DD/MM/YYYY
-            var formattedDate = bookingDate.ToString("dd/MM/yyyy");
-
-            // Build confirmation text (similar to PHP sendWhatsAppConfirmationWithButtonsUazApi)
-            var confirmationText = $"*Confirmación de Reserva - Alquería Villa Carmen*\n\n";
-            confirmationText += $"Hola {customerName},\n\n";
-            confirmationText += "Gracias por elegir Alquería Villa Carmen. Su reserva ha sido confirmada:\n\n";
-            confirmationText += $"📅 *Fecha:* {formattedDate}\n";
-            confirmationText += $"🕒 *Hora:* {bookingTime}\n";
-            confirmationText += $"👥 *Personas:* {guestCount}\n";
-
-            // Rice section
-            if (!string.IsNullOrWhiteSpace(arrozType))
-            {
-                var servings = arrozServings.HasValue ? arrozServings.Value.ToString() : "";
-                if (!string.IsNullOrEmpty(servings))
-                {
-                    confirmationText += $"🍚 *Arroz:* {arrozType} ({servings} raciones)\n";
-                }
-                else
-                {
-                    confirmationText += $"🍚 *Arroz:* {arrozType}\n";
-                }
-            }
-            else
-            {
-                confirmationText += "🍚 *Arroz:* No\n";
-            }
-
-            confirmationText += $"👶 *Tronas:* {highChairs}\n";
-            confirmationText += $"🍼 *Carros de bebé:* {babyStrollers}\n\n";
-            confirmationText += "Al hacer esta reserva, usted ha confirmado y aceptado las condiciones de reserva y políticas del restaurante, las cuales puede consultar en el botón de abajo.";
-
-            // Build choices for buttons
-            var buttons = new List<LinkButtonOption>
-            {
-                new LinkButtonOption(
-                    "CONDICIONES",
-                    "https://alqueriavillacarmen.com/booking_policies.php"),
-                new LinkButtonOption(
-                    "Cancelar Reserva",
-                    $"https://alqueriavillacarmen.com/cancel_reservation.php?id={bookingId}")
-            };
-
-            // Send with buttons via WhatsApp service
-            var success = await _whatsApp.SendLinkButtonsAsync(
+            var draft = BookingConfirmationPayloadFactory.Create(
+                bookingId,
+                _whatsAppProvider,
                 phoneNumber,
-                confirmationText,
-                buttons,
-                ct);
+                customerName,
+                bookingDate,
+                bookingTime,
+                guestCount,
+                arrozType,
+                arrozServings,
+                highChairs,
+                babyStrollers);
 
-            if (success)
-            {
-                _logger.LogInformation(
-                    "Sent booking confirmation WhatsApp to {Phone} for booking {BookingId}",
-                    phoneNumber, bookingId);
-            }
-            else
+            if (!_bookingConfirmationOutboxProcessor.IsEnabled)
             {
                 _logger.LogWarning(
-                    "Failed to send booking confirmation WhatsApp to {Phone} for booking {BookingId}",
-                    phoneNumber, bookingId);
+                    "Booking confirmation outbox is disabled; sending booking {BookingId} without durable retry. Apply migration and enable it before production rollout.",
+                    bookingId);
+                var textAccepted = await _whatsApp.SendTextAsync(phoneNumber, draft.Payload.Text, cancellationToken);
+                var buttonsAccepted = textAccepted && await _whatsApp.SendLinkButtonsAsync(
+                    phoneNumber,
+                    draft.Payload.LinkButtonsText,
+                    draft.Payload.LinkButtons.Select(button => new LinkButtonOption(button.Text, button.Url)).ToList(),
+                    cancellationToken);
+                return new BookingConfirmationDeliveryResult
+                {
+                    Status = textAccepted ? BookingConfirmationDeliveryStatus.Accepted : BookingConfirmationDeliveryStatus.FailedPermanently,
+                    ProviderAccepted = textAccepted || buttonsAccepted,
+                    Attempts = 1
+                };
             }
 
-            return success;
+            var record = await _bookingConfirmationOutboxRepository.EnqueueAsync(draft, cancellationToken);
+            return await _bookingConfirmationOutboxProcessor.TryDeliverAsync(record.Id, cancellationToken);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex,
-                "Error sending booking confirmation WhatsApp to {Phone} for booking {BookingId}",
-                phoneNumber, bookingId);
-            return false;
+            // The booking was already committed. Do not turn notification persistence into a booking failure.
+            _logger.LogError(ex, "Booking {BookingId} was created, but its confirmation could not be persisted or submitted", bookingId);
+            return new BookingConfirmationDeliveryResult
+            {
+                Status = BookingConfirmationDeliveryStatus.FailedPermanently
+            };
         }
+    }
+
+    private static string BuildBookingCreatedMessage(
+        DateTime bookingDate,
+        string timeKey,
+        int people,
+        BookingConfirmationDeliveryResult notification)
+    {
+        var bookingMessage = $"Reserva confirmada para {bookingDate:dd/MM/yyyy} a las {timeKey}, {people} personas.";
+        return notification.Status switch
+        {
+            BookingConfirmationDeliveryStatus.Accepted => bookingMessage +
+                " La confirmación fue aceptada por el proveedor de WhatsApp; esta aceptación no confirma entrega al cliente.",
+            BookingConfirmationDeliveryStatus.RetryScheduled => bookingMessage +
+                " La confirmación no fue aceptada todavía y queda pendiente de reintento.",
+            BookingConfirmationDeliveryStatus.FailedPermanently => bookingMessage +
+                " No se pudo guardar o aceptar la confirmación automática.",
+            _ => bookingMessage + " La confirmación ya estaba pendiente o aceptada en el registro de salida."
+        };
     }
 
     // ========================================================================

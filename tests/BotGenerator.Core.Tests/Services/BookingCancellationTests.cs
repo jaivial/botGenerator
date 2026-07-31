@@ -30,6 +30,12 @@ public class BookingCancellationTests
         Mock.Of<IWhatsAppService>(),
         Mock.Of<IMenuRepository>(),
         _bookings.Object,
+        Mock.Of<IBookingConfirmationOutboxRepository>(),
+        new BookingConfirmationOutboxProcessor(
+            Mock.Of<IBookingConfirmationOutboxRepository>(),
+            Mock.Of<IWhatsAppService>(),
+            new BookingConfirmationOutboxOptions(),
+            NullLogger<BookingConfirmationOutboxProcessor>.Instance),
         Mock.Of<IRestaurantConfigRepository>(),
         Mock.Of<IOpeningHoursService>(),
         new ServiceCollection().BuildServiceProvider(),

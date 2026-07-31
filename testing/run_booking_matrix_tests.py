@@ -37,7 +37,7 @@ from whatsapp_assertions import (
 
 
 BOT_BASE_URL = "http://localhost:5082"
-BOT_WEBHOOK_URL = f"{BOT_BASE_URL}/api/webhook/whatsapp-webhook"
+BOT_WEBHOOK_URL = f"{BOT_BASE_URL}/api/bot/whatsapp-webhook"
 MOCK_URL = "http://localhost:8080"
 
 CLIENT_PHONE = "34692747052"
@@ -481,5 +481,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
 

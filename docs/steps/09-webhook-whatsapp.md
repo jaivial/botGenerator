@@ -8,7 +8,7 @@ The bot uses a single AI agent with tool calls for processing WhatsApp messages.
 
 ## Endpoint
 
-**POST** `/api/webhook/webhook`
+**POST** `/api/bot/whatsapp-webhook`
 
 Single endpoint for all WhatsApp message processing.
 
@@ -146,7 +146,7 @@ Para hablar con el restaurante, por favor llama al +34 638 857 294.
 ### Health Check
 
 ```bash
-curl http://localhost:5000/api/webhook/health
+curl http://localhost:5000/api/bot/health
 ```
 
 Response:
@@ -161,7 +161,7 @@ Response:
 ### Send Test Message
 
 ```bash
-curl -X POST http://localhost:5000/api/webhook/webhook \
+curl -X POST http://localhost:5000/api/bot/whatsapp-webhook \
   -H "Content-Type: application/json" \
   -d '{
     "EventType": "messages",
@@ -176,7 +176,7 @@ curl -X POST http://localhost:5000/api/webhook/webhook \
 ### Clear Test State (Development Only)
 
 ```bash
-curl -X POST "http://localhost:5000/api/webhook/test/clear-state?phone=34612345678"
+curl -X POST "http://localhost:5000/api/bot/test/clear-state?phone=34612345678"
 ```
 
 ---
@@ -187,7 +187,7 @@ curl -X POST "http://localhost:5000/api/webhook/test/clear-state?phone=346123456
 
 Set your UAZAPI webhook to:
 ```
-https://your-domain.com/api/webhook/webhook
+https://your-domain.com/api/bot/whatsapp-webhook
 ```
 
 ### Token Verification
@@ -239,6 +239,6 @@ If a duplicate is detected, the message is ignored but returns 200 OK.
 
 For reference, the previous architecture used two endpoints:
 
-- `POST /api/webhook/webhook` - Single AI agent endpoint (v3.0.0)
+- `POST /api/bot/whatsapp-webhook` - Single AI agent endpoint (v3.0.0)
 
-These have been consolidated into the single `/api/webhook/webhook` endpoint.
+These have been consolidated into the single `/api/bot/whatsapp-webhook` endpoint.

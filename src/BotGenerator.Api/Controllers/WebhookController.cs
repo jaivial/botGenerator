@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Security.Cryptography;
+using System.Text;
 using BotGenerator.Core.Models;
 using BotGenerator.Core.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -16,6 +18,8 @@ namespace BotGenerator.Api.Controllers;
 [Route("api/bot")]
 public class WebhookController : ControllerBase
 {
+    private const long EvolutionWebhookMaxBodyBytes = 64 * 1024;
+
     private static readonly string[] ManagementPhones =
     {
         "34692747052",
@@ -33,6 +37,7 @@ public class WebhookController : ControllerBase
     private readonly ILogger<WebhookController> _logger;
     private readonly IMemoryCache _memoryCache;
     private readonly IRestaurantConfigRepository _restaurantConfigRepo;
+    private readonly IEvolutionWebhookDedupe _evolutionWebhookDedupe;
 
     public WebhookController(
         AgentOrchestrator agentOrchestrator,
@@ -44,7 +49,8 @@ public class WebhookController : ControllerBase
         IHostEnvironment environment,
         ILogger<WebhookController> logger,
         IMemoryCache memoryCache,
-        IRestaurantConfigRepository restaurantConfigRepo)
+        IRestaurantConfigRepository restaurantConfigRepo,
+        IEvolutionWebhookDedupe evolutionWebhookDedupe)
     {
         _agentOrchestrator = agentOrchestrator;
         _bookingRepository = bookingRepository;
@@ -56,6 +62,7 @@ public class WebhookController : ControllerBase
         _logger = logger;
         _memoryCache = memoryCache;
         _restaurantConfigRepo = restaurantConfigRepo;
+        _evolutionWebhookDedupe = evolutionWebhookDedupe;
     }
 
     [HttpGet("health")]
@@ -89,6 +96,9 @@ public class WebhookController : ControllerBase
         [FromBody] JsonElement body,
         CancellationToken cancellationToken)
     {
+        if (!string.Equals(_configuration["WhatsApp:Provider"], "uazapi", StringComparison.OrdinalIgnoreCase))
+            return NotFound();
+
         try
         {
             _logger.LogDebug("Received webhook: {Body}", body.ToString());
@@ -220,9 +230,185 @@ public class WebhookController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Authenticated Evolution API v2.4.0-rc2 inbound webhook. It intentionally does not share
+    /// UAZAPI parsing or in-memory dedupe, which preserves existing production behavior.
+    /// </summary>
+    [HttpPost("evolution-webhook")]
+    [RequestSizeLimit(EvolutionWebhookMaxBodyBytes)]
+    public async Task<IActionResult> HandleEvolutionWebhook(
+        [FromHeader(Name = "X-Evolution-Webhook-Secret")] string? secret,
+        [FromBody] JsonElement body,
+        CancellationToken cancellationToken)
+    {
+        if (!IsEvolutionProvider())
+            return NotFound();
+
+        var configuredSecret = _configuration["WhatsApp:Evolution:WebhookSecret"];
+        if (string.IsNullOrWhiteSpace(configuredSecret) || !SecretsMatch(configuredSecret, secret ?? string.Empty))
+        {
+            _logger.LogWarning("Rejected Evolution webhook with invalid secret");
+            return Unauthorized();
+        }
+
+        if (body.ValueKind != JsonValueKind.Object)
+        {
+            _logger.LogWarning("Rejected Evolution webhook with invalid JSON root");
+            return BadRequest();
+        }
+
+        var expectedInstance = _configuration["WhatsApp:Evolution:InstanceName"];
+        if (!TryGetString(body, "instance", out var instanceName) ||
+            !string.Equals(instanceName, expectedInstance, StringComparison.Ordinal))
+        {
+            _logger.LogWarning("Rejected Evolution webhook for an unexpected instance");
+            return BadRequest();
+        }
+
+        if (!TryGetString(body, "event", out var eventName))
+        {
+            _logger.LogDebug("Ignoring Evolution webhook without an event name");
+            return Ok(new { processed = false, ignored = true });
+        }
+
+        var normalizedEventName = eventName!.Replace('.', '_').Replace('-', '_');
+
+        if (string.Equals(normalizedEventName, "CALL", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning(
+                "Evolution API v2.4.0-rc2 has no call-reject endpoint; attempting configured call auto-reply only");
+            return await HandleCallWebhookAsync(body, cancellationToken, rejectCall: false);
+        }
+
+        if (!string.Equals(normalizedEventName, "MESSAGES_UPSERT", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogDebug("Ignoring unsupported Evolution webhook event {Event}", eventName);
+            return Ok(new { processed = false, ignored = true });
+        }
+
+        if (!body.TryGetProperty("data", out var data) ||
+            !EvolutionMessageParser.TryParseInboundMessage(data, out var message))
+        {
+            _logger.LogDebug("Ignoring Evolution webhook with an invalid message envelope");
+            return Ok(new { processed = false, ignored = true });
+        }
+
+        if (message.FromMe)
+            return Ok(new { processed = false, ignored = true });
+
+        var claim = await _evolutionWebhookDedupe.TryClaimAsync(
+            expectedInstance!,
+            message.MessageId!,
+            cancellationToken);
+        if (claim.State == EvolutionWebhookDedupeState.Completed)
+        {
+            _logger.LogInformation("Ignored duplicate Evolution message {MessageId}", message.MessageId);
+            return Ok(new { processed = true, duplicate = true });
+        }
+
+        if (claim.State is EvolutionWebhookDedupeState.Processing or EvolutionWebhookDedupeState.Unavailable)
+        {
+            // Ask Evolution to retry: another handler may still fail or Redis may be unavailable.
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { processed = false, retry = true });
+        }
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(message.MessageText))
+            {
+                if (message.IsMediaMessage)
+                {
+                    var accepted = await _whatsApp.SendTextAsync(
+                        message.SenderNumber,
+                        "Ahora mismo solo puedo gestionar mensajes de texto. ¿Me lo puedes escribir por aquí?",
+                        cancellationToken);
+                    if (!accepted)
+                        throw new InvalidOperationException("Evolution did not accept the unsupported-content response.");
+
+                    if (!await _evolutionWebhookDedupe.CompleteAsync(claim, cancellationToken))
+                        return StatusCode(StatusCodes.Status503ServiceUnavailable, new { processed = false, retry = true });
+                    return Ok(new { processed = true, unsupportedContent = true });
+                }
+
+                if (!await _evolutionWebhookDedupe.CompleteAsync(claim, cancellationToken))
+                    return StatusCode(StatusCodes.Status503ServiceUnavailable, new { processed = false, retry = true });
+                return Ok(new { processed = false, ignored = true });
+            }
+
+            _logger.LogInformation(
+                "[EVOLUTION] Processing inbound message {MessageId} from {Phone}",
+                message.MessageId,
+                message.SenderNumber);
+
+            try
+            {
+                await _whatsApp.SendReactionAsync(
+                    message.SenderNumber,
+                    message.MessageId!,
+                    "👀",
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Evolution reaction failed for message {MessageId}", message.MessageId);
+            }
+
+            var restaurantId = GetRestaurantId(message.SenderNumber);
+            var restaurantConfig = await _restaurantConfigRepo.GetBySlugAsync(restaurantId, cancellationToken);
+            var restaurantInfo = restaurantConfig != null
+                ? $"Teléfono: {restaurantConfig.ContactPhone}\nEmail: {restaurantConfig.ContactEmail}\nDirección: {restaurantConfig.Location}\nWeb: {restaurantConfig.WebsiteUrl}"
+                : "Información del restaurante no disponible.";
+
+            var agentResult = await _agentOrchestrator.ProcessAsync(
+                message.SenderNumber,
+                message.MessageText,
+                message.PushName,
+                FormatSpanishDate(TimeZoneInfo.ConvertTimeBySystemTimeZoneId(DateTime.UtcNow, "Central European Standard Time")),
+                restaurantInfo,
+                cancellationToken);
+
+            _logger.LogInformation(
+                "[EVOLUTION] Result for {Phone}: Success={Success}, MessagesSent={MsgCount}, ToolCalls={Tools}, Iterations={Iterations}",
+                message.SenderNumber,
+                agentResult.Success,
+                agentResult.SentMessages.Count,
+                string.Join(", ", agentResult.ToolCalls),
+                agentResult.Iterations);
+
+            if (!agentResult.Success && agentResult.Error != null)
+                _logger.LogWarning("[EVOLUTION] Agent error for {Phone}: {Error}", message.SenderNumber, agentResult.Error);
+
+            if (!agentResult.Success)
+                throw new InvalidOperationException("Evolution agent processing did not complete successfully.");
+
+            if (!await _evolutionWebhookDedupe.CompleteAsync(claim, cancellationToken))
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new { processed = false, retry = true });
+
+            return Ok(new
+            {
+                processed = true,
+                agent = true,
+                success = agentResult.Success,
+                messagesSent = agentResult.SentMessages.Count,
+                toolCalls = agentResult.ToolCalls,
+                iterations = agentResult.Iterations,
+                error = agentResult.Error
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing Evolution webhook");
+            await _evolutionWebhookDedupe.ReleaseAsync(claim, CancellationToken.None);
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { processed = false, retry = true });
+        }
+    }
+
     // === CALL HANDLING ===
 
-    private async Task<IActionResult> HandleCallWebhookAsync(JsonElement body, CancellationToken ct)
+    private async Task<IActionResult> HandleCallWebhookAsync(
+        JsonElement body,
+        CancellationToken ct,
+        bool rejectCall = true)
     {
         var (phone, callId) = ExtractCallInfo(body);
         if (string.IsNullOrWhiteSpace(phone))
@@ -231,7 +417,8 @@ public class WebhookController : ControllerBase
             return Ok();
         }
 
-        await _whatsApp.RejectCallAsync(phone, callId, ct);
+        if (rejectCall)
+            await _whatsApp.RejectCallAsync(phone, callId, ct);
 
         var cooldownMinutes = _configuration.GetValue("WhatsApp:CallAutoReplyCooldownMinutes", 15);
         var shouldReply = _callAutoReplyStore.TryMarkReplied(
@@ -376,37 +563,83 @@ public class WebhookController : ControllerBase
 
     private static (string Phone, string? CallId) ExtractCallInfo(JsonElement body)
     {
-        string? chatId = null;
+        string? caller = null;
         string? callId = null;
 
+        var containers = new List<JsonElement> { body };
         if (body.TryGetProperty("call", out var callProp) && callProp.ValueKind == JsonValueKind.Object)
+            containers.Insert(0, callProp);
+        if (body.TryGetProperty("data", out var dataProp))
         {
-            if (callProp.TryGetProperty("chatid", out var c1) && c1.ValueKind == JsonValueKind.String)
-                chatId = c1.GetString();
-            if (callProp.TryGetProperty("chatId", out var c2) && c2.ValueKind == JsonValueKind.String)
-                chatId ??= c2.GetString();
-            if (callProp.TryGetProperty("id", out var id1) && id1.ValueKind == JsonValueKind.String)
-                callId = id1.GetString();
-            if (callProp.TryGetProperty("callId", out var id2) && id2.ValueKind == JsonValueKind.String)
-                callId ??= id2.GetString();
+            if (dataProp.ValueKind == JsonValueKind.Array && dataProp.GetArrayLength() > 0)
+                dataProp = dataProp[0];
+            if (dataProp.ValueKind == JsonValueKind.Object)
+            {
+                containers.Insert(0, dataProp);
+                if (dataProp.TryGetProperty("call", out var nestedCall) && nestedCall.ValueKind == JsonValueKind.Object)
+                    containers.Insert(0, nestedCall);
+            }
         }
 
-        if (chatId == null && body.TryGetProperty("chatid", out var topChat) && topChat.ValueKind == JsonValueKind.String)
-            chatId = topChat.GetString();
+        if (body.TryGetProperty("message", out var messageProp) && messageProp.ValueKind == JsonValueKind.Object)
+            containers.Insert(0, messageProp);
 
-        if (chatId == null &&
-            body.TryGetProperty("message", out var msgProp) &&
-            msgProp.ValueKind == JsonValueKind.Object &&
-            msgProp.TryGetProperty("chatid", out var msgChat) &&
-            msgChat.ValueKind == JsonValueKind.String)
+        foreach (var container in containers)
         {
-            chatId = msgChat.GetString();
+            caller ??= GetFirstString(container, "from", "remoteJid", "chatid", "chatId", "callCreator");
+            callId ??= GetFirstString(container, "id", "callId");
         }
 
-        var phone = (chatId ?? "").Replace("@s.whatsapp.net", "", StringComparison.OrdinalIgnoreCase);
-        phone = new string(phone.Where(char.IsDigit).ToArray());
+        if (string.IsNullOrWhiteSpace(caller) ||
+            (caller.Contains('@') &&
+             !caller.EndsWith("@s.whatsapp.net", StringComparison.OrdinalIgnoreCase) &&
+             !caller.EndsWith("@c.us", StringComparison.OrdinalIgnoreCase)))
+        {
+            return (string.Empty, callId);
+        }
+
+        var phone = new string(caller.Where(char.IsDigit).ToArray());
+        if (phone.Length is < 7 or > 15)
+            phone = string.Empty;
 
         return (phone, callId);
+    }
+
+    private static string? GetFirstString(JsonElement element, params string[] propertyNames)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            if (element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String)
+            {
+                var text = value.GetString();
+                if (!string.IsNullOrWhiteSpace(text))
+                    return text;
+            }
+        }
+
+        return null;
+    }
+
+    private bool IsEvolutionProvider() =>
+        string.Equals(_configuration["WhatsApp:Provider"], "evolution", StringComparison.OrdinalIgnoreCase);
+
+    private static bool SecretsMatch(string expected, string supplied)
+    {
+        var expectedHash = SHA256.HashData(Encoding.UTF8.GetBytes(expected));
+        var suppliedHash = SHA256.HashData(Encoding.UTF8.GetBytes(supplied ?? string.Empty));
+        return CryptographicOperations.FixedTimeEquals(expectedHash, suppliedHash);
+    }
+
+    private static bool TryGetString(JsonElement element, string propertyName, out string? value)
+    {
+        if (element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String)
+        {
+            value = property.GetString();
+            return !string.IsNullOrWhiteSpace(value);
+        }
+
+        value = null;
+        return false;
     }
 
     private static string FormatSpanishDate(DateTime date)

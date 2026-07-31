@@ -151,7 +151,7 @@ public class RestaurantConfigService
 
 ```bash
 # Test with curl
-curl -X POST http://localhost:5000/api/webhook/webhook \
+curl -X POST http://localhost:5000/api/bot/whatsapp-webhook \
   -H "Content-Type: application/json" \
   -d '{
     "message": {

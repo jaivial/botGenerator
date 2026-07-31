@@ -342,7 +342,7 @@ Visit `https://localhost:5001/swagger` (or the URL shown in console) to see the 
 
 Test the health endpoint:
 ```bash
-curl https://localhost:5001/api/webhook/health
+curl https://localhost:5001/api/bot/health
 ```
 
 Expected response:

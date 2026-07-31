@@ -100,11 +100,7 @@ public interface IWhatsAppService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Acknowledges an incoming message by sending a reaction emoji.
-    /// This simulates marking the message as "read" and may help trigger
-    /// read receipts (2 checkmarks) for bot-sent messages.
-    /// Note: UAZAPI's /chat/read endpoint marks as "unread", so we use
-    /// SendReactionAsync instead to acknowledge receipt.
+    /// Marks an incoming message as read using the provider-specific contract.
     /// </summary>
     Task<bool> MarkAsReadAsync(
         string phoneNumber,

@@ -11,7 +11,7 @@ This document describes the simplified WhatsApp bot architecture using a single 
 ### Architecture Flow
 
 ```
-WhatsApp → POST /api/webhook/webhook → AgentOrchestrator → ToolExecutor → WhatsApp Response
+WhatsApp → POST /api/bot/whatsapp-webhook → AgentOrchestrator → ToolExecutor → WhatsApp Response
                                         ↓
                                    AI Agent Loop
                                         ↓
@@ -36,7 +36,7 @@ WhatsApp → POST /api/webhook/webhook → AgentOrchestrator → ToolExecutor �
 
 ## Endpoints
 
-### `GET /api/webhook/health`
+### `GET /api/bot/health`
 
 Health check endpoint.
 
@@ -51,7 +51,7 @@ Health check endpoint.
 
 ---
 
-### `POST /api/webhook/webhook`
+### `POST /api/bot/whatsapp-webhook`
 
 **Main webhook endpoint** for processing WhatsApp messages.
 
@@ -581,13 +581,13 @@ Tools return validation errors if parameters are missing or invalid:
 
 Configure your UAZAPI webhook to point to:
 ```
-https://your-domain.com/api/webhook/webhook
+https://your-domain.com/api/bot/whatsapp-webhook
 ```
 
 ### Testing Locally
 
 ```bash
-curl -X POST http://localhost:5000/api/webhook/webhook \
+curl -X POST http://localhost:5000/api/bot/whatsapp-webhook \
   -H "Content-Type: application/json" \
   -d '{
     "EventType": "messages",

@@ -1354,7 +1354,7 @@ To add a new restaurant, simply:
 dotnet run --project src/BotGenerator.Api
 
 # Test with curl
-curl -X POST http://localhost:5000/api/webhook/whatsapp-webhook \
+curl -X POST http://localhost:5000/api/bot/whatsapp-webhook \
   -H "Content-Type: application/json" \
   -d '{
     "message": {

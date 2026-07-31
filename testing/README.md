@@ -117,7 +117,7 @@ MY_TESTS = [
 from conversation_tester import ConversationTester, TestConfig
 
 config = TestConfig(
-    bot_webhook_url="http://localhost:5000/api/webhook/whatsapp-webhook",
+    bot_webhook_url="http://localhost:5000/api/bot/whatsapp-webhook",
     mock_server_url="http://localhost:8080",
     default_phone="34612345678"
 )

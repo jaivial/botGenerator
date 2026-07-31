@@ -12,7 +12,7 @@ import sys
 import requests
 
 
-BOT_WEBHOOK_URL = os.environ.get("BOT_WEBHOOK_URL", "http://localhost:5082/api/webhook/whatsapp-webhook")
+BOT_WEBHOOK_URL = os.environ.get("BOT_WEBHOOK_URL", "http://localhost:5082/api/bot/whatsapp-webhook")
 MOCK_BASE_URL = os.environ.get("MOCK_UAZAPI_URL", "http://localhost:8080")
 
 
@@ -53,4 +53,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

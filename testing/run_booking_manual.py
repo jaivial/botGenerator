@@ -17,7 +17,7 @@ from conversation_tester import ConversationTester, TestConfig
 def run_full_booking_test():
     """Run a complete booking test with valid rice type"""
     config = TestConfig(
-        bot_webhook_url="http://localhost:5082/api/webhook/whatsapp-webhook",
+        bot_webhook_url="http://localhost:5082/api/bot/whatsapp-webhook",
         mock_server_url="http://localhost:8080",
         response_timeout=30,
         logs_dir="logs"

@@ -32,7 +32,7 @@ botGenerator/
 - .NET 8.0 SDK
 - Redis (for conversation state management)
 - Google AI Studio API Key (Gemini)
-- UAzapi WhatsApp Business API access
+- UAZAPI WhatsApp Business API access, or an Evolution API `2.4.0-rc2` staging instance
 
 ## Setup
 
@@ -106,6 +106,8 @@ Run all tests:
 ```bash
 dotnet test
 ```
+
+Evolution RC2 transport and webhook contracts use mocked unit tests and require no live provider. Opt-in live staging validation is documented in `deploy/evolution-staging/README.md`; it never sends unless instance and recipient are explicitly supplied.
 
 ## License
 

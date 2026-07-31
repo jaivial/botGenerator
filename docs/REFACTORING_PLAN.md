@@ -102,7 +102,7 @@ tests/BotGenerator.Core.Tests/Controllers/WebhookControllerTests.cs
 ### New Architecture
 
 ```
-WhatsApp → POST /api/webhook/webhook → AgentOrchestrator → ToolExecutor → UAZAPI/DB
+WhatsApp → POST /api/bot/whatsapp-webhook → AgentOrchestrator → ToolExecutor → UAZAPI/DB
 ```
 
 ### Simplified Flow
@@ -115,12 +115,8 @@ WhatsApp → POST /api/webhook/webhook → AgentOrchestrator → ToolExecutor �
 
 ### Endpoint Changes
 
-**Before:**
-- `POST /api/webhook/agent-webhook` - AI agent
-- `POST /api/webhook/whatsapp-webhook` - Legacy pipeline
-
-**After:**
-- `POST /api/webhook/webhook` - Single AI agent endpoint
+**Current:**
+- `POST /api/bot/whatsapp-webhook` - Single AI agent endpoint
 
 ### Version
 

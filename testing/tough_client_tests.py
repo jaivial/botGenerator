@@ -257,7 +257,7 @@ def main():
 
     # Use port 5082 as that's where the API is running
     config = TestConfig(
-        bot_webhook_url="http://localhost:5082/api/webhook/whatsapp-webhook",
+        bot_webhook_url="http://localhost:5082/api/bot/whatsapp-webhook",
         mock_server_url="http://localhost:8080",
         response_timeout=60,  # Longer timeout for LLM responses
         poll_interval=0.5

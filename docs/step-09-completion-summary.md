@@ -30,8 +30,8 @@ Successfully implemented the webhook endpoint and WhatsApp integration service f
 - **Location**: `/home/jaime/Documents/projects/botGenerator/src/BotGenerator.Api/Controllers/WebhookController.cs`
 - **Purpose**: Main webhook endpoint for receiving WhatsApp messages
 - **Features**:
-  - Health check endpoint (`GET /api/webhook/health`)
-  - WhatsApp webhook endpoint (`POST /api/webhook/webhook`)
+  - Health check endpoint (`GET /api/bot/health`)
+  - WhatsApp webhook endpoint (`POST /api/bot/whatsapp-webhook`)
   - Message extraction from UAZAPI payload
   - Support for text, button, and list responses
   - Integration with MainConversationAgent

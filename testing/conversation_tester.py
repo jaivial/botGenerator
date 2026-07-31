@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 @dataclass
 class TestConfig:
     """Configuration for the test environment"""
-    bot_webhook_url: str = "http://localhost:5000/api/webhook/whatsapp-webhook"
+    bot_webhook_url: str = "http://localhost:5000/api/bot/whatsapp-webhook"
     mock_server_url: str = "http://localhost:8080"
     default_phone: str = "34612345678"
     response_timeout: int = 30  # seconds to wait for response

@@ -1,3 +1,5 @@
+using BotGenerator.Api;
+using BotGenerator.Core.Models;
 using BotGenerator.Core.Services;
 
 // Load environment variables from .env file
@@ -38,8 +40,13 @@ if (string.IsNullOrWhiteSpace(googleApiKey))
 var minimaxApiKey = Environment.GetEnvironmentVariable("MINIMAX_API_KEY");
 var whatsappApiUrl = Environment.GetEnvironmentVariable("WHATSAPP_API_URL");
 var whatsappToken = Environment.GetEnvironmentVariable("WHATSAPP_TOKEN");
+var whatsappProvider = Environment.GetEnvironmentVariable("WHATSAPP_PROVIDER");
 var uazapiUrl = Environment.GetEnvironmentVariable("UAZAPI_URL");
 var uazapiToken = Environment.GetEnvironmentVariable("UAZAPI_TOKEN");
+var evolutionApiUrl = Environment.GetEnvironmentVariable("EVOLUTION_API_URL");
+var evolutionApiKey = Environment.GetEnvironmentVariable("EVOLUTION_API_KEY");
+var evolutionInstanceName = Environment.GetEnvironmentVariable("EVOLUTION_INSTANCE_NAME");
+var evolutionWebhookSecret = Environment.GetEnvironmentVariable("EVOLUTION_WEBHOOK_SECRET");
 var redisConnectionString = Environment.GetEnvironmentVariable("REDIS_CONNECTION_STRING");
 var mysqlConnectionString = Environment.GetEnvironmentVariable("MYSQL_CONNECTION_STRING");
 var externalBookingApiUrl = Environment.GetEnvironmentVariable("EXTERNAL_BOOKING_API_URL");
@@ -54,6 +61,11 @@ Console.WriteLine($"[ENV] WHATSAPP_API_URL: {(string.IsNullOrEmpty(whatsappApiUr
 Console.WriteLine($"[ENV] WHATSAPP_TOKEN: {(string.IsNullOrEmpty(whatsappToken) ? "NOT SET" : "SET (" + whatsappToken?.Length + " chars)")}");
 Console.WriteLine($"[ENV] UAZAPI_URL: {(string.IsNullOrEmpty(uazapiUrl) ? "NOT SET" : uazapiUrl)}");
 Console.WriteLine($"[ENV] UAZAPI_TOKEN: {(string.IsNullOrEmpty(uazapiToken) ? "NOT SET" : "SET (" + uazapiToken?.Length + " chars)")}");
+Console.WriteLine($"[ENV] WHATSAPP_PROVIDER: {(string.IsNullOrEmpty(whatsappProvider) ? "NOT SET" : whatsappProvider)}");
+Console.WriteLine($"[ENV] EVOLUTION_API_URL: {(string.IsNullOrEmpty(evolutionApiUrl) ? "NOT SET" : "SET")}");
+Console.WriteLine($"[ENV] EVOLUTION_API_KEY: {(string.IsNullOrEmpty(evolutionApiKey) ? "NOT SET" : "SET")}");
+Console.WriteLine($"[ENV] EVOLUTION_INSTANCE_NAME: {(string.IsNullOrEmpty(evolutionInstanceName) ? "NOT SET" : "SET")}");
+Console.WriteLine($"[ENV] EVOLUTION_WEBHOOK_SECRET: {(string.IsNullOrEmpty(evolutionWebhookSecret) ? "NOT SET" : "SET")}");
 Console.WriteLine($"[ENV] MYSQL_CONNECTION_STRING: {(string.IsNullOrEmpty(mysqlConnectionString) ? "NOT SET (using default)" : "SET")}");
 Console.WriteLine($"[ENV] EXTERNAL_BOOKING_API_URL: {(string.IsNullOrEmpty(externalBookingApiUrl) ? "NOT SET" : externalBookingApiUrl)}");
 Console.WriteLine($"[ENV] CHROMA_API_URL: {(string.IsNullOrEmpty(chromaApiUrl) ? "NOT SET" : chromaApiUrl)}");
@@ -66,11 +78,21 @@ if (!string.IsNullOrEmpty(whatsappApiUrl))
     builder.Configuration["WhatsApp:ApiUrl"] = whatsappApiUrl;
 if (!string.IsNullOrEmpty(whatsappToken))
     builder.Configuration["WhatsApp:Token"] = whatsappToken;
+if (!string.IsNullOrEmpty(whatsappProvider))
+    builder.Configuration["WhatsApp:Provider"] = whatsappProvider;
 // Backwards/alternative env var names for the same provider
 if (string.IsNullOrEmpty(builder.Configuration["WhatsApp:ApiUrl"]) && !string.IsNullOrEmpty(uazapiUrl))
     builder.Configuration["WhatsApp:ApiUrl"] = uazapiUrl;
 if (string.IsNullOrEmpty(builder.Configuration["WhatsApp:Token"]) && !string.IsNullOrEmpty(uazapiToken))
     builder.Configuration["WhatsApp:Token"] = uazapiToken;
+if (!string.IsNullOrEmpty(evolutionApiUrl))
+    builder.Configuration["WhatsApp:Evolution:ApiUrl"] = evolutionApiUrl;
+if (!string.IsNullOrEmpty(evolutionApiKey))
+    builder.Configuration["WhatsApp:Evolution:ApiKey"] = evolutionApiKey;
+if (!string.IsNullOrEmpty(evolutionInstanceName))
+    builder.Configuration["WhatsApp:Evolution:InstanceName"] = evolutionInstanceName;
+if (!string.IsNullOrEmpty(evolutionWebhookSecret))
+    builder.Configuration["WhatsApp:Evolution:WebhookSecret"] = evolutionWebhookSecret;
 if (!string.IsNullOrEmpty(redisConnectionString))
     builder.Configuration["Redis:ConnectionString"] = redisConnectionString;
 if (!string.IsNullOrEmpty(mysqlConnectionString))
@@ -111,6 +133,44 @@ if (string.IsNullOrWhiteSpace(builder.Configuration["MySQL:ConnectionString"]))
     }
 }
 
+var whatsappProviderName = builder.Configuration["WhatsApp:Provider"]?.Trim().ToLowerInvariant();
+if (string.IsNullOrWhiteSpace(whatsappProviderName))
+    whatsappProviderName = "evolution";
+builder.Configuration["WhatsApp:Provider"] = whatsappProviderName;
+
+if (whatsappProviderName is not "uazapi" and not "evolution")
+{
+    throw new InvalidOperationException(
+        $"Unsupported WhatsApp:Provider '{whatsappProviderName}'. Supported values: uazapi, evolution.");
+}
+
+if (whatsappProviderName == "evolution")
+{
+    var missingEvolutionSettings = new[]
+    {
+        "WhatsApp:Evolution:ApiUrl",
+        "WhatsApp:Evolution:ApiKey",
+        "WhatsApp:Evolution:InstanceName",
+        "WhatsApp:Evolution:WebhookSecret"
+    }
+    .Where(key => string.IsNullOrWhiteSpace(builder.Configuration[key]))
+    .ToList();
+
+    if (missingEvolutionSettings.Count > 0)
+    {
+        throw new InvalidOperationException(
+            $"Evolution provider selected but required configuration is missing: {string.Join(", ", missingEvolutionSettings)}.");
+    }
+
+    var configuredEvolutionUrl = builder.Configuration["WhatsApp:Evolution:ApiUrl"]!;
+    if (!Uri.TryCreate(configuredEvolutionUrl, UriKind.Absolute, out var evolutionUri) ||
+        (!string.Equals(evolutionUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
+         !string.Equals(evolutionUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)))
+    {
+        throw new InvalidOperationException("WhatsApp:Evolution:ApiUrl must be an absolute HTTP or HTTPS URL.");
+    }
+}
+
 // ========== Add Core Services ==========
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -118,6 +178,7 @@ builder.Services.AddSwaggerGen();
 
 // Add memory cache for IMemoryCache dependencies
 builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<IEvolutionWebhookDedupe, EvolutionWebhookDedupe>();
 
 // ========== HTTP Clients ==========
 // MiniMax Service - primary AI service (Anthropic-compatible endpoint)
@@ -140,16 +201,29 @@ builder.Services.AddHttpClient<IExternalReservationService, ExternalReservationS
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
-builder.Services.AddHttpClient<IWhatsAppService, WhatsAppService>((serviceProvider, client) =>
+if (whatsappProviderName == "uazapi")
 {
-    var config = serviceProvider.GetRequiredService<IConfiguration>();
-    var apiUrl = config["WhatsApp:ApiUrl"];
-    if (!string.IsNullOrEmpty(apiUrl))
+    builder.Services.AddHttpClient<IWhatsAppService, WhatsAppService>((serviceProvider, client) =>
     {
+        var config = serviceProvider.GetRequiredService<IConfiguration>();
+        var apiUrl = config["WhatsApp:ApiUrl"];
+        if (!string.IsNullOrEmpty(apiUrl))
+        {
+            client.BaseAddress = new Uri(apiUrl);
+        }
+        client.Timeout = TimeSpan.FromSeconds(30);
+    });
+}
+else
+{
+    builder.Services.AddHttpClient<IWhatsAppService, EvolutionWhatsAppService>((serviceProvider, client) =>
+    {
+        var config = serviceProvider.GetRequiredService<IConfiguration>();
+        var apiUrl = config["WhatsApp:Evolution:ApiUrl"]!.TrimEnd('/') + "/";
         client.BaseAddress = new Uri(apiUrl);
-    }
-    client.Timeout = TimeSpan.FromSeconds(30);
-});
+        client.Timeout = TimeSpan.FromSeconds(30);
+    });
+}
 
 builder.Services.AddHttpClient("Chroma", (serviceProvider, client) =>
 {
@@ -169,6 +243,12 @@ builder.Services.AddSingleton<IContextBuilderService, ContextBuilderService>();
 builder.Services.AddSingleton<IMessageRepository, MessageRepository>();
 builder.Services.AddSingleton<IMenuRepository, MenuRepository>();
 builder.Services.AddSingleton<IBookingRepository, BookingRepository>();
+var bookingConfirmationOutboxOptions = BookingConfirmationOutboxOptions.FromConfiguration(builder.Configuration);
+builder.Services.AddSingleton(bookingConfirmationOutboxOptions);
+builder.Services.AddSingleton<IBookingConfirmationOutboxRepository, BookingConfirmationOutboxRepository>();
+builder.Services.AddTransient<BookingConfirmationOutboxProcessor>();
+if (bookingConfirmationOutboxOptions.Enabled)
+    builder.Services.AddHostedService<BookingConfirmationOutboxWorker>();
 builder.Services.AddSingleton<IRestaurantConfigRepository, RestaurantConfigRepository>();
 builder.Services.AddSingleton<IRiceMenuService, RiceMenuService>();
 builder.Services.AddSingleton<IToolExecutor, ToolExecutor>();
